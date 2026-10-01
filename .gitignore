@@ -73,3 +73,4 @@ desktop.ini
 app/*.pglite/
 app/data/pglite/
 .pglite/
+.neon
