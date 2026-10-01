@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { GROK_PROVIDERS, authClient, authEnabled, signIn } from "@/lib/auth/client";
+import { authClient, setBearerToken } from "@/lib/auth/client";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { DEMO_PASSWORD, DEMO_USERS } from "@/lib/catalog";
 import { prepareDemo } from "@/lib/fn";
@@ -39,13 +39,7 @@ function Login() {
       });
       if (err) throw new Error(err.message ?? "No se pudo entrar.");
       const token = (data as { token?: string } | null)?.token;
-      if (token) {
-        try {
-          sessionStorage.setItem("grok-auth.bearer-token", token);
-        } catch {
-          /* ignore */
-        }
-      }
+      if (token) setBearerToken(token);
       await authClient.getSession();
       nav({ to: "/" });
     } catch (e) {
@@ -90,32 +84,36 @@ function Login() {
           <p className="mt-2 max-w-md text-base leading-snug text-ink-soft sm:mt-4 sm:text-lg">
             Pedidos en tablet, cobro en caja, stock por remito. Mercado Central.
           </p>
-          <p className="mt-4 text-xs text-muted sm:mt-8 sm:text-sm">Cuentas de prueba · contraseña {DEMO_PASSWORD}</p>
-          <div className="mt-2 grid grid-cols-3 gap-2">
-            {DEMO_USERS.map((u, i) => (
-              <button
-                key={u.email}
-                type="button"
-                disabled={busy !== null}
-                onClick={() => void withEmail(u.email, u.password, u.email)}
-                className={cn(
-                  "min-w-0 rounded-lg border border-line border-t-2 bg-surface p-2.5 text-left transition-colors hover:bg-ok-bg/40 sm:p-4",
-                  ["border-t-leaf", "border-t-terra", "border-t-naranja"][i] ?? "border-t-leaf",
-                )}
-              >
-                <span className="block text-[10px] font-medium uppercase tracking-wide text-muted sm:text-xs">
-                  {ROL_LABEL[u.rol]}
-                </span>
-                <span className="mt-0.5 block truncate text-sm font-medium sm:mt-1 sm:text-base">{u.nombre}</span>
-                <span className="mt-1 hidden truncate text-xs text-muted sm:block">
-                  {busy === u.email ? "Entrando…" : u.email}
-                </span>
-                <span className="mt-1 block text-[10px] text-muted sm:hidden">
-                  {busy === u.email ? "Entrando…" : "Entrar"}
-                </span>
-              </button>
-            ))}
-          </div>
+          {import.meta.env.DEV ? (
+            <>
+              <p className="mt-4 text-xs text-muted sm:mt-8 sm:text-sm">Cuentas de prueba · contraseña {DEMO_PASSWORD}</p>
+              <div className="mt-2 grid grid-cols-3 gap-2">
+                {DEMO_USERS.map((u, i) => (
+                  <button
+                    key={u.email}
+                    type="button"
+                    disabled={busy !== null}
+                    onClick={() => void withEmail(u.email, u.password, u.email)}
+                    className={cn(
+                      "min-w-0 rounded-lg border border-line border-t-2 bg-surface p-2.5 text-left transition-colors hover:bg-ok-bg/40 sm:p-4",
+                      ["border-t-leaf", "border-t-terra", "border-t-naranja"][i] ?? "border-t-leaf",
+                    )}
+                  >
+                    <span className="block text-[10px] font-medium uppercase tracking-wide text-muted sm:text-xs">
+                      {ROL_LABEL[u.rol]}
+                    </span>
+                    <span className="mt-0.5 block truncate text-sm font-medium sm:mt-1 sm:text-base">{u.nombre}</span>
+                    <span className="mt-1 hidden truncate text-xs text-muted sm:block">
+                      {busy === u.email ? "Entrando…" : u.email}
+                    </span>
+                    <span className="mt-1 block text-[10px] text-muted sm:hidden">
+                      {busy === u.email ? "Entrando…" : "Entrar"}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : null}
         </section>
 
         <section className="rounded-xl border border-line border-t-4 border-t-leaf bg-surface p-4 shadow-[0_12px_40px_rgba(15,61,38,0.08)] sm:p-6">
@@ -162,20 +160,6 @@ function Login() {
               Olvidé usuario o clave
             </Link>
           </div>
-          {authEnabled ? (
-            <div className="mt-5 space-y-2 border-t border-line pt-5">
-              {GROK_PROVIDERS.map((p) => (
-                <Button
-                  key={p.providerId}
-                  variant="secondary"
-                  className="w-full"
-                  onClick={() => void signIn(p.providerId, { callbackURL: "/" })}
-                >
-                  Continuar con {p.label}
-                </Button>
-              ))}
-            </div>
-          ) : null}
         </section>
       </div>
     </main>

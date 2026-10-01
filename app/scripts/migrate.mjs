@@ -18,6 +18,14 @@ import { dirname, join } from "node:path";
 import pg from "pg";
 import { pendingMigrations } from "./migration-plan.mjs";
 
+// Standalone `node scripts/migrate.mjs` does not go through with-app-env.mjs,
+// so read `app/.env` here too. Optional: CI/deploy injects DATABASE_URL.
+try {
+  process.loadEnvFile(join(dirname(fileURLToPath(import.meta.url)), "..", ".env"));
+} catch {
+  // no `.env` — use the process environment.
+}
+
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
   console.log(

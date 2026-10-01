@@ -88,6 +88,15 @@ export function projectRoot() {
 }
 
 /**
+ * Quote one token for a `cmd.exe /d /s /c` line. Embedded quotes follow the
+ * MSVCRT argv rule (double the backslashes, escape the quote) so the command
+ * receives the token byte-for-byte.
+ */
+function quoteCmdArg(value) {
+  return `"${String(value).replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/, "$1$1")}"`;
+}
+
+/**
  * Whether `moduleUrl` is the script node was asked to run.
  *
  * Both sides are resolved through symlinks: node realpaths `import.meta.url`
@@ -110,12 +119,31 @@ function main(argv) {
     console.error("usage: node scripts/with-app-env.mjs <command> [args…]");
     process.exit(2);
   }
-  const env = mergeAppEnv(readAppEnv(projectRoot()), process.env);
+  const root = projectRoot();
+  // `.env` carries secrets and DATABASE_URL/SEED_DEMO for DEV. Optional: the
+  // process environment still works on its own, and real process env wins
+  // (loadEnvFile never overwrites an existing variable).
+  try {
+    process.loadEnvFile(join(root, ".env"));
+  } catch {
+    // no `.env` — expected in CI/deploy, where the platform injects env vars.
+  }
+  const env = mergeAppEnv(readAppEnv(root), process.env);
   // npm exposes local binaries through PATH. On Windows, `spawn` does not
   // resolve the `.cmd` shim unless it runs through a shell, unlike npm scripts.
-  // Keep POSIX direct execution unchanged and make this wrapper work on both
-  // supported development platforms.
-  const child = spawn(command, args, { stdio: "inherit", env, shell: process.platform === "win32" });
+  // The shell would join its arguments raw, so an executable path with a space
+  // ("C:\Program Files\nodejs\node.exe") splits at the space: quote the tokens
+  // here and pass one command string, which also keeps Node from emitting its
+  // args-plus-shell warning (DEP0190). POSIX keeps direct execution.
+  const [spawnCommand, spawnArgs] =
+    process.platform === "win32"
+      ? [[command, ...args].map(quoteCmdArg).join(" "), []]
+      : [command, args];
+  const child = spawn(spawnCommand, spawnArgs, {
+    stdio: "inherit",
+    env,
+    shell: process.platform === "win32",
+  });
   // The dev server is long-running and is stopped by signalling this wrapper.
   for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
     process.on(signal, () => child.kill(signal));

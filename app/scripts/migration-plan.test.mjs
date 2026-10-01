@@ -56,10 +56,14 @@ test("non-.sql entries are dropped (readdir also yields the auth/ directory)", (
   assert.deepEqual(pendingMigrations(["auth", "README.md"], []), []);
 });
 
-test("the auth schema ships outside the globbed directory", () => {
+test("sign-in is on here, so the auth schema is copied up beside the business migrations", () => {
+  // In the shipped template `migrations/` has no root .sql files; once an app
+  // turns sign-in on, migrations/auth/0001_auth.sql is copied up and must run
+  // on a fresh database along with the app's own migrations.
   const migrationsDir = join(projectRoot(), "migrations");
-  assert.deepEqual(pendingMigrations(readdirSync(migrationsDir), []), []);
-  assert.ok(readdirSync(join(migrationsDir, "auth")).includes("0001_auth.sql"));
+  const names = pendingMigrations(readdirSync(migrationsDir), []).map((m) => m.name);
+  assert.ok(names.includes(AUTH_MIGRATION), `migrations/${AUTH_MIGRATION} copy-up is missing`);
+  assert.ok(readdirSync(join(migrationsDir, "auth")).includes(AUTH_MIGRATION));
 });
 
 test("this workspace's auth schema copy is byte-identical to its source", () => {

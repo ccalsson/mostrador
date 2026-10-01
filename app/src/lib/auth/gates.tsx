@@ -1,24 +1,19 @@
-import { useState, useSyncExternalStore, type ReactNode } from "react";
-import { Navigate } from "@tanstack/react-router";
-import { GROK_PROVIDERS, authEnabled, signIn, signOut } from "./client";
-import { hasGateSessionMarker } from "./gate-session-marker";
+import { useState, type ReactNode } from "react";
+import { Link, Navigate } from "@tanstack/react-router";
+import { authEnabled, signOut } from "./client";
 import { resolveSignInGateState } from "./sign-in-gate";
 import { useCurrentUser, useCurrentUserState } from "./use-current-user";
-
-const subscribeToNothing = () => () => {};
-const noGateSessionOnServer = () => false;
 
 /**
  * Auth state components — plain wrappers around `useCurrentUserState()`.
  *
- * With auth on, visitors are signed out until they authenticate — in the sandbox
- * live preview too, which does real sign-in. The shared dev user appears only
- * when auth is disabled (`VITE_AUTH_ENABLED=false`, the shipped default).
- * While the session is still resolving, gates that care about signed-out state
- * render nothing so there's no signed-out flash on hard reload.
+ * With auth on, visitors are signed out until they authenticate. The shared dev
+ * user appears only when auth is disabled (`VITE_AUTH_ENABLED=false`). While the
+ * session is still resolving, gates that care about signed-out state render
+ * nothing so there's no signed-out flash on hard reload.
  */
 
-/** Where `RedirectToSignIn` sends signed-out visitors. Create this route. */
+/** Where `RedirectToSignIn` sends signed-out visitors. */
 export const SIGN_IN_PATH = "/login";
 
 /** Render children only when a user is present (real session, or the disabled-auth dev user). */
@@ -66,37 +61,25 @@ export function SignInGate({
 export function SignInButtons() {
   return (
     <div className="flex w-full max-w-sm flex-col gap-2">
-      {GROK_PROVIDERS.map((p) => (
-        <button
-          key={p.providerId}
-          type="button"
-          onClick={() => signIn(p.providerId, { callbackURL: "/" })}
-          className="w-full cursor-pointer rounded-md border border-neutral-300 px-4 py-2 hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-900"
-        >
-          Continue with {p.label}
-        </button>
-      ))}
+      <Link
+        to={SIGN_IN_PATH}
+        className="w-full rounded-md border border-neutral-300 px-4 py-2 text-center hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-900"
+      >
+        Ingresar
+      </Link>
     </div>
   );
 }
 
 /**
- * Minimal signed-in identity chip + sign-out. Restyle freely (see the
- * `design-ui` skill). Sign-out is only shown when auth is enabled (the
- * disabled-auth dev user has nothing to sign out of) and the session is not
- * gate-materialized — behind the gate the next request signs the viewer
- * straight back in, so a sign-out control there is a broken loop.
+ * Minimal signed-in identity chip + sign-out. Sign-out is only shown when auth
+ * is enabled (the disabled-auth dev user has nothing to sign out of).
  */
 export function UserButton() {
   const user = useCurrentUser();
-  // Sign-out can take a moment (and can fail when deployed), so the control
-  // shows it is working and cannot be fired twice.
+  // Sign-out can take a moment (and can fail), so the control shows it is
+  // working and cannot be fired twice.
   const [signingOut, setSigningOut] = useState(false);
-  const gateSession = useSyncExternalStore(
-    subscribeToNothing,
-    hasGateSessionMarker,
-    noGateSessionOnServer,
-  );
   if (!user) return null;
   const label = user.displayName ?? user.primaryEmail ?? "Account";
   return (
@@ -113,7 +96,7 @@ export function UserButton() {
         </span>
       )}
       <span className="hidden text-sm font-medium sm:inline">{label}</span>
-      {authEnabled && !gateSession && (
+      {authEnabled && (
         <button
           type="button"
           disabled={signingOut}

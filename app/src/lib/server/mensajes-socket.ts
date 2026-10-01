@@ -8,7 +8,7 @@ import { suscribirCanal, type AvisoMensaje } from "@/lib/server/mensajes-vivo";
 
 const GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 const MAX = 8 * 1024;
-const COOKIE = "__Host-grok-auth.session_token";
+const COOKIE = "__Host-mostrador-auth.session_token";
 
 type Frame = { opcode: number; data: Buffer };
 

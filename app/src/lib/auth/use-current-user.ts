@@ -6,16 +6,15 @@ export type AppUser = {
   displayName: string | null;
   primaryEmail: string | null;
   profileImageUrl: string | null;
-  /** True when this is the sandbox/dev fallback (auth not configured). */
+  /** True when this is the dev fallback (auth not configured). */
   isDevFallback: boolean;
 };
 
 /**
  * Stable fallback user, used ONLY when auth is disabled
- * (`VITE_AUTH_ENABLED=false`, the shipped default). With auth on, the sandbox
- * live preview does real sign-in via the baked preview client. Its id is
- * `"dev-user"` — the SAME id `verify.server.ts` returns server-side — so per-user
- * rows written in that mode belong to one consistent owner.
+ * (`VITE_AUTH_ENABLED=false`). Its id is `"dev-user"` — the SAME id
+ * `verify.server.ts` returns server-side — so per-user rows written in that
+ * mode belong to one consistent owner.
  */
 export const DEV_USER: AppUser = {
   id: "dev-user",
@@ -34,12 +33,12 @@ export type CurrentUserState = {
 };
 
 /**
- * Current user + loading state. Same behavior in live preview and when deployed:
+ * Current user + loading state:
  *   - Auth enabled -> the real signed-in user; `user` is `null` while
  *                            the session resolves (`isPending: true`) and when
  *                            signed out (`isPending: false`). Session comes from
  *                            Better Auth `useSession()` → `/api/auth/get-session`
- *                            (cookie when deployed; bearer in live preview).
+ *                            (cookie, plus the stored bearer when present).
  *   - Auth disabled (`VITE_AUTH_ENABLED=false`) -> `DEV_USER`, never pending.
  *
  * Protect a route by waiting out `isPending` before acting on `user` —
