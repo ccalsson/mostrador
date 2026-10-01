@@ -1,6 +1,7 @@
 import { getSql } from "@/lib/db";
 import { newId } from "@/lib/ids";
 import { num } from "@/lib/money";
+import { assertRole, audit } from "@/lib/server/context";
 import type { MovimientoTipo, Staff } from "@/lib/types";
 
 export async function applyStock(opts: {
@@ -119,5 +120,23 @@ export async function reservarLineas(
       staff: null,
     });
   }
+}
+
+export async function ajustarStockForStaff(
+  staff: Staff,
+  input: { productoId: string; cantidad: number; tipo: "ajuste" | "merma"; motivo: string },
+) {
+  assertRole(staff, ["admin", "cajero"]);
+  const signed = input.tipo === "merma" ? -Math.abs(input.cantidad) : input.cantidad;
+  await applyStock({
+    tenantId: staff.tenantId,
+    productoId: input.productoId,
+    tipo: input.tipo,
+    cantidad: signed,
+    referencia: input.motivo,
+    staff,
+  });
+  await audit(staff.tenantId, staff, input.tipo, "stock", input);
+  return { ok: true as const };
 }
 

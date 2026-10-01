@@ -90,9 +90,11 @@ const databaseUrl = env("DATABASE_URL");
 // Kysely dialect — so Better Auth persists to the SAME DB as app data. Both use
 // the Better Auth schema from `migrations/auth/0001_auth.sql`, copied into
 // `migrations/` when the app turns sign-in on.
-const database = databaseUrl
-  ? new Pool({ connectionString: databaseUrl })
-  : { dialect: pgliteDialect(() => getPglite()), type: "postgres" as const };
+const authPool = databaseUrl ? new Pool({ connectionString: databaseUrl }) : undefined;
+// Same idle-connection exposure as `db.ts`: without this listener an idle Neon
+// client error is re-emitted unhandled and crashes the process.
+authPool?.on("error", (err) => console.error("[auth] idle client error:", err.message));
+const database = authPool ?? { dialect: pgliteDialect(() => getPglite()), type: "postgres" as const };
 
 /** Session token cookie name — also read by the dev WebSocket in `mensajes-socket.ts`. */
 export const SESSION_TOKEN_COOKIE = "__Host-mostrador-auth.session_token";

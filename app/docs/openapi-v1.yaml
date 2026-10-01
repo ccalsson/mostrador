@@ -1,0 +1,1216 @@
+# Contrato de la API móvil v1 del Mostrador (Fase 0).
+# Fuente de verdad del router: src/routes/api/v1/$.ts
+# Cambios incompatibles => nueva versión /api/v2; este archivo sólo se amplía.
+openapi: 3.0.3
+info:
+  title: Mostrador API v1
+  version: 1.0.0
+  description: |
+    API para los clientes Flutter (vendedor Android, caja Windows). El backend
+    TanStack Start queda como única fuente de verdad.
+
+    Autenticación:
+    - Login: `POST /api/auth/sign-in/email` con `{email, password}` y header
+      `Origin` (Better Auth lo exige por CSRF); responde `{token, user}`.
+    - Todas las rutas de esta API llevan `Authorization: Bearer <token>`.
+    - `POST /api/auth/sign-out` revoca la sesión (requiere `Origin` y
+      `Content-Type: application/json`).
+
+    Convenciones:
+    - Montos: números decimales (hasta 2 decimales), nunca strings.
+    - Fechas: ISO-8601 UTC (`2026-10-01T18:04:05.123Z`), nunca timestamps.
+    - Ids: strings opacos con prefijo (`ped_...`, `p_...`, `cob_...`).
+    - Idempotencia: `clientUuid` en creación de pedidos y cobros; un reintento
+      con el mismo valor devuelve el recurso original (unique
+      `(tenant_id, client_uuid)` en PostgreSQL).
+    - Todas las respuestas incluyen `Vary: authorization`.
+    - El tenant sale siempre de la sesión; nunca se acepta por parámetro.
+    - Orden de validación en operaciones con cuerpo: el cuerpo se parsea antes
+      de verificar el rol; un cuerpo inválido devuelve 400 aunque el rol no
+      alcance (para probar 403 hay que enviar un cuerpo válido).
+servers:
+  - url: http://127.0.0.1:8080
+    description: DEV local
+tags:
+  - name: Sesión
+  - name: Catálogo
+  - name: Pedidos
+  - name: Cobros
+  - name: Clientes
+  - name: Productos
+  - name: Stock
+  - name: Remitos
+  - name: Usuarios
+  - name: Alertas
+  - name: Panel
+  - name: Caja
+  - name: Auditoría
+security:
+  - bearerAuth: []
+
+paths:
+  /session:
+    get:
+      tags: [Sesión]
+      summary: Identidad del staff y tenant
+      description: Verificación de sesión al arrancar el cliente. Roles que no sean staff (cuenta cliente, baja o sin alta) reciben 403.
+      responses:
+        "200":
+          description: Sesión válida.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SessionResponse' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+
+  /catalogo:
+    get:
+      tags: [Catálogo]
+      summary: Catálogo de productos con sincronización incremental
+      description: |
+        Sin `since` devuelve el catálogo completo. Con `since=<ISO-8601>`
+        devuelve sólo productos modificados desde ese instante (puede repetir
+        filas de borde: el cliente resuelve con upsert por `id`).
+        Respuesta `{data, version}` + `ETag: "<version>"`; enviando el mismo
+        ETag en `If-None-Match` responde 304 sin cuerpo. Persistir `version`
+        sólo después de aplicar las filas.
+      parameters:
+        - name: since
+          in: query
+          required: false
+          schema: { type: string, format: date-time }
+          description: Última `version` aplicada.
+      responses:
+        "200":
+          description: Catálogo (completo o incremental).
+          headers:
+            cache-control: { schema: { type: string }, example: private, max-age=30 }
+            etag: { schema: { type: string }, description: 'Versión entre comillas, p. ej. "2026-10-01 18:04:05.123+00". Vacío si no hay productos.' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CatalogoResponse' }
+        "304":
+          description: Sin cambios desde el ETag enviado.
+          headers:
+            cache-control: { schema: { type: string } }
+            etag: { schema: { type: string } }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+
+  /pedidos:
+    post:
+      tags: [Pedidos]
+      summary: Crear pedido (idempotente)
+      description: Cualquier staff. El cajero no queda como vendedor; vendedor y admin sí. Los ítems sin producto válido se omiten.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PedidoInput' }
+      responses:
+        "201":
+          description: Pedido creado (o existente si `clientUuid` se repite).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DataPedido' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "415": { $ref: '#/components/responses/UnsupportedMediaType' }
+    get:
+      tags: [Pedidos]
+      summary: Listar pedidos
+      description: Cualquier staff. `mine=1` filtra los propios del vendedor; `estados` filtra por cola de armado.
+      parameters:
+        - name: mine
+          in: query
+          schema: { type: string, enum: ["1", "true"] }
+        - name: estados
+          in: query
+          schema: { type: string, example: enviado,en_preparacion,listo }
+          description: Lista separada por comas de estados válidos.
+      responses:
+        "200":
+          description: Pedidos.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DataPedidos' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+
+  /pedidos/{id}:
+    get:
+      tags: [Pedidos]
+      summary: Detalle de pedido
+      description: Cualquier staff del tenant.
+      parameters:
+        - $ref: '#/components/parameters/IdPedido'
+      responses:
+        "200":
+          description: Pedido con ítems.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DataPedido' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  /pedidos/{id}/estado:
+    post:
+      tags: [Pedidos]
+      summary: Cambiar estado de la cola de armado
+      description: admin o cajero.
+      parameters:
+        - $ref: '#/components/parameters/IdPedido'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [estado]
+              properties:
+                estado: { $ref: '#/components/schemas/PedidoEstado' }
+      responses:
+        "200":
+          description: Pedido actualizado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DataPedido' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "415": { $ref: '#/components/responses/UnsupportedMediaType' }
+
+  /pedidos/{id}/entregar:
+    post:
+      tags: [Pedidos]
+      summary: Marcar entregado
+      description: admin, cajero o vendedor. Sólo pedidos ya cobrados. Sin cuerpo.
+      parameters:
+        - $ref: '#/components/parameters/IdPedido'
+      responses:
+        "200":
+          description: Entregado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DataOk' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  /pedidos/{id}/items:
+    post:
+      tags: [Pedidos]
+      summary: Editar ítems de un pedido no cobrado
+      description: admin o cajero. Reemplaza el listado y ajusta reservas de stock. Rechaza pedidos cobrados o anulados.
+      parameters:
+        - $ref: '#/components/parameters/IdPedido'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  minItems: 1
+                  maxItems: 200
+                  items: { $ref: '#/components/schemas/LineaPedido' }
+      responses:
+        "200":
+          description: Pedido actualizado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DataPedido' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "415": { $ref: '#/components/responses/UnsupportedMediaType' }
+
+  /pedidos/{id}/cobrar:
+    post:
+      tags: [Cobros]
+      summary: Cobrar pedido (idempotente)
+      description: |
+        admin o cajero. Emite ticket correlativo, descuenta stock (o libera la
+        reserva) y, con `cuenta_corriente`, asienta el cargo. Reintentar con el
+        mismo `clientUuid` devuelve el cobro original sin doble descuento.
+      parameters:
+        - $ref: '#/components/parameters/IdPedido'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [clientUuid, formaPago]
+              properties:
+                clientUuid: { type: string, maxLength: 120, description: Clave de idempotencia del cobro. }
+                formaPago: { $ref: '#/components/schemas/FormaPago' }
+                montoRecibido: { type: number, description: Sólo efectivo; si falta se asume el total. }
+      responses:
+        "200":
+          description: Cobro realizado (o existente si `clientUuid` se repite).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DataCobro' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "415": { $ref: '#/components/responses/UnsupportedMediaType' }
+
+  /pedidos/{id}/anular:
+    post:
+      tags: [Pedidos]
+      summary: Anular pedido
+      description: admin o cajero. Con cobro activo restituye stock y anula el cobro; si hay factura autorizada exige primero la nota de crédito. Idempotente si ya está anulado.
+      parameters:
+        - $ref: '#/components/parameters/IdPedido'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [motivo]
+              properties:
+                motivo: { type: string, maxLength: 300 }
+      responses:
+        "200":
+          description: Pedido anulado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DataPedido' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "415": { $ref: '#/components/responses/UnsupportedMediaType' }
+
+  /cobros/{id}/ticket:
+    get:
+      tags: [Cobros]
+      summary: Ticket emitido
+      description: Cualquier staff. Contenido JSON listo para imprimir.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+          description: Id del cobro.
+      responses:
+        "200":
+          description: Ticket.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DataTicket' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  /cobros/{id}/anular:
+    post:
+      tags: [Cobros]
+      summary: Anular cobro
+      description: admin o cajero. Devuelve stock, revierte cuenta corriente y exige nota de crédito si hay factura.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+          description: Id del cobro.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [motivo]
+              properties:
+                motivo: { type: string, maxLength: 300 }
+      responses:
+        "200":
+          description: Anulado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DataOk' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "415": { $ref: '#/components/responses/UnsupportedMediaType' }
+
+  /clientes:
+    get:
+      tags: [Clientes]
+      summary: Listar clientes
+      description: Cualquier staff.
+      responses:
+        "200":
+          description: Clientes ordenados por nombre.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DataClientes' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Clientes]
+      summary: Alta rápida de cliente
+      description: Cualquier staff.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [nombre]
+              properties:
+                nombre: { type: string, maxLength: 120 }
+                telefono: { type: string, maxLength: 40 }
+                cuentaCorriente: { type: boolean, default: false }
+      responses:
+        "201":
+          description: Cliente creado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DataClienteCreado' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "415": { $ref: '#/components/responses/UnsupportedMediaType' }
+
+  /clientes/{id}/cuenta:
+    get:
+      tags: [Clientes]
+      summary: Cuenta corriente del cliente
+      description: admin. Saldo total + últimos 30 movimientos.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Cuenta corriente.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DataCuentaCliente' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+
+  /productos:
+    post:
+      tags: [Productos]
+      summary: Alta o edición de producto
+      description: admin. Con `id` actualiza; sin `id` crea. Audita cambio de precio y, con `stockInicial`, asienta el stock.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [nombre, unidad, unidadLabel, precio, stockMinimo]
+              properties:
+                id: { type: string, maxLength: 80 }
+                nombre: { type: string, maxLength: 120 }
+                unidad: { $ref: '#/components/schemas/Unidad' }
+                unidadLabel: { type: string, maxLength: 20 }
+                precio: { type: number }
+                stockMinimo: { type: number }
+                alias: { type: array, items: { type: string } }
+                activo: { type: boolean, default: true }
+                stockInicial: { type: number }
+      responses:
+        "201":
+          description: Producto guardado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DataProductoId' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "415": { $ref: '#/components/responses/UnsupportedMediaType' }
+
+  /productos/{id}/baja:
+    post:
+      tags: [Productos]
+      summary: Baja lógica de producto
+      description: admin. Sin cuerpo.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Dado de baja.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DataOk' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+
+  /productos/orden:
+    post:
+      tags: [Productos]
+      summary: Reordenar tablero de productos
+      description: admin. El cuerpo es un array JSON de ids en el orden deseado.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { type: string }
+              example: [p_palta, p_tomate, p_banana]
+      responses:
+        "200":
+          description: Orden aplicado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DataOk' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "415": { $ref: '#/components/responses/UnsupportedMediaType' }
+
+  /stock/ajuste:
+    post:
+      tags: [Stock]
+      summary: Ajuste o merma de stock
+      description: admin o cajero. `merma` siempre descuenta (valor absoluto).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [productoId, cantidad, tipo, motivo]
+              properties:
+                productoId: { type: string, maxLength: 80 }
+                cantidad: { type: number }
+                tipo: { type: string, enum: [ajuste, merma] }
+                motivo: { type: string, maxLength: 200 }
+      responses:
+        "200":
+          description: Aplicado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DataOk' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "415": { $ref: '#/components/responses/UnsupportedMediaType' }
+
+  /remitos:
+    post:
+      tags: [Remitos]
+      summary: Cargar remito
+      description: admin o cajero. Cada línea se matchea contra el catálogo (match difuso) y queda sin confirmar.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fuente, lineas]
+              properties:
+                proveedor: { type: string, maxLength: 120 }
+                proveedorId: { type: string, maxLength: 80 }
+                fuente: { type: string, enum: [csv, foto, manual, pdf] }
+                archivoNombre: { type: string, maxLength: 200 }
+                lineas:
+                  type: array
+                  minItems: 1
+                  maxItems: 500
+                  items:
+                    type: object
+                    required: [descripcion, cantidad]
+                    properties:
+                      descripcion: { type: string, maxLength: 200 }
+                      cantidad: { type: number }
+                      precio: { type: number }
+      responses:
+        "201":
+          description: Remito creado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DataRemitoId' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "415": { $ref: '#/components/responses/UnsupportedMediaType' }
+
+  /remitos/{id}:
+    get:
+      tags: [Remitos]
+      summary: Detalle de remito
+      description: Cualquier staff.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Remito con líneas.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DataRemito' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  /remitos/items:
+    post:
+      tags: [Remitos]
+      summary: Corregir línea de remito
+      description: admin o cajero. Cambia producto, cantidad o confirmación de una línea.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, cantidad, confirmado]
+              properties:
+                id: { type: string, maxLength: 80 }
+                productoId: { type: string, maxLength: 80, nullable: true }
+                cantidad: { type: number }
+                confirmado: { type: boolean }
+      responses:
+        "200":
+          description: Línea actualizada.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DataOk' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "415": { $ref: '#/components/responses/UnsupportedMediaType' }
+
+  /remitos/{id}/confirmar:
+    post:
+      tags: [Remitos]
+      summary: Confirmar remito e ingresar stock
+      description: admin o cajero. Aplica las líneas confirmadas (idempotente si ya está confirmado). Sin cuerpo.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Confirmado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DataOk' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  /usuarios:
+    get:
+      tags: [Usuarios]
+      summary: Listar usuarios del puesto
+      description: admin.
+      responses:
+        "200":
+          description: Usuarios.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DataUsuarios' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Usuarios]
+      summary: Alta de usuario
+      description: admin. Crea credenciales (Better Auth) y ficha de staff.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [nombre, email, password, rol]
+              properties:
+                nombre: { type: string, maxLength: 120 }
+                email: { type: string, maxLength: 200 }
+                password: { type: string, maxLength: 200 }
+                rol: { $ref: '#/components/schemas/Rol' }
+      responses:
+        "201":
+          description: Usuario creado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DataOk' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "415": { $ref: '#/components/responses/UnsupportedMediaType' }
+
+  /usuarios/{id}/toggle:
+    post:
+      tags: [Usuarios]
+      summary: Activar o desactivar usuario
+      description: admin.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [activo]
+              properties:
+                activo: { type: boolean }
+      responses:
+        "200":
+          description: Actualizado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DataOk' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "415": { $ref: '#/components/responses/UnsupportedMediaType' }
+
+  /alertas:
+    get:
+      tags: [Alertas]
+      summary: Listar alertas del puesto
+      description: Cualquier staff. Últimas 30, no leídas primero.
+      responses:
+        "200":
+          description: Alertas.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DataAlertas' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+
+  /alertas/{id}/leida:
+    post:
+      tags: [Alertas]
+      summary: Marcar alerta como leída
+      description: Cualquier staff. Sin cuerpo.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Marcada.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DataOk' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+
+  /dashboard:
+    get:
+      tags: [Panel]
+      summary: Resumen del panel
+      description: admin. Cualquier otro valor de `dias` cae a 7.
+      parameters:
+        - name: dias
+          in: query
+          schema: { type: integer, enum: [1, 7, 30], default: 7 }
+      responses:
+        "200":
+          description: Métricas del período.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DataDashboard' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+
+  /caja:
+    get:
+      tags: [Caja]
+      summary: Estado de la caja abierta
+      description: admin o cajero. Si no hay caja abierta, la abre.
+      responses:
+        "200":
+          description: Turno actual.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DataCaja' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+
+  /caja/cerrar:
+    post:
+      tags: [Caja]
+      summary: Cerrar caja
+      description: admin o cajero. Calcula esperado vs real, alerta por diferencia y abre un turno nuevo.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, real]
+              properties:
+                id: { type: string, maxLength: 80, description: Id de la caja abierta (GET /caja). }
+                real: { type: number }
+                notas: { type: string, maxLength: 300 }
+      responses:
+        "200":
+          description: Cierre registrado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DataCierre' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "415": { $ref: '#/components/responses/UnsupportedMediaType' }
+
+  /auditoria:
+    get:
+      tags: [Auditoría]
+      summary: Log de auditoría
+      description: admin. Últimos 80 eventos.
+      responses:
+        "200":
+          description: Eventos.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DataAuditoria' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Token de sesión devuelto por POST /api/auth/sign-in/email.
+
+  parameters:
+    IdPedido:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+      description: Id del pedido.
+
+  responses:
+    Unauthorized:
+      description: Token ausente, inválido o sesión revocada.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { error: unauthorized }
+    Forbidden:
+      description: Cuenta sin acceso al mostrador (cliente, baja o sin alta) o rol insuficiente.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { error: forbidden, message: No tenés permiso para esta acción. }
+    BadRequest:
+      description: Cuerpo o parámetro inválido, o regla de negocio incumplida.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { error: invalid_request, message: Pedido no encontrado. }
+    NotFound:
+      description: Ruta inexistente (sin `message`) o recurso no encontrado (con `message`).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { error: not_found, message: Pedido no encontrado. }
+    UnsupportedMediaType:
+      description: "Falta `Content-Type: application/json` en operaciones con cuerpo."
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { error: unsupported_media_type, message: Enviá el cuerpo como application/json. }
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          description: Código estable (`invalid_request`, `unauthorized`, `forbidden`, `not_found`, `unsupported_media_type`).
+        message:
+          type: string
+          description: Detalle legible; ausente en 401.
+    Rol:
+      type: string
+      enum: [admin, cajero, vendedor]
+    Unidad:
+      type: string
+      enum: [bulto, kg]
+    PedidoEstado:
+      type: string
+      enum: [borrador, enviado, en_preparacion, listo, cobrado, anulado, entregado]
+    FormaPago:
+      type: string
+      enum: [efectivo, transferencia, tarjeta, cuenta_corriente]
+    StaffResumen:
+      type: object
+      required: [id, nombre, rol]
+      properties:
+        id: { type: string }
+        nombre: { type: string }
+        rol: { $ref: '#/components/schemas/Rol' }
+    SessionResponse:
+      type: object
+      required: [staff, tenantId]
+      properties:
+        staff: { $ref: '#/components/schemas/StaffResumen' }
+        tenantId: { type: string }
+    Producto:
+      type: object
+      properties:
+        id: { type: string }
+        nombre: { type: string }
+        unidad: { $ref: '#/components/schemas/Unidad' }
+        unidadLabel: { type: string }
+        precio: { type: number, description: Decimal con 2 decimales. }
+        stock: { type: number }
+        stockMinimo: { type: number }
+        alias: { type: array, items: { type: string } }
+        activo: { type: boolean }
+        stockBajo: { type: boolean }
+        orden: { type: integer, nullable: true }
+    CatalogoResponse:
+      type: object
+      required: [data, version]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/Producto' } }
+        version: { type: string, nullable: true, description: 'Máximo `updated_at` del tenant (string comparable); null si no hay productos.' }
+    Cliente:
+      type: object
+      properties:
+        id: { type: string }
+        nombre: { type: string }
+        telefono: { type: string, nullable: true }
+        cuentaCorriente: { type: boolean }
+    ClienteCreado:
+      type: object
+      properties:
+        id: { type: string }
+        nombre: { type: string }
+    MovimientoCuenta:
+      type: object
+      properties:
+        id: { type: string }
+        tipo: { type: string, example: cargo }
+        monto: { type: number, description: Positivo = deuda; reversos y pagos son negativos. }
+        nota: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+    CuentaCliente:
+      type: object
+      properties:
+        saldo: { type: number }
+        movimientos:
+          type: array
+          items: { $ref: '#/components/schemas/MovimientoCuenta' }
+    LineaPedido:
+      type: object
+      required: [productoId, cantidad]
+      properties:
+        productoId: { type: string }
+        cantidad: { type: number, exclusiveMinimum: true, minimum: 0 }
+    PedidoInput:
+      type: object
+      required: [clientUuid, items]
+      properties:
+        clientUuid: { type: string, maxLength: 120, description: Clave de idempotencia generada y persistida por la outbox antes del primer envío. }
+        clienteId: { type: string, nullable: true }
+        clienteNombre: { type: string, maxLength: 120, default: Mostrador }
+        nota: { type: string, maxLength: 500 }
+        items: { type: array, minItems: 1, maxItems: 200, items: { $ref: '#/components/schemas/LineaPedido' } }
+    PedidoItem:
+      type: object
+      properties:
+        id: { type: string }
+        productoId: { type: string }
+        nombre: { type: string, description: Snapshot del nombre al crear el pedido. }
+        cantidad: { type: number }
+        precioUnitario: { type: number }
+        unidad: { $ref: '#/components/schemas/Unidad' }
+        unidadLabel: { type: string }
+        subtotal: { type: number }
+    Pedido:
+      type: object
+      properties:
+        id: { type: string }
+        clientUuid: { type: string }
+        vendedorId: { type: string, nullable: true }
+        vendedorNombre: { type: string, nullable: true }
+        clienteId: { type: string, nullable: true }
+        clienteNombre: { type: string }
+        estado: { $ref: '#/components/schemas/PedidoEstado' }
+        nota: { type: string, nullable: true }
+        items: { type: array, items: { $ref: '#/components/schemas/PedidoItem' } }
+        total: { type: number }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        formaPago: { allOf: [{ $ref: '#/components/schemas/FormaPago' }], nullable: true }
+        comprobanteNombre: { type: string, nullable: true }
+    CobroResult:
+      type: object
+      properties:
+        cobroId: { type: string }
+        ticketId: { type: string, description: Ausente sólo si el reintento encuentra un cobro sin ticket. }
+        numero: { type: integer, description: Número correlativo del ticket; 0 en reintentos sin ticket. }
+        vuelto: { type: number }
+        total: { type: number }
+    TicketContenido:
+      type: object
+      description: Snapshot imprimible; propiedades según el emisor (venta o seed).
+      properties:
+        puesto: { type: string }
+        numero: { type: integer }
+        fecha: { type: string, format: date-time }
+        cliente: { type: string }
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              nombre: { type: string }
+              cantidad: { type: number }
+              unidad: { type: string }
+              precio: { type: number }
+              subtotal: { type: number }
+        total: { type: number }
+        formaPago: { type: string }
+        recibido: { type: number }
+        vuelto: { type: number }
+        pie: { type: string }
+    Ticket:
+      type: object
+      properties:
+        id: { type: string }
+        numero: { type: integer }
+        contenido: { $ref: '#/components/schemas/TicketContenido' }
+        createdAt: { type: string, format: date-time }
+    RemitoItem:
+      type: object
+      properties:
+        id: { type: string }
+        descripcionOriginal: { type: string }
+        productoId: { type: string, nullable: true }
+        cantidad: { type: number }
+        precio: { type: number, nullable: true }
+        confianza: { type: number, description: Score 0-1 del match difuso. }
+        confirmado: { type: boolean }
+    Remito:
+      type: object
+      properties:
+        id: { type: string }
+        proveedor: { type: string, nullable: true }
+        proveedorId: { type: string, nullable: true }
+        fuente: { type: string, enum: [csv, foto, manual, pdf] }
+        estado: { type: string, example: procesado }
+        archivoNombre: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        items: { type: array, items: { $ref: '#/components/schemas/RemitoItem' } }
+    Usuario:
+      type: object
+      properties:
+        id: { type: string }
+        nombre: { type: string }
+        email: { type: string }
+        rol: { $ref: '#/components/schemas/Rol' }
+        activo: { type: boolean }
+        ultimo_login: { type: string, nullable: true, format: date-time }
+    Alerta:
+      type: object
+      properties:
+        id: { type: string }
+        tipo: { type: string, example: stock_bajo }
+        mensaje: { type: string }
+        leida: { type: boolean }
+        createdAt: { type: string, format: date-time }
+    SeriePunto:
+      type: object
+      properties:
+        dia: { type: string, description: 'Día `YYYY-MM-DD` o hora `YYYY-MM-DD HH24` si dias=1.' }
+        total: { type: number }
+        n: { type: integer }
+    TopProducto:
+      type: object
+      properties:
+        nombre: { type: string }
+        cantidad: { type: number }
+        total: { type: number }
+    FormaTotal:
+      type: object
+      properties:
+        formaPago: { $ref: '#/components/schemas/FormaPago' }
+        total: { type: number }
+        n: { type: integer }
+    MovimientoPanel:
+      type: object
+      properties:
+        id: { type: string }
+        monto: { type: number }
+        formaPago: { $ref: '#/components/schemas/FormaPago' }
+        createdAt: { type: string, format: date-time }
+        cliente: { type: string }
+        numero: { type: integer, nullable: true }
+        productos: { type: string, description: Nombres separados por coma. }
+    ColaPedido:
+      type: object
+      properties:
+        id: { type: string }
+        cliente: { type: string }
+        estado: { $ref: '#/components/schemas/PedidoEstado' }
+        createdAt: { type: string, format: date-time }
+        total: { type: number }
+        vendedor: { type: string, nullable: true }
+    DashboardResumen:
+      type: object
+      properties:
+        dias: { type: integer }
+        ventas: { type: number }
+        ventasPrev: { type: number }
+        tickets: { type: integer }
+        ticketsPrev: { type: integer }
+        ticketPromedio: { type: number }
+        enCola: { type: integer }
+        series: { type: array, items: { $ref: '#/components/schemas/SeriePunto' } }
+        top: { type: array, items: { $ref: '#/components/schemas/TopProducto' } }
+        formas: { type: array, items: { $ref: '#/components/schemas/FormaTotal' } }
+        movimientos: { type: array, items: { $ref: '#/components/schemas/MovimientoPanel' } }
+        cola: { type: array, items: { $ref: '#/components/schemas/ColaPedido' } }
+    TotalesCaja:
+      type: object
+      properties:
+        formaPago: { $ref: '#/components/schemas/FormaPago' }
+        total: { type: number }
+        n: { type: integer }
+    UltimoCobroCaja:
+      type: object
+      properties:
+        id: { type: string }
+        monto: { type: number }
+        formaPago: { $ref: '#/components/schemas/FormaPago' }
+        createdAt: { type: string, format: date-time }
+        cliente: { type: string }
+        numero: { type: integer, nullable: true }
+        facturaId: { type: string, nullable: true }
+        cae: { type: string, nullable: true }
+    CajaEstado:
+      type: object
+      properties:
+        id: { type: string }
+        abiertoAt: { type: string, format: date-time }
+        esperado: { type: number }
+        totales: { type: array, items: { $ref: '#/components/schemas/TotalesCaja' } }
+        ultimos: { type: array, items: { $ref: '#/components/schemas/UltimoCobroCaja' } }
+    CierreCajaResult:
+      type: object
+      properties:
+        diferencia: { type: number, description: real - esperado. }
+        esperado: { type: number }
+    AuditoriaItem:
+      type: object
+      properties:
+        id: { type: string }
+        usuarioNombre: { type: string, nullable: true }
+        accion: { type: string, example: cobro }
+        entidad: { type: string, example: cobro }
+        detalle: { type: string, description: JSON serializado. }
+        createdAt: { type: string, format: date-time }
+    OkResult:
+      type: object
+      properties:
+        ok: { type: boolean }
+        lineas: { type: integer, description: Sólo en confirmación de remito. }
+
+    DataPedido:
+      type: object
+      properties:
+        data: { $ref: '#/components/schemas/Pedido' }
+    DataPedidos:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/Pedido' } }
+    DataCobro:
+      type: object
+      properties:
+        data: { $ref: '#/components/schemas/CobroResult' }
+    DataTicket:
+      type: object
+      properties:
+        data: { $ref: '#/components/schemas/Ticket' }
+    DataClientes:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/Cliente' } }
+    DataClienteCreado:
+      type: object
+      properties:
+        data: { $ref: '#/components/schemas/ClienteCreado' }
+    DataCuentaCliente:
+      type: object
+      properties:
+        data: { $ref: '#/components/schemas/CuentaCliente' }
+    DataProductoId:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            id: { type: string }
+    DataRemitoId:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            id: { type: string }
+    DataRemito:
+      type: object
+      properties:
+        data: { $ref: '#/components/schemas/Remito' }
+    DataUsuarios:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/Usuario' } }
+    DataAlertas:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/Alerta' } }
+    DataDashboard:
+      type: object
+      properties:
+        data: { $ref: '#/components/schemas/DashboardResumen' }
+    DataCaja:
+      type: object
+      properties:
+        data: { $ref: '#/components/schemas/CajaEstado' }
+    DataCierre:
+      type: object
+      properties:
+        data: { $ref: '#/components/schemas/CierreCajaResult' }
+    DataAuditoria:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/AuditoriaItem' } }
+    DataOk:
+      type: object
+      properties:
+        data: { $ref: '#/components/schemas/OkResult' }

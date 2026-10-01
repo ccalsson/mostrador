@@ -94,6 +94,10 @@ function createNeonSql(): Promise<Sql> {
     types.setTypeParser(OID_DATE, identity);
     types.setTypeParser(OID_INTERVAL, identity);
     const pool = new Pool({ connectionString: databaseUrl });
+    // Neon drops idle connections (autosuspend, pooler churn). Without this
+    // listener pg re-emits the client error as an unhandled event -> process
+    // crash; the pool already discards the broken client and reconnects.
+    pool.on("error", (err) => console.error("[db] idle client error:", err.message));
     return toSql(async <T>(text: string, params: unknown[]) => {
       const res = await pool.query(text, params);
       return res.rows as T[];

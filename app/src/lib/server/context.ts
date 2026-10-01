@@ -49,10 +49,18 @@ export async function loadStaffByUserId(userId: string): Promise<Staff | null> {
   };
 }
 
+export class PermissionError extends Error {
+  readonly status = 403;
+  constructor() {
+    super("No tenés permiso para esta acción.");
+    this.name = "PermissionError";
+  }
+}
+
 export function assertRole(staff: Staff, roles: Rol[]) {
   if (staff.rol === "admin") return;
   if (!roles.includes(staff.rol)) {
-    throw new Error("No tenés permiso para esta acción.");
+    throw new PermissionError();
   }
 }
 
