@@ -1,0 +1,331 @@
+# MOSTRADOR — Plan de desarrollo y especificación técnica
+
+**ERP para puestos de frutas y verduras — Mercado Central (Argentina)**
+Versión 1.0 — Septiembre 2026
+
+---
+
+## 1. Resumen ejecutivo
+
+Mostrador es un ERP para puestos de venta mayorista en mercados centrales. Los vendedores toman pedidos desde tablets Android en el puesto, el cajero cobra y emite tickets desde PC Windows, y el dueño supervisa todo desde un dashboard con reportes, alertas y notificaciones push.
+
+El sistema funciona **con y sin internet**: los dispositivos se comunican por la red WiFi local del puesto (servidor local en la PC de caja) y sincronizan con la nube cuando hay conectividad.
+
+**Modelo comercial:** licencia perpetua por copia + implementación + mantenimiento anual. **No es SaaS**, pero la arquitectura es multi-tenant para replicar la instalación en futuros clientes.
+
+**Cliente fundador:** un puesto del Mercado Central (ya confirmado), que operará como caso piloto y vitrina comercial.
+
+---
+
+## 2. Objetivos del MVP (Fase 1)
+
+1. Vendedores toman pedidos por tablet (lista alfabética de productos, venta por bultos).
+2. Pedidos llegan en tiempo real a la bandeja del cajero.
+3. Cajero cobra (efectivo/transferencia/tarjeta/cuenta corriente) y emite ticket térmico **con solo los ítems efectivamente comprados**.
+4. Carga de stock por remito digital (PDF/Excel) u OCR (foto del remito en papel), con confirmación humana obligatoria.
+5. Dashboard del dueño: ventas del día, ticket promedio, alertas de stock, notificaciones push.
+6. Modo offline completo vía red WiFi local, con sincronización posterior.
+7. Trazabilidad: auditoría de todas las acciones por usuario.
+
+---
+
+## 3. Roles y permisos
+
+El administrador crea usuarios y asigna roles. Roles fijos del MVP:
+
+| Rol | Dispositivo | Permisos |
+|---|---|---|
+| **Administrador** (dueño) | PC / celular | Todo: ABM usuarios, productos, precios, remitos, reportes, cierre de caja, configuración del puesto |
+| **Cajero** | PC Windows | Ver bandeja de pedidos, cobrar, emitir tickets, cargar remitos, anular pedidos (queda auditado), cierre de caja |
+| **Vendedor** | Tablet Android | Tomar pedidos, ver stock disponible, ver estado de sus pedidos, duplicar pedidos |
+
+La tabla `usuarios.permisos_extra` (JSONB) permite overrides finos por usuario sin nuevos roles en el MVP.
+
+---
+
+## 4. Especificación funcional
+
+### 4.1 Autenticación y usuarios
+- Login con username + contraseña (hash bcrypt/argon2).
+- Sesión persistente en el dispositivo con renovación de token.
+- `usuarios.ultimo_login` para trazabilidad.
+- Alta/baja de usuarios solo por administrador.
+
+### 4.2 Catálogo de productos
+- **Sin categorías**: lista única ordenada alfabéticamente.
+- Búsqueda por texto sobre `lower(nombre)` (índice en la BD).
+- Campos: nombre, `precio_bulto` (ARS), `stock_bultos`, `stock_minimo` (umbral de alerta), `alias` (nombres alternativos usados por proveedores, para el match de remitos), activo.
+- ABM solo por administrador. El precio se versiona vía auditoría (cambios registrados).
+
+### 4.3 Pedidos (vendedor, tablet)
+- Buscador + lista alfabética; cada fila muestra nombre, precio/bulto y badge de stock bajo (stock ≤ stock_minimo).
+- Carrito con cantidad de bultos por producto (stepper +/−), total en vivo.
+- Datos del pedido: cliente (selector con alta rápida), nota opcional.
+- Acciones: enviar a caja, duplicar pedido anterior.
+- Estados del pedido: `borrador → enviado → en_preparacion → listo → cobrado / anulado / entregado`.
+- El vendedor ve el estado de sus pedidos en tiempo real.
+- **Offline:** el pedido queda encolado localmente con estado visible (ícono ⏳) y se envía automáticamente al reconectarse.
+
+### 4.4 Caja y cobros
+- Bandeja de pedidos entrantes en tiempo real (WebSocket), con sonido/avisador visual al llegar uno nuevo.
+- Vista de detalle del pedido antes de cobrar; el cajero puede modificar ítems (agregar/quitar/cantidades) — queda registrado en auditoría.
+- Cobro: forma de pago (`efectivo | transferencia | tarjeta | cuenta_corriente`), monto, monto_recibido y vuelto calculado (solo efectivo).
+- **Venta directa:** pedido creado por el cajero sin vendedor, para clientes de mostrador.
+- Anulación de pedido con motivo obligatorio → genera movimiento de stock inverso (`anulacion_venta`) y registro de auditoría.
+- Cierre de caja: totales por forma de pago, monto esperado vs. real, diferencia registrada.
+
+### 4.5 Tickets
+- Impresora térmica 80mm (USB o red) con corte automático; fallback a PDF descargable/compartible.
+- El ticket contiene **únicamente los productos efectivamente comprados** (snapshot en `tickets.contenido` JSONB).
+- Encabezado: nombre del puesto, fecha/hora, n° de ticket.
+- Pie: total, forma de pago, vuelto si aplica, texto configurable (`tenants.config`).
+- No es comprobante fiscal en el MVP (ver Fase 3).
+
+### 4.6 Inventario y remitos
+**Ledger único de stock.** `productos.stock_bultos` es un cache; la verdad está en `stock_movimientos` (todas las entradas/salidas: `entrada_remito`, `venta`, `anulacion_venta`, `ajuste`, `merma`). Cada movimiento lleva usuario, fecha y referencia.
+
+**Carga por remito (tres fuentes):**
+1. **PDF digital del proveedor** — el mayorista envía el remito; el sistema parsea el archivo.
+2. **Excel/CSV** — plantilla estándar de importación.
+3. **OCR** — foto del remito en papel, procesada **on-device** (Google ML Kit Text Recognition, sin requerir internet).
+
+**Flujo de procesamiento:**
+1. Parseo/OCR extrae líneas: descripción, cantidad, precio.
+2. Matching contra productos por `alias` + emparejamiento difuso (score `confianza_match` 0.00–1.00 guardado en `remito_items`).
+3. Pantalla de confirmación: el cajero/admin revisa, corrige matches y confirma línea por línea (`confirmado = true`).
+4. Al confirmar: movimiento `entrada_remito` en el ledger + remito archivado (`remitos.archivo_url`) como comprobante de compra.
+5. **Nunca se descarga stock sin confirmación humana.**
+
+### 4.7 Dashboard del dueño
+- Tarjetas KPI: ventas del día (con comparativa vs. ayer), ticket promedio, pedidos cobrados, pedidos en cola.
+- Gráfico ventas últimos 7 días (barras).
+- Top productos del día.
+- Alertas (ver 4.8) con estado leído/no leído.
+- Todo actualiza en vivo (WebSocket) con cada cobro.
+
+### 4.8 Alertas y notificaciones push
+Generadas por proceso programado (job) y por eventos:
+
+| Tipo | Disparador |
+|---|---|
+| `stock_bajo` | stock ≤ stock_minimo al confirmar remito o al vender |
+| `producto_sin_venta` | sin ventas en X días configurable |
+| `merma_alta` | mermas del día > umbral configurable |
+| `pedido_demorado` | pedido en `enviado/en_preparacion` por más de X minutos |
+| `caja_diferencia` | cierre con diferencia ≠ 0 |
+
+**Push (Firebase Cloud Messaging):** al celular del dueño/administrador — "Pedido #1042 de $123.800 cobrado", "Kiwi: stock bajo", etc. Tokens por dispositivo en `dispositivos.push_token`.
+
+### 4.9 Auditoría
+Toda acción sensible queda en `auditoria`: login, cobro, anulación, cambio de precio, ajuste de stock, modificación de pedido, cierre de caja. Campos: usuario, acción, entidad, detalle JSONB, timestamp.
+
+---
+
+## 5. Arquitectura técnica
+
+### 5.1 Visión general
+
+```
+[Vendedor: tablet Android]        [Cajero: PC Windows]
+   App Flutter (offline-first)       App Flutter
+        │ WiFi local (LAN)               │ WiFi local (LAN)
+        └───────────┬────────────────────┘
+                    ▼
+        ┌───────────────────────┐
+        │ SERVIDOR LOCAL        │   ← corre en la PC de caja (Docker)
+        │ Node.js API + WS      │   ← fuente de verdad cuando no hay internet
+        │ PostgreSQL (Docker)   │
+        └───────────┬───────────┘
+                    │ sync (cuando hay internet)
+                    ▼
+        ┌───────────────────────┐
+        │ NUBE                  │
+        │ PostgreSQL central    │   ← backup, multi-tenant, panel SaaS futuro
+        │ (VPS o managed)       │
+        └───────────────────────┘
+```
+
+**Decisión clave — servidor local (Opción A):** la PC de caja corre la API + PostgreSQL en Docker. Tablets y PC se conectan por la red WiFi del puesto con IP fija/local DNS (ej. `mostrador.local`). Sin internet el sistema opera al 100%. Al volver la conexión, un proceso de sincronización replica a la nube.
+
+> Alternativa evaluada y descartada: sincronización P2P entre dispositivos (más compleja, propensa a conflictos).
+
+### 5.2 Stack
+
+| Capa | Tecnología | Justificación |
+|---|---|---|
+| App vendedor (tablet) | **Flutter** (Android APK) | Offline nativo, OCR on-device, push |
+| App cajero (PC) | **Flutter** (Windows desktop) | Un solo código para ambas plataformas |
+| Backend API | **Node.js + NestJS** (TypeScript) | Tipado, ecosistema maduro, WebSockets integrados |
+| Tiempo real | **Socket.IO** | Pedidos a bandeja, KPIs en vivo |
+| Base de datos | **PostgreSQL 15+** | JSONB, índices, robustez; mismo esquema local y en nube |
+| OCR | **Google ML Kit** (on-device, vía plugin Flutter) | Sin internet, sin costo por uso |
+| Push | **Firebase Cloud Messaging** | Estándar en Android/Windows |
+| Impresión | Plugin ESC/POS vía plugin Flutter (USB/RAW 9100) | Impresoras térmicas 80mm estándar |
+| Contenedores | **Docker Compose** (API + PostgreSQL + pgbackrest) | Instalación idéntica en cada puesto |
+| Sync nube | Worker Node con cola (BullMQ) + endpoint de replicación | Ver 5.4 |
+
+### 5.3 Multi-tenant
+- Cada puesto = un `tenant_id`. **Toda tabla de negocio lleva `tenant_id`** (FK + índice compuesto).
+- RLS (Row Level Security) de PostgreSQL como defensa en profundidad: políticas `USING (tenant_id = current_setting('app.tenant'))`.
+- El esquema ya prevé `tenants.plan` y panel SaaS para la Fase 3, pero el MVP se despliega como instalación dedicada por puesto.
+
+### 5.4 Sincronización offline ↔ nube
+
+Principios:
+1. **Idempotencia:** cada pedido y cobro lleva `client_uuid` generado en el dispositivo (índice UNIQUE). Un reintento de sync nunca duplica registros.
+2. **Cola de salida:** la app guarda operaciones pendientes en SQLite local (Drift) y las envía en orden; el servidor aplica con upsert por `client_uuid`.
+3. **Conflicto de precios:** el servidor es la fuente de verdad para catálogo; la app refresca precios en cada sync y al abrir.
+4. **Resolución de conflictos de stock:** el ledger es append-only y los movimientos nunca se editan; un conflicto se resuelve aplicando ambos movimientos y recalculando el cache (nunca se pierde una venta).
+5. **Detección de cortes:** heartbeat WebSocket cada 10 s; al perder conexión, la app muestra indicador "modo local" y conmuta a la cola.
+6. **Backups:** snapshot PostgreSQL local a disco externo/USB diario + réplica en nube tras cada sync. Con `pgbackrest`.
+
+---
+
+## 6. Modelo de datos
+
+Ver archivo **`erp_schema.sql`** (18 taballas en 5 grupos). Puntos críticos:
+
+- `stock_movimientos`: ledger append-only, toda entrada/salida pasa por acá.
+- `remito_items`: guarda `descripcion_original` + `confianza_match` + `confirmado` (match supervisado).
+- `pedido_items.precio_unitario`: snapshot del precio al tomar el pedido (inmutabilidad histórica).
+- `tickets.contenido`: JSONB con solo lo comprado (el ticket sobrevive a borrados del catálogo).
+- `pedidos.client_uuid` / `cobros.client_uuid`: idempotencia offline.
+- `auditoria`: append-only.
+
+---
+
+## 7. API REST principal (extracto)
+
+Prefijo `/api/v1`. Auth: JWT con claims `tenant_id`, `rol`. Todos los endpoints filtran por tenant del token.
+
+| Método | Endpoint | Descripción |
+|---|---|---|
+| POST | `/auth/login` | Login, devuelve JWT + datos de usuario |
+| GET | `/productos?buscar=` | Lista alfabética con búsqueda y stock |
+| POST/PATCH | `/productos` | ABM (admin) |
+| POST | `/pedidos` | Crear pedido (acepta `client_uuid`; idempotente) |
+| GET | `/pedidos?estado=` | Bandeja por estado |
+| PATCH | `/pedidos/:id/estado` | Transiciones de estado (con validación de máquina de estados) |
+| POST | `/pedidos/:id/items` | Agregar/quitar ítems (caja) |
+| POST | `/cobros` | Registrar cobro (`client_uuid`; valida estado del pedido) |
+| POST | `/tickets/:cobroId/reimprimir` | Reimprimir |
+| POST | `/remitos` (multipart) | Subir PDF/foto/Excel |
+| POST | `/remitos/:id/procesar` | Ejecuta parser/OCR → devuelve items con match propuesto |
+| POST | `/remitos/:id/confirmar` | Confirma items → ledger |
+| GET | `/dashboard/resumen` | KPIs del día |
+| GET | `/dashboard/ventas?dias=7` | Series para gráficos |
+| GET | `/alertas` | Alertas del tenant |
+| POST | `/cierres-caja` | Abrir/cerrar caja |
+| GET | `/auditoria` | Log filtrable (admin) |
+| POST | `/sync/push` | Recibe operaciones encoladas del dispositivo (batch, idempotente) |
+| GET | `/sync/pull?desde=` | Devuelve cambios del servidor desde timestamp |
+
+**WebSocket events:** `pedido.nuevo`, `pedido.estado`, `pedido.cobrado`, `kpi.actualizado`, `alerta.nueva`.
+
+---
+
+## 8. Requerimientos no funcionales
+
+| Requisito | Especificación |
+|---|---|
+| Offline-first | 100% operativo sin internet en red local; sync automática tras reconexión |
+| Performance | Lista de productos < 300 ms con 500+ productos; bandeja actualizada < 1 s |
+| Disponibilidad | Auto-arranque del servidor local con la PC (servicio Windows + Docker restart: always) |
+| Seguridad | Bcrypt/argon2, JWT corto + refresh, RLS por tenant, HTTPS en nube, red local WPA2 |
+| Datos | Backup diario local + réplica en nube; export CSV del cliente siempre disponible |
+| Auditoría | 100% de acciones sensibles registradas |
+| Impresión | ESC/POS 80mm, fallback PDF |
+| Idioma | Español (Argentina), moneda ARS, formato `es-AR` |
+| Actualizaciones | La app se actualiza por descarga de nuevo instalador (Windows) / APK (Android); migraciones de BD automáticas |
+
+---
+
+## 9. UX — Wireframes aprobados
+
+Ver wireframes del documento de diseño (3 pantallas: Vendedor tablet, Cajero PC, Panel dueño). Decisiones UX confirmadas:
+- Lista de productos **alfabética, sin categorías**, buscador prominente.
+- Badge ⚠️ de stock bajo en el listado del vendedor.
+- Ticket con **solo lo comprado**.
+- Pedido → caja → ticket → dashboard en un flujo demostrable en < 1 minuto.
+
+---
+
+## 10. Infraestructura y despliegue
+
+**Por puesto (instalación dedicada):**
+- PC de caja (Windows 10/11, 8 GB RAM mínimo) con Docker Desktop o Docker Engine + WSL2.
+- `docker-compose.yml`: API Node, PostgreSQL 15, pgbackrest. Un comando instala todo.
+- Script de primer arranque: crea tenant, usuario admin inicial, carga de productos por CSV.
+- IP fija en la LAN del puesto; `mostrador.local` vía mDNS.
+- Impresora térmica 80mm compartida (USB en la PC o de red).
+
+**Nube (soporte):**
+- VPS modesto (2 vCPU / 4 GB) con PostgreSQL central + API de sync + FCM.
+- Almacenamiento de archivos (remitos PDF/fotos) en disco VPS o S3-compatible.
+
+**Dispositivos:**
+- Tablets Android 10"+ (una por vendedor), WiFi del puesto.
+- Opcional: celular del dueño con la app (modo solo-dashboard) para push.
+
+---
+
+## 11. Plan de trabajo y estimaciones
+
+| Fase | Contenido | Duración | Estimación |
+|---|---|---|---|
+| **Fase 1 — MVP** | Módulos 4.1–4.9 + sync offline + remito manual/PDF/OCR básico | 6–8 semanas | ~260 hs dev |
+| **Fase 2** | Reportes avanzados, comisiones, cuenta corriente, mermas detalladas, multi-sucursal simple | 4 semanas | ~140 hs |
+| **Fase 3** | Facturación electrónica AFIP (WSFEv1), panel SaaS multi-puesto, planes | 6–8 semanas | ~220 hs |
+
+**Equipo sugerido MVP:** 1 dev Flutter senior + 1 dev backend senior (pueden ser la misma persona en un MVP chico, sumando ~35–40 hs/semana), QA part-time a partir de la semana 5.
+
+**Entregables Fase 1:**
+1. Apps Android (APK) y Windows (instalador) firmadas.
+2. Servidor Docker con script de instalación + documentación de despliegue.
+3. Script de migración y carga inicial de productos.
+4. Documentación de usuario breve (1 página por rol, ideal para imprimir en el puesto).
+5. Manual de soporte técnico (instalación, backup, restauración, troubleshooting de red local).
+
+---
+
+## 12. Criterios de aceptación del MVP
+
+- [ ] Vendedor crea un pedido de 3 productos en < 30 segundos.
+- [ ] El pedido aparece en la bandeja del cajero en < 1 s (misma red).
+- [ ] Cobro en efectivo con cálculo de vuelto correcto y ticket impreso con solo los ítems comprados.
+- [ ] Corte de internet de 10 minutos: se toman pedidos y se cobra sin pérdida de datos; al volver, sync sin duplicados (verificable en auditoría).
+- [ ] Foto de remito de papel → items detectados → confirmación humana → stock actualizado y visible en la tablet.
+- [ ] Dashboard refleja el cobro en < 2 s y llega push al celular del dueño.
+- [ ] El administrador crea un usuario cajero y un vendedor; el vendedor no accede a funciones de caja.
+- [ ] Backup restorable demostrado en ambiente de prueba.
+
+---
+
+## 13. Riesgos y mitigaciones
+
+| Riesgo | Prob. | Mitigación |
+|---|---|---|
+| OCR con baja precisión en remitos manuscritos/da varios proveedores | Media | Match supervisado + alias por proveedor + mejora continua del diccionario; remito manual siempre disponible como fallback |
+| Cortes eléctricos en el mercado | Media | UPS para PC + router; app offline en tablets; sync al volver |
+| Nombres de productos inconsistentes entre mayoristas | Alta | Tabla `alias` + emparejamiento difuso + pantalla de confirmación |
+| Sincronización que duplica ventas | Media | Idempotencia por `client_uuid` (obligatorio, testeado) |
+| Cambios de AFIP en Fase 3 | Alta | Mantenimiento anual cubre actualizaciones; contratar dev con experiencia WSFEv1 |
+| Rotura/robo de tablet | Media | Sin datos sensibles en la tablet (solo cola cifrada), reemplazo = login en equipo nuevo |
+
+---
+
+## 14. Contexto comercial (para el equipo)
+
+- El cliente fundador paga implementación + licencia con descuento "cliente fundador"; a cambio es caso piloto y permite demostraciones a futuros compradores.
+- Cada venta futura = nueva instalación dedicada (nuevo tenant). El proceso de alta debe ser **replicable por un técnico no programador** (script + documentación).
+- Los datos son siempre del cliente final (cláusula contractual); el mantenimiento anual cubre hosting de respaldo, actualizaciones (incluida AFIP) y soporte.
+
+---
+
+## 15. Fuera de alcance (MVP)
+
+- Facturación electrónica AFIP (Fase 3).
+- E-commerce / pedidos de clientes por WhatsApp.
+- Integración con balanzas.
+- Multi-moneda, multi-idioma.
+- App iOS.

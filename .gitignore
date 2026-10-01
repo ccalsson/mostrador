@@ -1,0 +1,75 @@
+# --- Binarios y archivos de trabajo que no son parte del proyecto ---
+/Antigravity-x64.exe
+/grok-workspace.zip
+*.exe
+*.msi
+*.zip
+
+# --- Dependencias ---
+node_modules/
+.pnp
+.pnp.js
+
+# --- Secretos y configuración local ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+key.properties
+**/*.keystore
+**/*.jks
+
+# --- Salida de build y despliegue ---
+app/.vercel/
+.vercel/
+dist/
+build/
+.output/
+*.tsbuildinfo
+
+# --- Runtime y tooling del sandbox de Grok (ajeno al proyecto) ---
+# app-env.json sí se versiona: scripts/with-app-env.mjs lo necesita en runtime.
+app/.grok/preview.log
+app/.grok/status
+app/.grok/skills/
+app/.grok/references/
+app/.project_id
+app/.node_modules.lock
+*.log
+npm-debug.log*
+
+# --- Artefactos regenerables de QA y generación ---
+app/screenshots/
+app/artifacts/
+
+# --- Flutter / Dart ---
+**/.dart_tool/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/.pub-cache/
+**/.pub/
+**/doc/api/
+app/mostrador_flutter/build/
+app/mostrador_flutter/android/local.properties
+app/mostrador_flutter/android/.gradle/
+app/mostrador_flutter/android/app/debug/
+app/mostrador_flutter/android/app/profile/
+app/mostrador_flutter/android/app/release/
+app/mostrador_flutter/windows/flutter/ephemeral/
+
+# --- Editores y SO ---
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- PGlite local (base de datos efímera de desarrollo) ---
+app/*.pglite/
+app/data/pglite/
+.pglite/

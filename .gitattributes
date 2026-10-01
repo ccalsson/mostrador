@@ -1,0 +1,16 @@
+# Los fuentes del proyecto usan LF. Fijarlo evita que git reescriba finales de
+# línea en Windows y genere diffs espurios en cada checkout.
+* text=auto eol=lf
+
+# Binarios: nunca normalizar.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.jar binary
+*.wasm binary
+*.exe binary
+*.zip binary
+*.pdf binary
+*.ttf binary
+*.otf binary

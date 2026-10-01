@@ -1,0 +1,144 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Fraunces", "Times New Roman", serif;
+
+  --color-paper: #f3ede1;
+  --color-paper-2: #e7ddcc;
+  --color-surface: #fffaf2;
+  --color-ink: #1a1612;
+  --color-ink-soft: #3d352c;
+  --color-muted: #6d6559;
+  --color-line: #d6ccbb;
+  --color-leaf: #1b5e3b;
+  --color-leaf-2: #0f3d26;
+  --color-leaf-fg: #f4efe4;
+  --color-terra: #b5471a;
+  --color-ok: #2c6b45;
+  --color-warn-bg: #f4e1d4;
+  --color-ok-bg: #dce8e0;
+  --color-naranja: #c46b14;
+  --color-ambar: #c9a227;
+  --color-alerta: #9b2330;
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 20px;
+  --radius-xl: 28px;
+}
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    color-scheme: light;
+  }
+  html,
+  body,
+  #app {
+    min-height: 100%;
+    background: var(--color-paper);
+    color: var(--color-ink);
+  }
+  body {
+    font-family: var(--font-sans);
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+  p {
+    text-wrap: pretty;
+  }
+}
+
+html.dark {
+  color-scheme: dark;
+  --color-paper: #14110e;
+  --color-paper-2: #241e18;
+  --color-surface: #1c1814;
+  --color-ink: #f3ede1;
+  --color-ink-soft: #ddd2c3;
+  --color-muted: #b3a394;
+  --color-line: #3d342c;
+  --color-leaf: #3fa36e;
+  --color-leaf-2: #0e3324;
+  --color-leaf-fg: #f4efe4;
+  --color-terra: #e17a45;
+  --color-ok: #8fd4ae;
+  --color-warn-bg: #3a261e;
+  --color-ok-bg: #1a3328;
+  --color-naranja: #e39245;
+  --color-ambar: #e3c56a;
+  --color-alerta: #e07078;
+}
+
+html.dark select,
+html.dark textarea {
+  background-color: var(--color-surface);
+  color: var(--color-ink);
+}
+
+.ticket-80 {
+  font-family: ui-monospace, "Courier New", monospace;
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+@page {
+  size: A4;
+  margin: 12mm;
+}
+
+@page ticket {
+  size: 80mm auto;
+  margin: 2mm;
+}
+
+@media print {
+  html,
+  body,
+  #app {
+    background: white !important;
+  }
+  body * {
+    visibility: hidden;
+  }
+  #ticket-print,
+  #ticket-print *,
+  #factura-print,
+  #factura-print * {
+    visibility: visible;
+  }
+  #ticket-print {
+    page: ticket;
+    position: absolute;
+    left: 0 !important;
+    top: 0 !important;
+    width: 76mm;
+    margin: 0;
+    padding: 0 1mm 8mm;
+    background: white;
+    color: black;
+    font-family: ui-monospace, "Courier New", monospace;
+    font-size: 12px;
+    line-height: 1.25;
+  }
+  #factura-print {
+    position: absolute;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100%;
+    background: white;
+    color: black;
+  }
+}

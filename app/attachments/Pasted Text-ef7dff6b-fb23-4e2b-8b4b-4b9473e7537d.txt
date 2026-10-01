@@ -1,0 +1,267 @@
+Quiero que implementes sobre la aplicación EXISTENTE dos nuevos módulos: Clientes y Proveedores.
+
+IMPORTANTE:
+
+- NO reconstruyas la aplicación.
+- NO modifiques innecesariamente funcionalidades existentes.
+- Primero analizá la arquitectura, modelos, navegación, autenticación y base de datos actuales.
+- Reutilizá componentes, estilos, servicios y patrones ya existentes.
+- Mantené la arquitectura y convenciones actuales del proyecto.
+- Antes de crear nuevas tablas o estructuras, verificá si ya existe información/modelos reutilizables.
+- Priorizá una implementación simple, eficiente y de bajo costo de infraestructura.
+- No agregues funcionalidades que no estén solicitadas.
+
+1. MÓDULO CLIENTES
+
+El módulo Clientes debe permitir gestionar los clientes del negocio y, además, proporcionar al cliente una interfaz propia para consultar productos y realizar pedidos.
+
+1.1 Perfil del cliente
+
+Implementar:
+
+- Registro/inicio de sesión.
+- Perfil del cliente.
+- Datos básicos de contacto.
+- Datos comerciales que ya utilice el sistema.
+- Edición de sus datos permitidos.
+
+1.2 Catálogo
+
+El cliente debe poder:
+
+- Ver los productos disponibles.
+.
+- Buscar productos.
+- Consultar precio.
+- Consultar disponibilidad/stock cuando corresponda.
+- Ver imagen del producto si ya existe en el sistema.
+
+IMPORTANTE:
+Reutilizar el catálogo y los productos existentes. No duplicar innecesariamente productos en otra estructura.
+
+1.3 Carrito
+
+Implementar:
+
+- Agregar productos.
+- Modificar cantidades.
+- Eliminar productos.
+- Mostrar subtotal.
+- Mostrar total.
+- Confirmar pedido.
+
+1.4 Pedidos
+
+El cliente debe poder:
+
+- Crear un pedido.
+- Consultar sus pedidos.
+- Ver el detalle de cada pedido.
+- Ver el estado del pedido.
+- Consultar pedidos anteriores.
+
+Utilizar los estados de pedido existentes si ya están implementados.
+
+No crear un sistema paralelo de pedidos si el sistema actual ya dispone de uno.
+
+1.5 Historial
+
+Permitir al cliente consultar:
+
+- Pedidos anteriores.
+- Compras realizadas, si esa información ya existe en el sistema.
+
+1.6 Cuenta corriente
+
+Antes de implementarla, verificar si el sistema actual ya maneja cuentas corrientes.
+
+Si existe:
+
+- Mostrar saldo.
+- Mostrar movimientos.
+- Mostrar información disponible para el cliente.
+
+Si actualmente NO existe una cuenta corriente funcional, NO desarrollar un sistema contable nuevo. Dejar la estructura preparada solamente si resulta necesaria para el módulo.
+
+1.7 Precios particulares
+
+Si el sistema actual permite manejar diferentes precios por cliente, utilizar esa lógica.
+
+El cliente debe visualizar el precio que le corresponde.
+
+No crear un sistema complejo de listas de precios si actualmente no existe.
+
+2. MÓDULO PROVEEDORES
+
+El módulo Proveedores será EXCLUSIVAMENTE para el tablero del dueño/administrador.
+
+NO debe aparecer en la interfaz del cliente.
+
+NO debe estar disponible para usuarios comunes salvo que los permisos actuales del sistema permitan expresamente el acceso administrativo.
+
+2.1 Gestión de proveedores
+
+Desde el tablero del dueño:
+
+- Listar proveedores.
+- Crear proveedor.
+- Editar proveedor.
+- Activar/desactivar proveedor.
+- Buscar proveedor.
+- Consultar información del proveedor.
+
+Utilizar los campos y convenciones que ya maneje la aplicación.
+
+Como mínimo contemplar, si corresponde:
+
+- Nombre/razón social.
+- CUIT/DNI.
+- Teléfono.
+- Email.
+- Dirección.
+- Observaciones.
+
+No agregar campos innecesarios si no son utilizados por el negocio.
+
+2.2 Productos asociados
+
+Permitir consultar qué productos están relacionados con cada proveedor cuando esa relación resulte útil y sea compatible con el modelo de datos existente.
+
+No duplicar información de productos.
+
+2.3 Compras
+
+Si la aplicación ya posee funcionalidad de compras, integrar proveedores con ese módulo.
+
+Si NO existe todavía un módulo de compras completo:
+
+- No desarrollar un sistema de compras complejo.
+- Implementar únicamente la estructura necesaria para que el proveedor pueda quedar asociado a las operaciones existentes, si corresponde.
+
+3. TABLERO DEL DUEÑO
+
+El dueño debe poder acceder a:
+
+- Clientes.
+- Proveedores.
+- Productos.
+- Stock.
+- Ventas.
+- Pedidos.
+- Reportes que ya existan.
+
+Agregar Clientes y Proveedores respetando la navegación actual.
+
+No rediseñar todo el dashboard.
+
+4. BASE DE DATOS
+
+Antes de modificar la base:
+
+1. Inspeccionar las tablas existentes.
+2. Identificar modelos relacionados con usuarios, productos, pedidos y ventas.
+3. Reutilizar relaciones existentes.
+4. Crear únicamente las tablas/campos necesarios.
+5. Evitar duplicación de datos.
+6. Mantener integridad referencial.
+7. Mantener las políticas de seguridad existentes.
+8. Si se utiliza Supabase, respetar y revisar las políticas RLS.
+
+5. COSTOS Y RENDIMIENTO
+
+La aplicación debe minimizar consultas innecesarias a la base de datos.
+
+Para el módulo Cliente:
+
+- No consultar nuevamente todo el catálogo cada vez que el usuario navega.
+- Aprovechar caché/local storage cuando sea técnicamente conveniente.
+- Sincronizar los datos que realmente necesiten actualización.
+- Evitar consultas repetitivas.
+- No implementar un sistema de caché complejo si la arquitectura existente ya tiene una solución adecuada.
+
+Separar conceptualmente:
+
+Datos que pueden permanecer en caché:
+
+- Catálogo.
+- Categorías.
+- Imágenes.
+- Información que no cambia frecuentemente.
+
+Datos que deben mantenerse actualizados:
+
+- Stock.
+- Estado de pedidos.
+- Saldo.
+- Cambios relevantes de precios.
+
+La solución final debe priorizar bajo consumo de lecturas y una experiencia rápida.
+
+6. NOTIFICACIONES
+
+Si el sistema actual ya posee infraestructura de notificaciones, reutilizarla para eventos relacionados con pedidos.
+
+No incorporar un nuevo proveedor de notificaciones si no es necesario.
+
+7. SEGURIDAD
+
+Verificar que:
+
+- Un cliente solamente pueda acceder a sus propios datos.
+- Un cliente solamente pueda consultar sus propios pedidos.
+- Un cliente no pueda acceder a información de otros clientes.
+- Los proveedores solamente sean visibles desde el tablero administrativo.
+- Los datos administrativos no estén expuestos al cliente.
+- Se respeten los roles y permisos existentes.
+
+8. EXPERIENCIA DE USUARIO
+
+Mantener exactamente el lenguaje visual y los componentes existentes.
+
+No introducir una interfaz completamente diferente.
+
+El flujo del cliente debe ser simple:
+
+Ingresar → Ver catálogo → Elegir productos → Carrito → Confirmar pedido → Ver estado
+
+El flujo administrativo debe ser:
+
+Dueño → Clientes / Proveedores → Consultar / gestionar información
+
+9. COMPATIBILIDAD
+
+La implementación debe funcionar con la arquitectura y plataformas actuales de la aplicación.
+
+No realizar migraciones tecnológicas ni cambiar de framework, backend o base de datos salvo que sea estrictamente necesario.
+
+10. VALIDACIÓN FINAL
+
+Antes de finalizar:
+
+- Verificar que las funcionalidades actuales sigan funcionando.
+- Probar registro/login de cliente.
+- Probar catálogo.
+- Probar carrito.
+- Probar creación de pedido.
+- Probar historial.
+- Probar acceso del dueño a Clientes.
+- Probar CRUD de Proveedores.
+- Verificar permisos.
+- Verificar que un cliente no pueda acceder a Proveedores.
+- Verificar consultas y escrituras en la base.
+- Revisar posibles consultas redundantes.
+- Revisar errores de compilación.
+- Revisar errores de runtime.
+
+Al finalizar, entregame un resumen de:
+
+1. Archivos modificados.
+2. Tablas/campos creados o modificados.
+3. Funcionalidades agregadas.
+4. Cambios realizados en permisos/RLS.
+5. Consultas relevantes a la base.
+6. Estrategia de caché/sincronización utilizada.
+7. Problemas encontrados.
+8. Pendientes, si los hubiera.
+
+No agregues funcionalidades fuera de este alcance.
