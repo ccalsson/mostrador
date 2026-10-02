@@ -6,6 +6,7 @@ import '../../features/admin/admin_screen.dart';
 import '../../features/auth/login_screen.dart';
 import '../../features/auth/session_screen.dart';
 import '../../features/caja/caja_screen.dart';
+import '../../features/pedidos/pedido_detalle_screen.dart';
 import '../../features/vendedor/vendedor_screen.dart';
 import '../../models/staff_session.dart';
 import '../auth/auth_controller.dart';
@@ -32,6 +33,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),
       GoRoute(path: '/session', builder: (context, state) => const SessionScreen()),
       GoRoute(path: '/vendedor', builder: (context, state) => const VendedorScreen()),
+      GoRoute(
+        path: '/vendedor/pedido/:id',
+        builder: (context, state) =>
+            PedidoDetalleScreen(pedidoId: state.pathParameters['id']!),
+      ),
       GoRoute(path: '/caja', builder: (context, state) => const CajaScreen()),
       GoRoute(path: '/admin', builder: (context, state) => const AdminScreen()),
     ],

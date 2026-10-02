@@ -5,9 +5,11 @@ import '../../core/auth/auth_controller.dart';
 import '../../models/staff_session.dart';
 import '../../services/catalogo_service.dart';
 import '../catalog/catalogo_screen.dart';
+import '../carrito/carrito_pane.dart';
 
 /// Shell adaptativo por plataforma: navegación inferior en Android,
-/// riel lateral en Windows. Fase 2 expone dos destinos: Catálogo y Sesión.
+/// riel lateral en Windows. El vendedor suma el destino Carrito; Caja y
+/// Dueño mantienen Catálogo y Sesión (Fase 2).
 class AdaptiveShell extends ConsumerStatefulWidget {
   const AdaptiveShell({super.key, required this.rol});
 
@@ -25,24 +27,35 @@ class _Destino {
   final String etiqueta;
 }
 
-const _destinos = [
-  _Destino(Icons.inventory_2_outlined, Icons.inventory_2, 'Catálogo'),
-  _Destino(Icons.badge_outlined, Icons.badge, 'Sesión'),
-];
+const _destinoCatalogo =
+    _Destino(Icons.inventory_2_outlined, Icons.inventory_2, 'Catálogo');
+const _destinoCarrito =
+    _Destino(Icons.shopping_cart_outlined, Icons.shopping_cart, 'Carrito');
+const _destinoSesion =
+    _Destino(Icons.badge_outlined, Icons.badge, 'Sesión');
 
 class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
   int _destino = 0;
 
   void _seleccionar(int indice) => setState(() => _destino = indice);
 
-  Widget _pantalla() => switch (_destino) {
-    0 => const CatalogoScreen(),
-    _ => const _SesionPane(),
-  };
+  List<_Destino> get _destinos => widget.rol == Rol.vendedor
+      ? const [_destinoCatalogo, _destinoCarrito, _destinoSesion]
+      : const [_destinoCatalogo, _destinoSesion];
+
+  Widget _pantalla() {
+    final esVendedor = widget.rol == Rol.vendedor;
+    return switch (_destino) {
+      0 => const CatalogoScreen(),
+      1 when esVendedor => const CarritoPane(),
+      _ => const _SesionPane(),
+    };
+  }
 
   @override
   Widget build(BuildContext context) {
     final sesion = ref.watch(authControllerProvider).sesion;
+    final destinos = _destinos;
     final plataforma = Theme.of(context).platform;
     final esMovil = plataforma == TargetPlatform.android ||
         plataforma == TargetPlatform.iOS;
@@ -81,7 +94,7 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
                   onDestinationSelected: _seleccionar,
                   labelType: NavigationRailLabelType.all,
                   destinations: [
-                    for (final d in _destinos)
+                    for (final d in destinos)
                       NavigationRailDestination(
                         icon: Icon(d.icono),
                         selectedIcon: Icon(d.iconoActivo),
@@ -98,7 +111,7 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
               selectedIndex: _destino,
               onDestinationSelected: _seleccionar,
               destinations: [
-                for (final d in _destinos)
+                for (final d in destinos)
                   NavigationDestination(
                     icon: Icon(d.icono),
                     selectedIcon: Icon(d.iconoActivo),

@@ -2,17 +2,23 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/errors/api_exceptions.dart';
+import '../../core/format.dart';
+import '../../core/auth/auth_controller.dart';
 import '../../models/producto.dart';
+import '../../models/staff_session.dart';
 import '../../services/catalogo_service.dart';
+import '../carrito/carrito_controller.dart';
 
-/// Catálogo read-only (primer vertical slice). El servidor decide qué ve cada
-/// rol; acá sólo se muestra.
+/// Catálogo compartido por todos los roles. El vendedor además puede agregar
+/// productos al carrito; el servidor decide qué ve cada rol.
 class CatalogoScreen extends ConsumerWidget {
   const CatalogoScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final catalogo = ref.watch(catalogoProvider);
+    final rol = ref.watch(authControllerProvider).sesion?.staff.rol;
+    final puedeAgregar = rol == Rol.vendedor;
     return catalogo.when(
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (error, _) => _ErrorCatalogo(
@@ -41,7 +47,23 @@ class CatalogoScreen extends ConsumerWidget {
                 version: data.version,
               );
             }
-            return _ProductoTile(producto: data.productos[index]);
+            final producto = data.productos[index];
+            return _ProductoTile(
+              producto: producto,
+              onAgregar: puedeAgregar && producto.activo
+                  ? () {
+                      ref
+                          .read(carritoControllerProvider.notifier)
+                          .agregar(producto);
+                      ScaffoldMessenger.of(context)
+                        ..removeCurrentSnackBar()
+                        ..showSnackBar(SnackBar(
+                          content: Text('${producto.nombre} agregado al carrito'),
+                          duration: const Duration(seconds: 1),
+                        ));
+                    }
+                  : null,
+            );
           },
         ),
       ),
@@ -50,21 +72,37 @@ class CatalogoScreen extends ConsumerWidget {
 }
 
 class _ProductoTile extends StatelessWidget {
-  const _ProductoTile({required this.producto});
+  const _ProductoTile({required this.producto, this.onAgregar});
 
   final Producto producto;
+  final VoidCallback? onAgregar;
 
   @override
   Widget build(BuildContext context) {
+    final estado = _estado(producto);
     return ListTile(
       key: Key('producto_${producto.id}'),
       enabled: producto.activo,
       title: Text(producto.nombre),
       subtitle: Text(
-        '${_moneda(producto.precio)} / ${producto.unidadLabel}'
-        ' · Stock: ${_cantidad(producto.stock)} ${producto.unidadLabel}',
+        '${moneda(producto.precio)} / ${producto.unidadLabel}'
+        ' · Stock: ${cantidadNum(producto.stock)} ${producto.unidadLabel}',
       ),
-      trailing: _estado(producto),
+      trailing: (estado == null && onAgregar == null)
+          ? null
+          : Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ?estado,
+                if (onAgregar != null)
+                  IconButton(
+                    key: Key('agregar_${producto.id}'),
+                    tooltip: 'Agregar al carrito',
+                    onPressed: onAgregar,
+                    icon: const Icon(Icons.add_circle_outline),
+                  ),
+              ],
+            ),
     );
   }
 
@@ -128,13 +166,4 @@ class _ErrorCatalogo extends StatelessWidget {
       ),
     );
   }
-}
-
-String _moneda(double valor) =>
-    '\$${valor.toStringAsFixed(2).replaceAll('.', ',')}';
-
-String _cantidad(double valor) {
-  final redondeado = valor.roundToDouble();
-  if (redondeado == valor) return redondeado.toStringAsFixed(0);
-  return valor.toStringAsFixed(2).replaceAll('.', ',');
 }
