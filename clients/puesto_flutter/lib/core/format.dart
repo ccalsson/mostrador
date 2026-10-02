@@ -7,3 +7,7 @@ String cantidadNum(double valor) {
   if (redondeado == valor) return redondeado.toStringAsFixed(0);
   return valor.toStringAsFixed(2).replaceAll('.', ',');
 }
+
+/// Las fechas llegan como texto de Postgres (`2026-10-01 18:04:05.123+00`).
+String fechaCorta(String valor) =>
+    valor.length >= 16 ? valor.substring(0, 16) : valor;

@@ -34,6 +34,9 @@ class _PedidosFake implements PedidosService {
 
   @override
   Future<List<Pedido>> listar({bool mine = false}) async => const [];
+
+  @override
+  Future<void> entregar(String id) async {}
 }
 
 Pedido _pedido({required String id, required String clientUuid}) => Pedido(

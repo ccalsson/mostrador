@@ -6,10 +6,11 @@ import '../../models/staff_session.dart';
 import '../../services/catalogo_service.dart';
 import '../catalog/catalogo_screen.dart';
 import '../carrito/carrito_pane.dart';
+import '../pedidos/pedidos_pane.dart';
 
 /// Shell adaptativo por plataforma: navegación inferior en Android,
-/// riel lateral en Windows. El vendedor suma el destino Carrito; Caja y
-/// Dueño mantienen Catálogo y Sesión (Fase 2).
+/// riel lateral en Windows. El vendedor suma Carrito y Pedidos; Caja y
+/// Dueño mantienen Catálogo y Sesión.
 class AdaptiveShell extends ConsumerStatefulWidget {
   const AdaptiveShell({super.key, required this.rol});
 
@@ -31,6 +32,8 @@ const _destinoCatalogo =
     _Destino(Icons.inventory_2_outlined, Icons.inventory_2, 'Catálogo');
 const _destinoCarrito =
     _Destino(Icons.shopping_cart_outlined, Icons.shopping_cart, 'Carrito');
+const _destinoPedidos =
+    _Destino(Icons.receipt_long_outlined, Icons.receipt_long, 'Pedidos');
 const _destinoSesion =
     _Destino(Icons.badge_outlined, Icons.badge, 'Sesión');
 
@@ -40,7 +43,7 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
   void _seleccionar(int indice) => setState(() => _destino = indice);
 
   List<_Destino> get _destinos => widget.rol == Rol.vendedor
-      ? const [_destinoCatalogo, _destinoCarrito, _destinoSesion]
+      ? const [_destinoCatalogo, _destinoCarrito, _destinoPedidos, _destinoSesion]
       : const [_destinoCatalogo, _destinoSesion];
 
   Widget _pantalla() {
@@ -48,6 +51,7 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
     return switch (_destino) {
       0 => const CatalogoScreen(),
       1 when esVendedor => const CarritoPane(),
+      2 when esVendedor => const PedidosPane(),
       _ => const _SesionPane(),
     };
   }
