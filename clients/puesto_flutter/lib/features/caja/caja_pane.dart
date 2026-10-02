@@ -6,10 +6,12 @@ import '../../core/format.dart';
 import '../../models/cobro.dart';
 import '../../models/pedido.dart';
 import '../../services/pedidos_service.dart';
+import 'caja_estado_pane.dart';
 import 'cobro_controller.dart';
 import 'cobro_dialog.dart';
 import 'edicion_items_controller.dart';
 import 'editar_items_dialog.dart';
+import 'error_caja.dart';
 import 'ticket_dialog.dart';
 
 /// Filtro de la lista de caja; cada opción mapea al `?estados=` del contrato.
@@ -24,8 +26,19 @@ enum CajaFiltro {
   final String label;
 }
 
-/// Caja (desktop): pedidos a la izquierda, detalle con cobro a la derecha.
-/// Sólo usa las rutas del contrato v1; ningún estado se inventa localmente.
+/// Vistas del área Caja: pedidos (cobro) y estado del turno.
+enum CajaVista {
+  pedidos('Pedidos'),
+  estado('Estado de caja');
+
+  const CajaVista(this.label);
+
+  final String label;
+}
+
+/// Caja (desktop): vista de pedidos (lista a la izquierda, detalle con cobro a
+/// la derecha) y vista del estado del turno. Sólo usa las rutas del contrato
+/// v1; ningún estado ni valor se inventa localmente.
 class CajaPane extends ConsumerStatefulWidget {
   const CajaPane({super.key});
 
@@ -34,11 +47,43 @@ class CajaPane extends ConsumerStatefulWidget {
 }
 
 class _CajaPaneState extends ConsumerState<CajaPane> {
+  CajaVista _vista = CajaVista.pedidos;
   CajaFiltro _filtro = CajaFiltro.porCobrar;
   String? _seleccionado;
 
   @override
   Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+          child: Row(
+            children: [
+              SegmentedButton<CajaVista>(
+                key: const Key('caja_vista'),
+                segments: [
+                  for (final vista in CajaVista.values)
+                    ButtonSegment(value: vista, label: Text(vista.label)),
+                ],
+                selected: {_vista},
+                onSelectionChanged: (seleccion) =>
+                    setState(() => _vista = seleccion.first),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: switch (_vista) {
+            CajaVista.pedidos => _vistaPedidos(context, ref),
+            CajaVista.estado => const CajaEstadoPane(),
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _vistaPedidos(BuildContext context, WidgetRef ref) {
     final pedidos = ref.watch(pedidosCajaProvider(_filtro.estados));
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -104,7 +149,7 @@ class _CajaPaneState extends ConsumerState<CajaPane> {
     final lista = pedidos.value;
     if (lista == null) {
       final error = pedidos.error;
-      return _ErrorCaja(
+      return ErrorCaja(
         mensaje: error is ApiException
             ? error.message
             : 'No se pudieron cargar los pedidos.',
@@ -207,7 +252,7 @@ class _CajaDetalle extends ConsumerWidget {
     final pedido = detalle.value;
     if (pedido == null) {
       final error = detalle.error;
-      return _ErrorCaja(
+      return ErrorCaja(
         mensaje: error is ApiException
             ? error.message
             : 'No se pudo cargar el pedido.',
@@ -379,39 +424,6 @@ class _ExitoCobro extends StatelessWidget {
             ],
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _ErrorCaja extends StatelessWidget {
-  const _ErrorCaja({
-    required this.mensaje,
-    required this.onReintentar,
-    this.claveReintentar = const Key('caja_reintentar'),
-  });
-
-  final String mensaje;
-  final VoidCallback onReintentar;
-  final Key claveReintentar;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.cloud_off_outlined,
-              size: 56, color: Theme.of(context).colorScheme.outline),
-          const SizedBox(height: 12),
-          Text(mensaje, textAlign: TextAlign.center),
-          const SizedBox(height: 16),
-          FilledButton.tonal(
-            key: claveReintentar,
-            onPressed: onReintentar,
-            child: const Text('Reintentar'),
-          ),
-        ],
       ),
     );
   }
