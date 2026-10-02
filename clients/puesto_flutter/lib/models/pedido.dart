@@ -24,6 +24,18 @@ enum PedidoEstado {
       _ => throw FormatException('Estado de pedido desconocido: $value'),
     };
   }
+
+  /// `POST /pedidos/:id/cobrar` rechaza cobrados y anulados; un entregado ya
+  /// pasó por caja, así que la UI tampoco ofrece cobrarlo.
+  bool get cobrable =>
+      this != PedidoEstado.cobrado &&
+      this != PedidoEstado.anulado &&
+      this != PedidoEstado.entregado;
+
+  /// `POST /pedidos/:id/items` rechaza cobrados y anulados
+  /// ("Este pedido ya no se puede editar.").
+  bool get editable =>
+      this != PedidoEstado.cobrado && this != PedidoEstado.anulado;
 }
 
 /// Línea de pedido tal como la devuelve el backend (subtotal incluido).

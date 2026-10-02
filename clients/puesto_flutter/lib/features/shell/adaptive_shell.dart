@@ -4,13 +4,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/auth/auth_controller.dart';
 import '../../models/staff_session.dart';
 import '../../services/catalogo_service.dart';
+import '../caja/caja_pane.dart';
 import '../catalog/catalogo_screen.dart';
 import '../carrito/carrito_pane.dart';
 import '../pedidos/pedidos_pane.dart';
 
 /// Shell adaptativo por plataforma: navegación inferior en Android,
-/// riel lateral en Windows. El vendedor suma Carrito y Pedidos; Caja y
-/// Dueño mantienen Catálogo y Sesión.
+/// riel lateral en Windows. El vendedor suma Carrito y Pedidos; el cajero
+/// suma Caja; Dueño mantiene Catálogo y Sesión.
 class AdaptiveShell extends ConsumerStatefulWidget {
   const AdaptiveShell({super.key, required this.rol});
 
@@ -34,6 +35,8 @@ const _destinoCarrito =
     _Destino(Icons.shopping_cart_outlined, Icons.shopping_cart, 'Carrito');
 const _destinoPedidos =
     _Destino(Icons.receipt_long_outlined, Icons.receipt_long, 'Pedidos');
+const _destinoCaja =
+    _Destino(Icons.point_of_sale_outlined, Icons.point_of_sale, 'Caja');
 const _destinoSesion =
     _Destino(Icons.badge_outlined, Icons.badge, 'Sesión');
 
@@ -42,16 +45,23 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
 
   void _seleccionar(int indice) => setState(() => _destino = indice);
 
-  List<_Destino> get _destinos => widget.rol == Rol.vendedor
-      ? const [_destinoCatalogo, _destinoCarrito, _destinoPedidos, _destinoSesion]
-      : const [_destinoCatalogo, _destinoSesion];
+  List<_Destino> get _destinos => switch (widget.rol) {
+        Rol.vendedor => const [
+            _destinoCatalogo,
+            _destinoCarrito,
+            _destinoPedidos,
+            _destinoSesion,
+          ],
+        Rol.cajero => const [_destinoCatalogo, _destinoCaja, _destinoSesion],
+        _ => const [_destinoCatalogo, _destinoSesion],
+      };
 
   Widget _pantalla() {
-    final esVendedor = widget.rol == Rol.vendedor;
-    return switch (_destino) {
-      0 => const CatalogoScreen(),
-      1 when esVendedor => const CarritoPane(),
-      2 when esVendedor => const PedidosPane(),
+    return switch ((widget.rol, _destino)) {
+      (_, 0) => const CatalogoScreen(),
+      (Rol.vendedor, 1) => const CarritoPane(),
+      (Rol.vendedor, 2) => const PedidosPane(),
+      (Rol.cajero, 1) => const CajaPane(),
       _ => const _SesionPane(),
     };
   }

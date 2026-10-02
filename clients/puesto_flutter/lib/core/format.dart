@@ -11,3 +11,14 @@ String cantidadNum(double valor) {
 /// Las fechas llegan como texto de Postgres (`2026-10-01 18:04:05.123+00`).
 String fechaCorta(String valor) =>
     valor.length >= 16 ? valor.substring(0, 16) : valor;
+
+/// Convierte texto del operador en decimal seguro: acepta `,` o `.` como
+/// separador y hasta dos decimales; rechaza agrupadores de miles (`1.500`).
+double? parseDecimal(String entrada) {
+  final texto = entrada.trim().replaceAll(',', '.');
+  if (!RegExp(r'^\d+(\.\d{1,2})?$').hasMatch(texto)) return null;
+  return double.tryParse(texto);
+}
+
+/// Redondeo a dos decimales, igual que el backend (`round(v * 100) / 100`).
+double redondear2(double valor) => (valor * 100).roundToDouble() / 100;

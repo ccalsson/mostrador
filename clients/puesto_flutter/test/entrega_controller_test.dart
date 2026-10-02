@@ -2,7 +2,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:puesto_flutter/core/errors/api_exceptions.dart';
 import 'package:puesto_flutter/features/pedidos/entrega_controller.dart';
+import 'package:puesto_flutter/models/cobro.dart';
 import 'package:puesto_flutter/models/pedido.dart';
+import 'package:puesto_flutter/models/ticket.dart';
 import 'package:puesto_flutter/services/pedidos_service.dart';
 
 class _PedidosFake implements PedidosService {
@@ -32,7 +34,7 @@ class _PedidosFake implements PedidosService {
   }
 
   @override
-  Future<List<Pedido>> listar({bool mine = false}) async {
+  Future<List<Pedido>> listar({bool mine = false, String? estados}) async {
     final fallo = listarError;
     if (fallo != null) throw fallo;
     return pedidos;
@@ -46,6 +48,25 @@ class _PedidosFake implements PedidosService {
     String? nota,
   }) async =>
       throw UnimplementedError();
+
+  @override
+  Future<CobroResultado> cobrar(
+    String id, {
+    required String clientUuid,
+    required FormaPago formaPago,
+    double? montoRecibido,
+  }) async =>
+      throw UnimplementedError();
+
+  @override
+  Future<Pedido> actualizarItems(
+    String id,
+    List<({String productoId, double cantidad})> items,
+  ) async =>
+      throw UnimplementedError();
+
+  @override
+  Future<Ticket> ticket(String cobroId) async => throw UnimplementedError();
 }
 
 Pedido _pedido(String id, {PedidoEstado estado = PedidoEstado.cobrado}) => Pedido(

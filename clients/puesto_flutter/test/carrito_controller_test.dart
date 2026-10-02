@@ -4,8 +4,10 @@ import 'package:puesto_flutter/core/errors/api_exceptions.dart';
 import 'package:puesto_flutter/core/ids.dart';
 import 'package:puesto_flutter/features/carrito/carrito_controller.dart';
 import 'package:puesto_flutter/models/carrito.dart';
+import 'package:puesto_flutter/models/cobro.dart';
 import 'package:puesto_flutter/models/pedido.dart';
 import 'package:puesto_flutter/models/producto.dart';
+import 'package:puesto_flutter/models/ticket.dart';
 import 'package:puesto_flutter/services/pedidos_service.dart';
 
 class _PedidosFake implements PedidosService {
@@ -33,10 +35,29 @@ class _PedidosFake implements PedidosService {
   Future<Pedido> detalle(String id) async => _pedido(id: id, clientUuid: id);
 
   @override
-  Future<List<Pedido>> listar({bool mine = false}) async => const [];
+  Future<List<Pedido>> listar({bool mine = false, String? estados}) async => const [];
 
   @override
   Future<void> entregar(String id) async {}
+
+  @override
+  Future<CobroResultado> cobrar(
+    String id, {
+    required String clientUuid,
+    required FormaPago formaPago,
+    double? montoRecibido,
+  }) async =>
+      throw UnimplementedError();
+
+  @override
+  Future<Pedido> actualizarItems(
+    String id,
+    List<({String productoId, double cantidad})> items,
+  ) async =>
+      throw UnimplementedError();
+
+  @override
+  Future<Ticket> ticket(String cobroId) async => throw UnimplementedError();
 }
 
 Pedido _pedido({required String id, required String clientUuid}) => Pedido(
