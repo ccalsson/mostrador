@@ -1,0 +1,25 @@
+name: puesto_flutter
+description: "Mostrador - puesto de venta (Android vendedor / Windows caja)"
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.13.5
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_riverpod: ^3.4.3
+  flutter_secure_storage: ^11.2.0
+  go_router: ^18.0.2
+  http: ^1.6.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  integration_test:
+    sdk: flutter
+
+flutter:
+  uses-material-design: true

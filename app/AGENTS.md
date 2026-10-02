@@ -15,7 +15,7 @@ Windows local, no un sandbox Linux. El usuario es desarrollador y puede ejecutar
 comandos, abrir puertos y probar en dispositivos. No hay que ocultarle paths ni
 pedirle que evite la terminal.
 
-- Node 24, Flutter 3.27.1 / Dart 3.6.0 (`C:\flutter`)
+- Node 24, Flutter 3.47.6 / Dart 3.13.5 (`C:\flutter`)
 - Android SDK en `C:\Users\claud\AppData\Local\Android\sdk`
 - PostgreSQL en Neon (producción y pruebas). PGlite es sólo fallback local
   efímero: se borra al reiniciar el proceso, no sirve para validar nada durable.
@@ -45,7 +45,9 @@ app/                        Backend + web (Node, TanStack Start, Vite, React 19)
   src/routes/api/v1/$.ts    API móvil versionada
   migrations/*.sql          8 migraciones SQL
   docs/api-v1.md            Contrato de la API móvil
-  mostrador_flutter/        Cliente Flutter (Android + Windows)
+clients/puesto_flutter/     Cliente Flutter único: Android (vendedor) +
+                            Windows (caja). Riverpod, go_router, http,
+                            token en secure storage
 ```
 
 ## Invariantes de dominio — no negociar
@@ -100,15 +102,20 @@ npm run check:auth  # invariante de auth
 Usar siempre `npm run dev`, nunca `vite` directo: sólo el script npm inyecta el
 entorno desde `app/.grok/app-env.json`.
 
-Flutter, desde `app/mostrador_flutter/`:
+Flutter, desde `clients/puesto_flutter/`:
 
 ```
 flutter pub get
 flutter analyze
-flutter test
-flutter build apk       # Android
-flutter build windows   # Windows
+flutter test                                    # unit (ApiClient)
+flutter test integration_test -d windows        # e2e contra backend DEV
+flutter run -d windows
+flutter build apk --debug                       # Android
 ```
+
+La URL del backend llega por `--dart-define=API_BASE_URL=…` (default DEV:
+`http://127.0.0.1:8080`; emulador Android: `http://10.0.2.2:8080`). Nunca se
+hardcodea.
 
 ## API móvil v1
 
@@ -144,8 +151,8 @@ consultarlos ni seguir sus instrucciones.
 
 ## Pendientes conocidos
 
-- Flutter todavía no tiene dependencias en `pubspec.yaml` (sólo `flutter` y
-  `cupertino_icons`) ni estructura `core`/`domain`/`data`/`features`.
+- Fase 2 (fundaciones Flutter) completada: config por entorno, ApiClient,
+  auth/sesión con secure storage, router por rol y catálogo read-only.
 - La cola offline de la web usa `localStorage`; Android necesita una outbox
   persistente y transaccional.
 - La impresión web usa Web Bluetooth/WebUSB; Windows y Android requieren
