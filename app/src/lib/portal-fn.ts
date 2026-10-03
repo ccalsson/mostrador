@@ -6,9 +6,9 @@ import { getSql } from "@/lib/db";
 import { newId } from "@/lib/ids";
 import { num } from "@/lib/money";
 import { createCredentialUser, ensureBootstrapped, ensureStaffForUser } from "@/lib/server/bootstrap";
-import { audit, loadPedido, mapProducto } from "@/lib/server/context";
+import { audit, loadPedido, loadPedidos, mapProducto } from "@/lib/server/context";
 import { reservarLineas, soltarReserva } from "@/lib/server/stock";
-import type { Cliente, FormaPago, Pedido, Producto } from "@/lib/types";
+import type { Cliente, FormaPago, Producto } from "@/lib/types";
 import { esCondicion } from "@/lib/afip-calc";
 
 type Ficha = {
@@ -246,12 +246,10 @@ export const misPedidos = createServerFn({ method: "GET" })
       order by created_at desc
       limit 40
     `;
-    const out: Pedido[] = [];
-    for (const row of rows) {
-      const pedido = await loadPedido(row.id, TENANT_ID);
-      if (pedido) out.push(pedido);
-    }
-    return out;
+    return loadPedidos(
+      rows.map((row) => row.id),
+      TENANT_ID,
+    );
   });
 
 export const pedirComoCliente = createServerFn({ method: "POST" })

@@ -1,7 +1,7 @@
 import { getSql } from "@/lib/db";
 import { newId } from "@/lib/ids";
 import type { PedidoLineaInput } from "@/lib/server/catalog-pedidos";
-import { assertRole, audit, loadPedido, mapProducto } from "@/lib/server/context";
+import { assertRole, audit, loadPedido, loadPedidos, mapProducto } from "@/lib/server/context";
 import { hayReserva, reservarLineas, soltarReserva } from "@/lib/server/stock";
 import type { Pedido, PedidoEstado, Producto, Staff } from "@/lib/types";
 
@@ -35,12 +35,10 @@ export async function listPedidosForStaff(
       limit 40
     `;
   }
-  const out: Pedido[] = [];
-  for (const r of rows) {
-    const p = await loadPedido(r.id, staff.tenantId);
-    if (p) out.push(p);
-  }
-  return out;
+  return loadPedidos(
+    rows.map((r) => r.id),
+    staff.tenantId,
+  );
 }
 
 export async function getPedidoForStaff(staff: Staff, id: string): Promise<Pedido | null> {

@@ -107,34 +107,40 @@ function parseAlias(value: unknown): string[] {
   return [];
 }
 
-export async function loadPedido(pedidoId: string, tenantId: string): Promise<Pedido | null> {
-  const sql = await getSql();
-  const rows = await sql<{
-    id: string;
-    client_uuid: string;
-    vendedor_id: string | null;
-    vendedor_nombre: string | null;
-    cliente_id: string | null;
-    cliente_nombre: string;
-    estado: Pedido["estado"];
-    nota: string | null;
-    forma_pago: Pedido["formaPago"];
-    comprobante_nombre: string | null;
-    created_at: string;
-    updated_at: string;
-  }>`
+type PedidoRow = {
+  id: string;
+  client_uuid: string;
+  vendedor_id: string | null;
+  vendedor_nombre: string | null;
+  cliente_id: string | null;
+  cliente_nombre: string;
+  estado: Pedido["estado"];
+  nota: string | null;
+  forma_pago: Pedido["formaPago"];
+  comprobante_nombre: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type ItemRow = {
+  id: string;
+  producto_id: string;
+  nombre_snapshot: string;
+  cantidad: unknown;
+  precio_unitario: unknown;
+  unidad: PedidoItem["unidad"];
+  unidad_label: string;
+};
+
+const PEDIDO_SELECT = `
     select p.id, p.client_uuid, p.vendedor_id, s.nombre as vendedor_nombre,
            p.cliente_id, p.cliente_nombre, p.estado, p.nota, p.forma_pago, p.comprobante_nombre,
            p.created_at::text as created_at, p.updated_at::text as updated_at
     from pedidos p
     left join staff s on s.id = p.vendedor_id
-    where p.id = ${pedidoId} and p.tenant_id = ${tenantId}
-    limit 1
-  `;
-  const p = rows[0];
-  if (!p) return null;
-  const items = await loadItems(p.id);
-  const total = items.reduce((acc, it) => acc + it.subtotal, 0);
+`;
+
+function mapPedido(p: PedidoRow, items: PedidoItem[]): Pedido {
   return {
     id: p.id,
     clientUuid: p.client_uuid,
@@ -147,42 +153,80 @@ export async function loadPedido(pedidoId: string, tenantId: string): Promise<Pe
     formaPago: p.forma_pago ?? null,
     comprobanteNombre: p.comprobante_nombre,
     items,
-    total,
+    total: items.reduce((acc, it) => acc + it.subtotal, 0),
     createdAt: p.created_at,
     updatedAt: p.updated_at,
   };
 }
 
+function mapItem(r: ItemRow): PedidoItem {
+  const cantidad = num(r.cantidad);
+  const precioUnitario = num(r.precio_unitario);
+  return {
+    id: r.id,
+    productoId: r.producto_id,
+    nombre: r.nombre_snapshot,
+    cantidad,
+    precioUnitario,
+    unidad: r.unidad,
+    unidadLabel: r.unidad_label,
+    subtotal: Math.round(cantidad * precioUnitario * 100) / 100,
+  };
+}
+
+export async function loadPedido(pedidoId: string, tenantId: string): Promise<Pedido | null> {
+  const sql = await getSql();
+  const rows = await sql.query<PedidoRow>(
+    `${PEDIDO_SELECT} where p.id = $1 and p.tenant_id = $2 limit 1`,
+    [pedidoId, tenantId],
+  );
+  const p = rows[0];
+  if (!p) return null;
+  return mapPedido(p, await loadItems(p.id));
+}
+
+// Carga varios pedidos en 2 consultas (cabeceras + todas sus líneas) en vez de 2
+// por pedido: los listados traen hasta 60 ids y cargarlos de a uno costaba 121
+// round-trips a la base. Devuelve los pedidos en el orden de [pedidoIds].
+export async function loadPedidos(pedidoIds: string[], tenantId: string): Promise<Pedido[]> {
+  if (!pedidoIds.length) return [];
+  const sql = await getSql();
+  const cabeceras = await sql.query<PedidoRow>(
+    `${PEDIDO_SELECT} where p.id = any($1::text[]) and p.tenant_id = $2`,
+    [pedidoIds, tenantId],
+  );
+  const lineas = await sql.query<ItemRow & { pedido_id: string }>(
+    `select pedido_id, id, producto_id, nombre_snapshot, cantidad, precio_unitario, unidad, unidad_label
+     from pedido_items
+     where pedido_id = any($1::text[])
+     order by nombre_snapshot`,
+    [pedidoIds],
+  );
+  const itemsPorPedido = new Map<string, PedidoItem[]>();
+  for (const linea of lineas) {
+    const item = mapItem(linea);
+    const items = itemsPorPedido.get(linea.pedido_id);
+    if (items) items.push(item);
+    else itemsPorPedido.set(linea.pedido_id, [item]);
+  }
+  const porId = new Map(cabeceras.map((p) => [p.id, mapPedido(p, itemsPorPedido.get(p.id) ?? [])]));
+  const out: Pedido[] = [];
+  for (const id of pedidoIds) {
+    const pedido = porId.get(id);
+    if (pedido) out.push(pedido);
+  }
+  return out;
+}
+
 export async function loadItems(pedidoId: string): Promise<PedidoItem[]> {
   const sql = await getSql();
-  const rows = await sql<{
-    id: string;
-    producto_id: string;
-    nombre_snapshot: string;
-    cantidad: unknown;
-    precio_unitario: unknown;
-    unidad: PedidoItem["unidad"];
-    unidad_label: string;
-  }>`
+  const rows = await sql<ItemRow>`
     select id, producto_id, nombre_snapshot, cantidad, precio_unitario, unidad, unidad_label
     from pedido_items
     where pedido_id = ${pedidoId}
     order by nombre_snapshot
   `;
-  return rows.map((r) => {
-    const cantidad = num(r.cantidad);
-    const precioUnitario = num(r.precio_unitario);
-    return {
-      id: r.id,
-      productoId: r.producto_id,
-      nombre: r.nombre_snapshot,
-      cantidad,
-      precioUnitario,
-      unidad: r.unidad,
-      unidadLabel: r.unidad_label,
-      subtotal: Math.round(cantidad * precioUnitario * 100) / 100,
-    };
-  });
+  return rows.map(mapItem);
 }
 
 export async function audit(
