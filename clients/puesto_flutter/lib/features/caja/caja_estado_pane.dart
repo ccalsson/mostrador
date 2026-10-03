@@ -5,11 +5,13 @@ import '../../core/errors/api_exceptions.dart';
 import '../../core/format.dart';
 import '../../models/caja.dart';
 import '../../services/caja_service.dart';
+import 'cierre_controller.dart';
+import 'cierre_dialog.dart';
 import 'error_caja.dart';
 
 /// Estado del turno de caja (`GET /api/v1/caja`): total esperado, totales por
-/// forma de pago y últimos cobros, tal cual los devuelve el backend. Sólo
-/// lectura; el cierre de caja es de la Fase 4.2.2.
+/// forma de pago y últimos cobros, tal cual los devuelve el backend; todo,
+/// incluido el cierre, lo calcula el servidor.
 class CajaEstadoPane extends ConsumerWidget {
   const CajaEstadoPane({super.key});
 
@@ -57,10 +59,24 @@ class CajaEstadoPane extends ConsumerWidget {
               ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                child: Text(
-                  'Esperado en caja: ${moneda(caja.esperado)}',
-                  key: const Key('caja_estado_esperado'),
-                  style: Theme.of(context).textTheme.titleLarge,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Esperado en caja: ${moneda(caja.esperado)}',
+                        key: const Key('caja_estado_esperado'),
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                    ),
+                    FilledButton.icon(
+                      key: const Key('caja_cerrar'),
+                      onPressed: estado.isRefreshing
+                          ? null
+                          : () => _abrirCierre(context, ref, caja),
+                      icon: const Icon(Icons.point_of_sale),
+                      label: const Text('Cerrar caja'),
+                    ),
+                  ],
                 ),
               ),
               const Divider(height: 1),
@@ -115,6 +131,21 @@ class CajaEstadoPane extends ConsumerWidget {
           ),
         ),
       ],
+    );
+  }
+
+  /// Diálogo de cierre: el esperado sale del estado actual del backend. Se
+  /// descarta el estado anterior del controller (nuevo intento lógico).
+  Future<void> _abrirCierre(
+    BuildContext context,
+    WidgetRef ref,
+    CajaEstado caja,
+  ) async {
+    ref.invalidate(cierreControllerProvider(caja.id));
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => CierreCajaDialog(caja: caja),
     );
   }
 }

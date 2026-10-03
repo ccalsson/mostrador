@@ -27,6 +27,14 @@ class _CajaFake implements CajaService {
     llamadas++;
     return estadoPara(llamadas);
   }
+
+  @override
+  Future<CierreCajaResultado> cerrarCaja({
+    required String id,
+    required double real,
+    String? notas,
+  }) async =>
+      throw UnimplementedError();
 }
 
 CajaEstado _estado({double esperado = 0}) => CajaEstado(
@@ -179,6 +187,102 @@ void main() {
           _servicio(MockClient((_) async => http.Response('boom', 500)));
 
       await expectLater(servicio.estado(), throwsA(isA<ServerException>()));
+    });
+  });
+
+  group('cierre', () {
+    test('envía id, real y notas al endpoint correcto y parsea el resultado',
+        () async {
+      late http.Request visto;
+      final servicio = _servicio(MockClient((request) async {
+        visto = request;
+        return http.Response(
+          jsonEncode({
+            'data': {'diferencia': -1000, 'esperado': 79200},
+          }),
+          200,
+        );
+      }));
+
+      final resultado = await servicio.cerrarCaja(
+        id: 'cje_396ce29d87ac47a7',
+        real: 78200,
+        notas: ' Faltante por retiro ',
+      );
+
+      expect(visto.method, 'POST');
+      expect(visto.url.path, '/api/v1/caja/cerrar');
+      expect(visto.headers['authorization'], 'Bearer tok-1');
+      expect(jsonDecode(visto.body), {
+        'id': 'cje_396ce29d87ac47a7',
+        'real': 78200,
+        'notas': 'Faltante por retiro',
+      });
+      expect(resultado.esperado, 79200);
+      expect(resultado.diferencia, -1000);
+    });
+
+    test('notas en blanco: no se envía la clave', () async {
+      late http.Request visto;
+      final servicio = _servicio(MockClient((request) async {
+        visto = request;
+        return http.Response(
+          jsonEncode({
+            'data': {'diferencia': 0, 'esperado': 500},
+          }),
+          200,
+        );
+      }));
+
+      await servicio.cerrarCaja(id: 'cje_1', real: 500, notas: '   ');
+
+      expect(jsonDecode(visto.body), {'id': 'cje_1', 'real': 500});
+    });
+
+    test('400 del backend → ValidationException con el mensaje', () async {
+      final servicio = _servicio(MockClient((_) async => http.Response(
+            jsonEncode({
+              'error': 'invalid_request',
+              'message': 'No hay una caja abierta.',
+            }),
+            400,
+            headers: {'content-type': 'application/json; charset=utf-8'},
+          )));
+
+      await expectLater(
+        servicio.cerrarCaja(id: 'cje_1', real: 0),
+        throwsA(isA<ValidationException>().having(
+          (e) => e.message,
+          'message',
+          'No hay una caja abierta.',
+        )),
+      );
+    });
+
+    test('403 del vendedor → ForbiddenException', () async {
+      final servicio = _servicio(MockClient((_) async => http.Response(
+            jsonEncode({
+              'error': 'forbidden',
+              'message': 'No tenés permiso para esta acción.',
+            }),
+            403,
+            headers: {'content-type': 'application/json; charset=utf-8'},
+          )));
+
+      await expectLater(
+        servicio.cerrarCaja(id: 'cje_1', real: 0),
+        throwsA(isA<ForbiddenException>()),
+      );
+    });
+
+    test('500 → ServerException', () async {
+      final servicio =
+          _servicio(MockClient((_) async => http.Response('boom', 500)));
+
+      await expectLater(
+        servicio.cerrarCaja(id: 'cje_1', real: 0),
+        throwsA(isA<ServerException>()),
+      );
     });
   });
 

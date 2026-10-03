@@ -35,6 +35,23 @@ class CajaEstado {
   }
 }
 
+/// Resultado del cierre de turno (`POST /api/v1/caja/cerrar`, admin/cajero).
+/// Ambos valores los calcula el backend (`esperado` recalculado del turno y
+/// `diferencia = real - esperado`); el cliente sólo los muestra.
+class CierreCajaResultado {
+  const CierreCajaResultado({required this.diferencia, required this.esperado});
+
+  final double diferencia;
+  final double esperado;
+
+  factory CierreCajaResultado.fromJson(Map<String, dynamic> json) {
+    return CierreCajaResultado(
+      diferencia: (json['diferencia'] as num?)?.toDouble() ?? 0,
+      esperado: (json['esperado'] as num?)?.toDouble() ?? 0,
+    );
+  }
+}
+
 /// Total cobrado por forma de pago dentro del turno (`totales` del contrato).
 class TotalFormaPago {
   const TotalFormaPago({
