@@ -99,7 +99,7 @@ function Ingreso() {
             <Link to="/remitos/$id" params={{ id: r.id }} className="flex justify-between gap-2 py-2">
               <span className="truncate">{r.proveedor ?? "Sin proveedor"}</span>
               <span className="shrink-0 text-xs text-muted">
-                {r.estado} · {dayLabel(r.created_at)}
+                {r.estado} · {dayLabel(r.createdAt)}
               </span>
             </Link>
           </li>

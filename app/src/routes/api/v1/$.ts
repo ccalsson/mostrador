@@ -30,6 +30,7 @@ import {
   confirmarRemitoForStaff,
   crearRemitoForStaff,
   getRemitoForStaff,
+  listRemitosForStaff,
   type CrearRemitoInput,
 } from "@/lib/server/remitos";
 import { ajustarStockForStaff } from "@/lib/server/stock";
@@ -422,6 +423,11 @@ const ROUTES: Entry[] = [
       });
       return json({ data: ajuste });
     },
+  },
+  {
+    method: "GET",
+    path: ["remitos"],
+    handler: async ({ staff }) => json({ data: await listRemitosForStaff(staff) }),
   },
   {
     method: "POST",

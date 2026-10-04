@@ -511,6 +511,24 @@ paths:
         "415": { $ref: '#/components/responses/UnsupportedMediaType' }
 
   /remitos:
+    get:
+      tags: [Remitos]
+      summary: Listar remitos
+      description: admin o cajero. Últimos 30, sin líneas (usar /remitos/{id} para el detalle).
+      responses:
+        "200":
+          description: Remitos ordenados por fecha descendente.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Remito' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
     post:
       tags: [Remitos]
       summary: Cargar remito

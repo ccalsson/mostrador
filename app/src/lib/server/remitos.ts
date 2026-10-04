@@ -87,8 +87,10 @@ export async function getRemitoForStaff(staff: Staff, id: string) {
     select id, descripcion_original, producto_id, cantidad, precio, confianza_match, confirmado
     from remito_items where remito_id = ${id} order by descripcion_original
   `;
+  const { created_at: createdAt, ...remito } = rem[0];
   return {
-    ...rem[0],
+    ...remito,
+    createdAt,
     items: items.map((it) => ({
       id: it.id,
       descripcionOriginal: it.descripcion_original,
@@ -104,7 +106,7 @@ export async function getRemitoForStaff(staff: Staff, id: string) {
 export async function listRemitosForStaff(staff: Staff) {
   assertRole(staff, ["admin", "cajero"]);
   const sql = await getSql();
-  return sql<{
+  const rows = await sql<{
     id: string;
     proveedor: string | null;
     fuente: string;
@@ -116,6 +118,13 @@ export async function listRemitosForStaff(staff: Staff) {
     order by created_at desc
     limit 30
   `;
+  return rows.map((r) => ({
+    id: r.id,
+    proveedor: r.proveedor,
+    fuente: r.fuente,
+    estado: r.estado,
+    createdAt: r.created_at,
+  }));
 }
 
 export async function actualizarRemitoItemForStaff(
