@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/auth/auth_controller.dart';
 import '../../models/staff_session.dart';
 import '../../services/catalogo_service.dart';
+import '../admin/alertas_pane.dart';
+import '../admin/productos_pane.dart';
 import '../caja/caja_pane.dart';
 import '../catalog/catalogo_screen.dart';
 import '../carrito/carrito_pane.dart';
@@ -11,7 +13,7 @@ import '../pedidos/pedidos_pane.dart';
 
 /// Shell adaptativo por plataforma: navegación inferior en Android,
 /// riel lateral en Windows. El vendedor suma Carrito y Pedidos; el cajero
-/// suma Caja; Dueño mantiene Catálogo y Sesión.
+/// suma Caja; el Dueño suma Productos y Alertas.
 class AdaptiveShell extends ConsumerStatefulWidget {
   const AdaptiveShell({super.key, required this.rol});
 
@@ -37,6 +39,10 @@ const _destinoPedidos =
     _Destino(Icons.receipt_long_outlined, Icons.receipt_long, 'Pedidos');
 const _destinoCaja =
     _Destino(Icons.point_of_sale_outlined, Icons.point_of_sale, 'Caja');
+const _destinoProductos =
+    _Destino(Icons.category_outlined, Icons.category, 'Productos');
+const _destinoAlertas =
+    _Destino(Icons.notifications_outlined, Icons.notifications, 'Alertas');
 const _destinoSesion =
     _Destino(Icons.badge_outlined, Icons.badge, 'Sesión');
 
@@ -53,7 +59,12 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
             _destinoSesion,
           ],
         Rol.cajero => const [_destinoCatalogo, _destinoCaja, _destinoSesion],
-        _ => const [_destinoCatalogo, _destinoSesion],
+        Rol.admin => const [
+            _destinoCatalogo,
+            _destinoProductos,
+            _destinoAlertas,
+            _destinoSesion,
+          ],
       };
 
   Widget _pantalla() {
@@ -62,6 +73,8 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
       (Rol.vendedor, 1) => const CarritoPane(),
       (Rol.vendedor, 2) => const PedidosPane(),
       (Rol.cajero, 1) => const CajaPane(),
+      (Rol.admin, 1) => const ProductosPane(),
+      (Rol.admin, 2) => const AlertasPane(),
       _ => const _SesionPane(),
     };
   }
