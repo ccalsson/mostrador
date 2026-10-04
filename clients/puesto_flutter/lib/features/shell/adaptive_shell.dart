@@ -5,8 +5,11 @@ import '../../core/auth/auth_controller.dart';
 import '../../models/staff_session.dart';
 import '../../services/catalogo_service.dart';
 import '../admin/alertas_pane.dart';
+import '../admin/auditoria_pane.dart';
+import '../admin/clientes_pane.dart';
 import '../admin/dashboard_pane.dart';
 import '../admin/productos_pane.dart';
+import '../admin/remitos_pane.dart';
 import '../admin/usuarios_pane.dart';
 import '../caja/caja_pane.dart';
 import '../catalog/catalogo_screen.dart';
@@ -49,6 +52,12 @@ const _destinoAlertas =
     _Destino(Icons.notifications_outlined, Icons.notifications, 'Alertas');
 const _destinoUsuarios =
     _Destino(Icons.people_outlined, Icons.people, 'Usuarios');
+const _destinoClientes =
+    _Destino(Icons.storefront_outlined, Icons.storefront, 'Clientes');
+const _destinoRemitos =
+    _Destino(Icons.local_shipping_outlined, Icons.local_shipping, 'Remitos');
+const _destinoAuditoria =
+    _Destino(Icons.history_outlined, Icons.history, 'Auditoría');
 const _destinoSesion =
     _Destino(Icons.badge_outlined, Icons.badge, 'Sesión');
 
@@ -71,6 +80,9 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
             _destinoProductos,
             _destinoAlertas,
             _destinoUsuarios,
+            _destinoClientes,
+            _destinoRemitos,
+            _destinoAuditoria,
             _destinoSesion,
           ],
       };
@@ -86,6 +98,9 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
       (Rol.admin, 2) => const ProductosPane(),
       (Rol.admin, 3) => const AlertasPane(),
       (Rol.admin, 4) => const UsuariosPane(),
+      (Rol.admin, 5) => const ClientesPane(),
+      (Rol.admin, 6) => const RemitosPane(),
+      (Rol.admin, 7) => const AuditoriaPane(),
       _ => const _SesionPane(),
     };
   }

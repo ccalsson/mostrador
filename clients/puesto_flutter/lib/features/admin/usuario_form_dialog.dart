@@ -118,7 +118,7 @@ class _UsuarioFormDialogState extends ConsumerState<_UsuarioFormDialog> {
               const SizedBox(height: 12),
               DropdownButtonFormField<Rol>(
                 key: const Key('admin_usuario_rol'),
-                value: _rol,
+                initialValue: _rol,
                 decoration: const InputDecoration(labelText: 'Rol'),
                 items: const [
                   DropdownMenuItem(

@@ -22,20 +22,6 @@ final dashboardServiceProvider = Provider<DashboardService>(
   (ref) => DashboardService(ref.watch(apiClientProvider)),
 );
 
-/// [_DashboardParams] encapsula el período para que el provider pueda
-/// recibir parámetros sin necesidad de `family` de Riverpod.
-class _DashboardParams {
-  const _DashboardParams(this.dias);
-  final int dias;
-
-  @override
-  bool operator ==(Object other) =>
-      other is _DashboardParams && other.dias == dias;
-
-  @override
-  int get hashCode => dias.hashCode;
-}
-
 /// Provider de estado para el período elegido en el dashboard.
 class DashboardDias extends Notifier<int> {
   @override
