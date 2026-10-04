@@ -5,7 +5,9 @@ import '../../core/auth/auth_controller.dart';
 import '../../models/staff_session.dart';
 import '../../services/catalogo_service.dart';
 import '../admin/alertas_pane.dart';
+import '../admin/dashboard_pane.dart';
 import '../admin/productos_pane.dart';
+import '../admin/usuarios_pane.dart';
 import '../caja/caja_pane.dart';
 import '../catalog/catalogo_screen.dart';
 import '../carrito/carrito_pane.dart';
@@ -31,6 +33,8 @@ class _Destino {
   final String etiqueta;
 }
 
+const _destinoDashboard =
+    _Destino(Icons.dashboard_outlined, Icons.dashboard, 'Dashboard');
 const _destinoCatalogo =
     _Destino(Icons.inventory_2_outlined, Icons.inventory_2, 'Catálogo');
 const _destinoCarrito =
@@ -43,6 +47,8 @@ const _destinoProductos =
     _Destino(Icons.category_outlined, Icons.category, 'Productos');
 const _destinoAlertas =
     _Destino(Icons.notifications_outlined, Icons.notifications, 'Alertas');
+const _destinoUsuarios =
+    _Destino(Icons.people_outlined, Icons.people, 'Usuarios');
 const _destinoSesion =
     _Destino(Icons.badge_outlined, Icons.badge, 'Sesión');
 
@@ -60,21 +66,26 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
           ],
         Rol.cajero => const [_destinoCatalogo, _destinoCaja, _destinoSesion],
         Rol.admin => const [
+            _destinoDashboard,
             _destinoCatalogo,
             _destinoProductos,
             _destinoAlertas,
+            _destinoUsuarios,
             _destinoSesion,
           ],
       };
 
   Widget _pantalla() {
     return switch ((widget.rol, _destino)) {
-      (_, 0) => const CatalogoScreen(),
+      (Rol.admin, 0) => const DashboardPane(),
+      (_, 0) when widget.rol != Rol.admin => const CatalogoScreen(),
+      (Rol.admin, 1) => const CatalogoScreen(),
       (Rol.vendedor, 1) => const CarritoPane(),
       (Rol.vendedor, 2) => const PedidosPane(),
       (Rol.cajero, 1) => const CajaPane(),
-      (Rol.admin, 1) => const ProductosPane(),
-      (Rol.admin, 2) => const AlertasPane(),
+      (Rol.admin, 2) => const ProductosPane(),
+      (Rol.admin, 3) => const AlertasPane(),
+      (Rol.admin, 4) => const UsuariosPane(),
       _ => const _SesionPane(),
     };
   }

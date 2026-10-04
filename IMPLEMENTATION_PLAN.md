@@ -143,7 +143,7 @@ corriente; ticket visible e impresión por fallback del sistema.
 
 **Salida (Release 1):** autenticación, productos/stock, vendedor/pedidos
 offline, caja/tickets, dashboard, usuarios y cierre disponibles en Android y/o
-Windows según prioridad de cada módulo.
+Windows según prioridad de cada módulo. ✅ Completada
 
 ### 6. Administración ampliada (Release 1.x)
 
