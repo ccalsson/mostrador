@@ -6,9 +6,11 @@ import '../../core/format.dart';
 import '../../models/cobro.dart';
 import '../../models/ticket.dart';
 import '../../services/pedidos_service.dart';
+import '../../services/printer_service.dart';
 
-/// Vista previa del ticket de un cobro (`GET /api/v1/cobros/:id/ticket`).
-/// La impresión física queda fuera de esta fase.
+/// Vista previa del ticket de un cobro (`GET /api/v1/cobros/:id/ticket`)
+/// con impresión por fallback del sistema (`PrinterService`). La térmica
+/// queda para cuando se defina el hardware.
 class TicketDialog extends ConsumerWidget {
   const TicketDialog({super.key, required this.cobroId});
 
@@ -16,12 +18,19 @@ class TicketDialog extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final ticket = ref.watch(ticketProvider(cobroId));
+    final ticketAsync = ref.watch(ticketProvider(cobroId));
+    final ticket = ticketAsync.value;
     return AlertDialog(
       key: const Key('ticket_dialogo'),
       title: const Text('Ticket'),
-      content: SizedBox(width: 360, child: _cuerpo(context, ref, ticket)),
+      content: SizedBox(width: 360, child: _cuerpo(context, ref, ticketAsync)),
       actions: [
+        FilledButton.icon(
+          key: const Key('ticket_imprimir'),
+          onPressed: ticket == null ? null : () => _imprimir(context, ref, ticket),
+          icon: const Icon(Icons.print_outlined),
+          label: const Text('Imprimir'),
+        ),
         TextButton(
           key: const Key('ticket_cerrar'),
           onPressed: () => Navigator.pop(context),
@@ -29,6 +38,17 @@ class TicketDialog extends ConsumerWidget {
         ),
       ],
     );
+  }
+
+  Future<void> _imprimir(BuildContext context, WidgetRef ref, Ticket ticket) async {
+    try {
+      await ref.read(printerServiceProvider).imprimirTicket(ticket);
+    } catch (_) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No se pudo abrir la impresión.')),
+      );
+    }
   }
 
   Widget _cuerpo(BuildContext context, WidgetRef ref, AsyncValue<Ticket> ticketAsync) {

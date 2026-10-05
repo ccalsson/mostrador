@@ -303,6 +303,13 @@ void main() {
     expect(find.text('Vuelto: $vuelto'), findsOneWidget,
         reason: 'el ticket refleja el vuelto registrado');
     expect(find.text('Recibido: ${moneda(recibido)}'), findsOneWidget);
+    // Se verifica presencia y habilitación sin tap: el diálogo de impresión
+    // nativo bloquearía el test hasta intervención del operador.
+    final imprimir = tester.widget<FilledButton>(
+      find.byKey(const Key('ticket_imprimir')),
+    );
+    expect(imprimir.onPressed, isNotNull,
+        reason: 'con ticket cargado la impresión del sistema está disponible');
     await tester.tap(find.byKey(const Key('ticket_cerrar')));
     await tester.pump();
     await _esperarSin(tester, find.byKey(const Key('ticket_dialogo')));
