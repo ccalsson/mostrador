@@ -102,16 +102,39 @@ void main() {
     await tester.enterText(find.byKey(const Key('admin_usuario_email')), emailAleatorio);
     await tester.enterText(find.byKey(const Key('admin_usuario_password')), 'secreta123');
     await tester.tap(find.byKey(const Key('admin_usuario_guardar')));
-    
+
     await _esperarSin(tester, find.byKey(const Key('admin_usuario_email')));
-    await _esperar(tester, find.text(emailAleatorio));
+    // El subtítulo del tile es `email · rol`: buscar por contenido y scrollear
+    // hasta el tile, porque la lista ordena por nombre y puede quedar abajo.
+    await _esperar(tester, find.byKey(const Key('admin_usuarios_lista')));
+    final tileNuevo = find.ancestor(
+      of: find.textContaining(emailAleatorio),
+      matching: find.byType(ListTile),
+    );
+    await tester.scrollUntilVisible(
+      tileNuevo,
+      150,
+      scrollable: find.descendant(
+        of: find.byKey(const Key('admin_usuarios_lista')),
+        matching: find.byType(Scrollable),
+      ),
+    );
 
     // 4. Toggle estado (desactivar)
-    final findToggle = find.byType(Switch).last;
+    final findToggle = find.descendant(
+      of: tileNuevo,
+      matching: find.byType(Switch),
+    );
     expect(tester.widget<Switch>(findToggle).value, true);
     await tester.tap(findToggle);
     await tester.pumpAndSettle();
-    
-    await _esperar(tester, find.text('Inactivo'));
+
+    await _esperar(
+      tester,
+      find.descendant(
+        of: tileNuevo,
+        matching: find.text('Inactivo'),
+      ),
+    );
   });
 }

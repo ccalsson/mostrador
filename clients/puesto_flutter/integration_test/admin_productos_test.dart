@@ -151,7 +151,8 @@ Future<void> _login(WidgetTester tester, String email) async {
   await tester.enterText(find.byKey(const Key('login_password')), _password);
   await tester.tap(find.byKey(const Key('login_submit')));
   await tester.pump();
-  await _esperar(tester, find.byKey(const Key('catalogo_lista')));
+  // El admin aterriza en el Dashboard (commit del shell admin).
+  await _esperar(tester, find.byKey(const Key('dashboard_lista')));
 }
 
 Future<void> _buscarProducto(WidgetTester tester, String nombre, String id) async {
