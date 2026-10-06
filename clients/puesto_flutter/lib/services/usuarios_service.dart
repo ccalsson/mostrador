@@ -40,12 +40,12 @@ class UsuariosService {
   }
 
   /// `POST /api/v1/usuarios` — alta con nombre, email, password y rol.
-  Future<Usuario> crear(UsuarioInput input) async {
-    final data = await _client.post(
+  /// El backend responde 201 con `{ ok: true }` (DataOk), sin el usuario.
+  Future<void> crear(UsuarioInput input) async {
+    await _client.post(
       '/api/v1/usuarios',
       body: input.toJson(),
-    ) as Map<String, dynamic>;
-    return Usuario.fromJson(data['data'] as Map<String, dynamic>);
+    );
   }
 
   /// `POST /api/v1/usuarios/{id}/toggle` — activa o desactiva el usuario.

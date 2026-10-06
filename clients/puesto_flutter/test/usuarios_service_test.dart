@@ -85,20 +85,14 @@ void main() {
         visto = request;
         return http.Response(
           jsonEncode({
-            'data': {
-              'id': 'u_nuevo',
-              'nombre': 'María Gómez',
-              'email': 'maria@test.com',
-              'rol': 'admin',
-              'activo': true,
-            },
+            'data': {'ok': true},
           }),
           201,
           headers: {'content-type': 'application/json; charset=utf-8'},
         );
       }));
 
-      final usuario = await servicio.crear(const UsuarioInput(
+      await servicio.crear(const UsuarioInput(
         nombre: 'María Gómez',
         email: 'maria@test.com',
         password: 'roman2026',
@@ -113,8 +107,6 @@ void main() {
         'password': 'roman2026',
         'rol': 'admin',
       });
-      expect(usuario.id, 'u_nuevo');
-      expect(usuario.rol, Rol.admin);
     });
 
     test('400 → ValidationException (email inválido)', () async {
