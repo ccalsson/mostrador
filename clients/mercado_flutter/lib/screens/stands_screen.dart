@@ -42,9 +42,9 @@ class _StandsScreenState extends State<StandsScreen> {
   Future<void> _refreshProducts() async {
     final puesto = _puesto;
     if (puesto == null) return;
-    setState(
-      () => _productsFuture = widget.api.products(puesto.id, force: true),
-    );
+    setState(() {
+      _productsFuture = widget.api.products(puesto.id, force: true);
+    });
     await _productsFuture;
   }
 
@@ -149,9 +149,9 @@ class _StandsScreenState extends State<StandsScreen> {
           return ErrorPanel(
             error: snapshot.error,
             onRetry: () async {
-              setState(
-                () => _standsFuture = widget.api.listarPuestos(force: true),
-              );
+              setState(() {
+                _standsFuture = widget.api.listarPuestos(force: true);
+              });
               await _standsFuture;
             },
           );
@@ -167,9 +167,9 @@ class _StandsScreenState extends State<StandsScreen> {
         }
         return RefreshIndicator(
           onRefresh: () async {
-            setState(
-              () => _standsFuture = widget.api.listarPuestos(force: true),
-            );
+            setState(() {
+              _standsFuture = widget.api.listarPuestos(force: true);
+            });
             await _standsFuture;
           },
           child: ListView.separated(

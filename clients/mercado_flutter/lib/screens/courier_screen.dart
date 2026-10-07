@@ -27,7 +27,9 @@ class _CourierScreenState extends State<CourierScreen> {
   }
 
   Future<void> _refresh() async {
-    setState(() => _routes = widget.api.listarRecorridos());
+    setState(() {
+      _routes = widget.api.listarRecorridos();
+    });
     await _routes;
   }
 
