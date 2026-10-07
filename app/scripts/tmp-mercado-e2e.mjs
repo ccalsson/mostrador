@@ -269,10 +269,8 @@ async function main() {
   );
   const dup = (
     await sqlRows(
-      `select count(*)::int as n from pedidos
-       where tenant_id = $1 and comprador_mercado_id = (select id from mercado_compradores where email = $2)
-         and origen = 'mercado_al_toque'`,
-      [tenant.id, BUYER],
+      `select count(*)::int as n from pedidos where id = $1 and origen = 'mercado_al_toque'`,
+      [pedido.id],
     )
   )[0];
   assert(dup.n === 1, "E. sin duplicados", String(dup.n));

@@ -48,6 +48,24 @@ function fail(status: number, code: string, message: string): never {
   throw new MercadoError(status, code, message);
 }
 
+function assertPerfil(actor: MercadoActor, perfil: MercadoPerfil, message: string) {
+  if (actor.perfil !== perfil) fail(403, "forbidden", message);
+}
+
+async function auditMercado(
+  sql: Sql,
+  actor: MercadoActor,
+  accion: string,
+  tenantId: string,
+  detalle: Record<string, unknown>,
+) {
+  await sql`
+    insert into auditoria (id, tenant_id, usuario_id, usuario_nombre, accion, entidad, detalle)
+    values (${newId("aud")}, ${tenantId}, ${actor.id}, ${actor.nombre}, ${accion}, 'mercado',
+            ${JSON.stringify({ resultado: "ok", ...detalle })}::jsonb)
+  `;
+}
+
 function emailValue(value: unknown): string {
   const email = typeof value === "string" ? value.trim().toLowerCase() : "";
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) {
@@ -288,7 +306,7 @@ function decodeImage(value: unknown, field: string): Buffer {
 }
 
 export async function uploadIdentity(actor: MercadoActor, input: Record<string, unknown>) {
-  if (actor.perfil !== "comprador") fail(403, "forbidden", "Solo el comprador puede subir documentación.");
+  assertPerfil(actor, "comprador", "Solo el comprador puede subir documentación.");
   const pais = input.pais;
   const tipoDocumento = input.tipoDocumento;
   const numeroDocumento = textValue(input.numeroDocumento, "numeroDocumento", 40);
@@ -319,6 +337,7 @@ export async function uploadIdentity(actor: MercadoActor, input: Record<string, 
           numero_documento = ${numeroDocumento}, estado_identidad = 'documentacion_cargada'
       where id = ${actor.id}
     `;
+    await auditMercado(tx, actor, "mercado_identidad_cargada", "mercado", { id: actor.id });
   });
   return { estado: "documentacion_cargada", referencias: { documento: documentoRef, selfie: selfieRef } };
 }
@@ -427,7 +446,7 @@ export async function createOrders(
   keyInput: string | undefined,
   input: Record<string, unknown>,
 ) {
-  if (actor.perfil !== "comprador") fail(403, "forbidden", "Solo el comprador puede crear pedidos.");
+  assertPerfil(actor, "comprador", "Solo el comprador puede crear pedidos.");
   if (actor.estadoIdentidad !== "documentacion_cargada") {
     fail(400, "identity_required", "Completá la documentación de identidad antes de comprar.");
   }
@@ -551,6 +570,13 @@ export async function createOrders(
           subtotal: Math.round(line.cantidad * num(product.precio) * 100) / 100,
         };
       });
+      const totalPedido = Math.round(itemsRespuesta.reduce((sum, item) => sum + num(item.subtotal), 0) * 100) / 100;
+      await auditMercado(tx, actor, "mercado_pedido_creado", tenantId, {
+        id: pedidoId,
+        medioPago,
+        items: itemsRespuesta.length,
+        total: totalPedido,
+      });
       pedidos.push({
         id: pedidoId,
         tenantId,
@@ -559,7 +585,7 @@ export async function createOrders(
         pagoEstado: "pendiente",
         nota,
         items: itemsRespuesta,
-        total: Math.round(itemsRespuesta.reduce((sum, item) => sum + num(item.subtotal), 0) * 100) / 100,
+        total: totalPedido,
         bultos: itemsRespuesta.reduce((sum, item) => sum + (item.unidad === "bulto" ? num(item.cantidad) : 0), 0),
         createdAt: new Date().toISOString(),
       });
@@ -654,12 +680,12 @@ async function selectBuyerOrders(sql: Sql, buyerId: string, orderId?: string) {
 }
 
 export async function listBuyerOrders(actor: MercadoActor) {
-  if (actor.perfil !== "comprador") fail(403, "forbidden", "Solo el comprador puede consultar sus pedidos.");
+  assertPerfil(actor, "comprador", "Solo el comprador puede consultar sus pedidos.");
   return { pedidos: await selectBuyerOrders(await getSql(), actor.id) };
 }
 
 export async function getBuyerOrder(actor: MercadoActor, id: string) {
-  if (actor.perfil !== "comprador") fail(403, "forbidden", "Solo el comprador puede consultar sus pedidos.");
+  assertPerfil(actor, "comprador", "Solo el comprador puede consultar sus pedidos.");
   const pedidos = await selectBuyerOrders(await getSql(), actor.id, id);
   if (!pedidos[0]) fail(404, "not_found", "Pedido no encontrado.");
   return { pedido: pedidos[0] };
@@ -779,7 +805,7 @@ export async function createRoute(
   keyInput: string | undefined,
   input: Record<string, unknown>,
 ) {
-  if (actor.perfil !== "comprador") fail(403, "forbidden", "Solo el comprador puede crear recorridos.");
+  assertPerfil(actor, "comprador", "Solo el comprador puede crear recorridos.");
   const key = assertIdempotencyKey(keyInput);
   const cargadorId = textValue(input.cargadorId, "cargadorId", 100);
   if (!Array.isArray(input.pedidoIds) || input.pedidoIds.length < 1 || input.pedidoIds.length > 40) {
@@ -841,6 +867,12 @@ export async function createRoute(
         values (${newId("mrp")}, ${routeId}, ${order.id}, ${order.tenant_id}, ${num(order.bultos)})
       `;
     }
+    await auditMercado(tx, actor, "mercado_recorrido_creado", "mercado", {
+      id: routeId,
+      cargadorId,
+      pedidos: orderRows.length,
+      bultos: totalBales,
+    });
     const response = { recorrido: await routeResponse(tx, routeId) };
     await saveIdempotency(tx, actor, key, response);
     return response;
@@ -848,7 +880,7 @@ export async function createRoute(
 }
 
 export async function setCourierAvailability(actor: MercadoActor, input: Record<string, unknown>) {
-  if (actor.perfil !== "cargador") fail(403, "forbidden", "Solo el cargador puede cambiar disponibilidad.");
+  assertPerfil(actor, "cargador", "Solo el cargador puede cambiar disponibilidad.");
   const disponibilidad = input.disponibilidad;
   if (disponibilidad !== "disponible" && disponibilidad !== "no_disponible") {
     fail(400, "invalid_request", "disponibilidad inválida.");
@@ -874,7 +906,7 @@ export async function listRoutes(actor: MercadoActor) {
 }
 
 async function assertCourierRoute(tx: Sql, actor: MercadoActor, routeId: string) {
-  if (actor.perfil !== "cargador") fail(403, "forbidden", "Solo el cargador puede operar recorridos.");
+  assertPerfil(actor, "cargador", "Solo el cargador puede operar recorridos.");
   const rows = await tx<{ id: string; estado: string }>`
     select id, estado from mercado_recorridos
     where id = ${routeId} and cargador_id = ${actor.id}
@@ -890,7 +922,7 @@ export async function changeRoute(
   action: "aceptar" | "rechazar",
   keyInput: string | undefined,
 ) {
-  if (actor.perfil !== "cargador") fail(403, "forbidden", "Solo el cargador puede operar recorridos.");
+  assertPerfil(actor, "cargador", "Solo el cargador puede operar recorridos.");
   const key = assertIdempotencyKey(keyInput);
   const request = { action, routeId };
   const sql = await getSql();
@@ -906,6 +938,13 @@ export async function changeRoute(
       await tx`update mercado_recorridos set estado = 'rechazado' where id = ${routeId}`;
       await tx`delete from mercado_recorrido_pedidos where recorrido_id = ${routeId}`;
     }
+    await auditMercado(
+      tx,
+      actor,
+      action === "aceptar" ? "mercado_recorrido_aceptado" : "mercado_recorrido_rechazado",
+      "mercado",
+      { id: routeId },
+    );
     const response = { recorrido: await routeResponse(tx, routeId) };
     await saveIdempotency(tx, actor, key, response);
     return response;
@@ -919,7 +958,7 @@ export async function updateStop(
   action: "retirar" | "entregar",
   keyInput: string | undefined,
 ) {
-  if (actor.perfil !== "cargador") fail(403, "forbidden", "Solo el cargador puede operar recorridos.");
+  assertPerfil(actor, "cargador", "Solo el cargador puede operar recorridos.");
   const key = assertIdempotencyKey(keyInput);
   const request = { action, routeId, pedidoId };
   const sql = await getSql();
@@ -951,6 +990,7 @@ export async function updateStop(
         update pedidos set picked_up_at = now(), updated_at = now()
         where id = ${pedidoId} and tenant_id = ${stop.tenant_id}
       `;
+      await auditMercado(tx, actor, "mercado_parada_retirada", stop.tenant_id, { id: routeId, pedidoId });
     } else {
       if (stop.estado !== "retirado") fail(400, "invalid_transition", "Retirá la parada antes de entregarla.");
       await tx`
@@ -974,6 +1014,7 @@ export async function updateStop(
         `;
         await tx`update mercado_cargadores set puntos = puntos + 1 where id = ${actor.id}`;
       }
+      await auditMercado(tx, actor, "mercado_parada_entregada", stop.tenant_id, { id: routeId, pedidoId });
     }
     const response = { recorrido: await routeResponse(tx, routeId) };
     await saveIdempotency(tx, actor, key, response);
@@ -986,7 +1027,7 @@ export async function rateRoute(
   routeId: string,
   input: Record<string, unknown>,
 ) {
-  if (actor.perfil !== "comprador") fail(403, "forbidden", "Solo el comprador puede calificar.");
+  assertPerfil(actor, "comprador", "Solo el comprador puede calificar.");
   const stars = input.estrellas;
   const comentario = typeof input.comentario === "string" ? input.comentario.trim().slice(0, 1000) : "";
   if (typeof stars !== "number" || !Number.isInteger(stars) || stars < 1 || stars > 5) {
@@ -1021,6 +1062,10 @@ export async function rateRoute(
       ), 0)
       where c.id = ${route.cargador_id}
     `;
+    await auditMercado(tx, actor, "mercado_recorrido_calificado", "mercado", {
+      id: routeId,
+      estrellas: stars,
+    });
     return { calificacion: { id: ratingId, recorridoId: routeId, estrellas: stars, comentario } };
   });
 }
