@@ -30,24 +30,9 @@ class ErrorPanel extends StatelessWidget {
   );
 }
 
-String statusLabel(String status) => switch (status) {
-  'confirmado' => 'Confirmado',
-  'en_preparacion' => 'En preparación',
-  'preparado' => 'Preparado',
-  'retirado' => 'Retirado',
-  'entregado' => 'Entregado',
-  'cancelado' => 'Cancelado',
-  'asignado' => 'Asignado',
-  'aceptado' => 'Aceptado',
-  'rechazado' => 'Rechazado',
-  _ => status,
-};
-
 String money(double value) => '\$${value.toStringAsFixed(2)}';
 String quantity(double value) => value == value.roundToDouble()
     ? value.toStringAsFixed(0)
     : value.toString();
-double asNumber(Object? value) =>
-    value is num ? value.toDouble() : double.tryParse('$value') ?? 0;
 String timeLabel(DateTime value) =>
     '${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';

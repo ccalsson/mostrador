@@ -1,32 +1,33 @@
 import 'package:flutter/material.dart';
 
 import '../market_api.dart';
+import '../models.dart';
 import '../widgets/common.dart';
 
 class CourierScreen extends StatefulWidget {
   const CourierScreen({required this.api, required this.actor, super.key});
 
   final MercadoApi api;
-  final Map<String, dynamic> actor;
+  final MercadoActor actor;
 
   @override
   State<CourierScreen> createState() => _CourierScreenState();
 }
 
 class _CourierScreenState extends State<CourierScreen> {
-  late Future<Map<String, dynamic>> _routes;
+  late Future<List<Recorrido>> _routes;
+  late bool _available;
   bool _busy = false;
-  bool _available = false;
 
   @override
   void initState() {
     super.initState();
-    _available = widget.actor['disponibilidad'] == 'disponible';
-    _routes = widget.api.routes();
+    _available = widget.actor.estaDisponible;
+    _routes = widget.api.listarRecorridos();
   }
 
   Future<void> _refresh() async {
-    setState(() => _routes = widget.api.routes());
+    setState(() => _routes = widget.api.listarRecorridos());
     await _routes;
   }
 
@@ -48,8 +49,8 @@ class _CourierScreenState extends State<CourierScreen> {
   Future<void> _action(String routeId, String action, {String? orderId}) async {
     setState(() => _busy = true);
     try {
-      await widget.api.routeAction(
-        widget.actor['id'] as String,
+      await widget.api.accionRecorrido(
+        widget.actor.id,
         routeId,
         action,
         orderId: orderId,
@@ -80,7 +81,7 @@ class _CourierScreenState extends State<CourierScreen> {
       ),
       const Divider(height: 1),
       Expanded(
-        child: FutureBuilder<Map<String, dynamic>>(
+        child: FutureBuilder<List<Recorrido>>(
           future: _routes,
           builder: (context, snapshot) {
             if (snapshot.hasError) {
@@ -89,8 +90,7 @@ class _CourierScreenState extends State<CourierScreen> {
             if (!snapshot.hasData) {
               return const Center(child: CircularProgressIndicator());
             }
-            final routes = (snapshot.data!['recorridos'] as List)
-                .cast<Map<String, dynamic>>();
+            final routes = snapshot.data!;
             if (routes.isEmpty) {
               return const Center(child: Text('Todavía no tenés recorridos.'));
             }
@@ -109,13 +109,15 @@ class _CourierScreenState extends State<CourierScreen> {
                             ListTile(
                               leading: const Icon(Icons.route_outlined),
                               title: Text(
-                                '${route['bultos']} bultos · ${statusLabel(route['estado'] as String)}',
+                                '${quantity(route.bultos)} bultos · '
+                                '${route.estado.label}',
                               ),
                               subtitle: Text(
-                                '${route['compradorNombre']} · ${route['compradorTelefono']}',
+                                '${route.compradorNombre} · '
+                                '${route.compradorTelefono}',
                               ),
                             ),
-                            if (route['estado'] == 'asignado')
+                            if (route.estado == EstadoRecorrido.asignado)
                               Wrap(
                                 spacing: 8,
                                 children: [
@@ -123,7 +125,7 @@ class _CourierScreenState extends State<CourierScreen> {
                                     onPressed: _busy
                                         ? null
                                         : () => _action(
-                                            route['id'] as String,
+                                            route.id,
                                             'rechazar',
                                           ),
                                     child: const Text('Rechazar'),
@@ -132,43 +134,40 @@ class _CourierScreenState extends State<CourierScreen> {
                                     onPressed: _busy
                                         ? null
                                         : () => _action(
-                                            route['id'] as String,
+                                            route.id,
                                             'aceptar',
                                           ),
                                     child: const Text('Aceptar'),
                                   ),
                                 ],
                               ),
-                            for (final stop
-                                in (route['paradas'] as List)
-                                    .cast<Map<String, dynamic>>())
+                            for (final stop in route.paradas)
                               ListTile(
                                 leading: const Icon(Icons.storefront_outlined),
-                                title: Text(stop['puesto'] as String),
+                                title: Text(stop.puesto),
                                 subtitle: Text(
-                                  '${stop['bultos']} bultos · ${statusLabel(stop['estado'] as String)}',
+                                  '${quantity(stop.bultos)} bultos · '
+                                  '${stop.estado.label}',
                                 ),
-                                trailing: stop['estado'] == 'aceptado'
+                                trailing: stop.estado == EstadoParada.aceptado
                                     ? FilledButton.tonal(
                                         onPressed: _busy
                                             ? null
                                             : () => _action(
-                                                route['id'] as String,
+                                                route.id,
                                                 'retirar',
-                                                orderId:
-                                                    stop['pedidoId'] as String,
+                                                orderId: stop.pedidoId,
                                               ),
                                         child: const Text('Retiré'),
                                       )
-                                    : stop['estado'] == 'retirado'
+                                    : stop.estado == EstadoParada.retirado
                                     ? FilledButton(
                                         onPressed: _busy
                                             ? null
                                             : () => _action(
-                                                route['id'] as String,
+                                                route.id,
                                                 'entregar',
-                                                orderId:
-                                                    stop['pedidoId'] as String,
+                                                orderId: stop.pedidoId,
                                               ),
                                         child: const Text('Entregué'),
                                       )

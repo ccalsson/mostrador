@@ -55,7 +55,7 @@ class _MarketHomeState extends State<MarketHome> {
             ),
           ]
         : <Widget>[
-            CourierScreen(api: widget.api, actor: widget.actor),
+            CourierScreen(api: widget.api, actor: actor),
             ProfileScreen(
               api: widget.api,
               actor: widget.actor,
