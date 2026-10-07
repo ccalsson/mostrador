@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'market_api.dart';
+import 'models.dart';
 import 'screens/buyer_orders_screen.dart';
 import 'screens/cart_screen.dart';
 import 'screens/courier_screen.dart';
@@ -33,19 +34,20 @@ class _MarketHomeState extends State<MarketHome> {
 
   @override
   Widget build(BuildContext context) {
+    final actor = MercadoActor.fromJson(widget.actor);
     final pages = _isBuyer
         ? <Widget>[
             StandsScreen(api: widget.api, onAdd: _addToCart),
             CartScreen(
               api: widget.api,
-              actor: widget.actor,
+              actor: actor,
               lines: _cart,
               onQuantityChanged: _setQuantity,
               onRemove: _remove,
               onIdentityNeeded: () => setState(() => _index = 3),
               onCheckout: _checkoutComplete,
             ),
-            BuyerOrdersScreen(api: widget.api, actor: widget.actor),
+            BuyerOrdersScreen(api: widget.api, actor: actor),
             ProfileScreen(
               api: widget.api,
               actor: widget.actor,
@@ -106,11 +108,11 @@ class _MarketHomeState extends State<MarketHome> {
   void _addToCart({
     required String tenantId,
     required String tenantName,
-    required Map<String, dynamic> product,
+    required Producto product,
     required DateTime readAt,
     required bool stale,
   }) {
-    final id = '$tenantId::${product['id']}';
+    final id = '$tenantId::${product.id}';
     final previous = _cart[id];
     setState(() {
       _cart[id] = CartLine(
@@ -123,7 +125,7 @@ class _MarketHomeState extends State<MarketHome> {
       );
     });
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('${product['nombre']} agregado al carrito.')),
+      SnackBar(content: Text('${product.nombre} agregado al carrito.')),
     );
   }
 
@@ -140,7 +142,7 @@ class _MarketHomeState extends State<MarketHome> {
   void _remove(String id) => setState(() => _cart.remove(id));
 
   void _checkoutComplete(Map<String, dynamic> result) {
-    final orders = result['pedidos'] as List? ?? const [];
+    final orders = PedidoComprador.listFromJson(result['pedidos']);
     setState(() {
       _cart.clear();
       _index = 2;

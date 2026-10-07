@@ -1,21 +1,23 @@
 import 'package:flutter/material.dart';
 
 import '../market_api.dart';
+import '../models.dart';
 import '../widgets/common.dart';
+import 'order_detail_screen.dart';
 
 class BuyerOrdersScreen extends StatefulWidget {
   const BuyerOrdersScreen({required this.api, required this.actor, super.key});
 
   final MercadoApi api;
-  final Map<String, dynamic> actor;
+  final MercadoActor actor;
 
   @override
   State<BuyerOrdersScreen> createState() => _BuyerOrdersScreenState();
 }
 
 class _BuyerOrdersScreenState extends State<BuyerOrdersScreen> {
-  late Future<Map<String, dynamic>> _orders;
-  late Future<Map<String, dynamic>> _routes;
+  late Future<List<PedidoComprador>> _orders;
+  late Future<List<Recorrido>> _routes;
   final Set<String> _selected = {};
   bool _busy = false;
 
@@ -26,8 +28,8 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen> {
   }
 
   void _reload() {
-    _orders = widget.api.buyerOrders();
-    _routes = widget.api.routes();
+    _orders = widget.api.listarPedidosComprador();
+    _routes = widget.api.listarRecorridos();
   }
 
   Future<void> _refresh() async {
@@ -35,12 +37,19 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen> {
     await Future.wait([_orders, _routes]);
   }
 
+  void _openOrder(PedidoComprador order) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => OrderDetailScreen(api: widget.api, pedidoId: order.id),
+      ),
+    );
+    if (mounted) _refresh();
+  }
+
   Future<void> _assignCourier() async {
-    final orders = await widget.api.couriers();
+    final couriers = await widget.api.listarCargadores();
     if (!mounted) return;
-    final couriers = (orders['cargadores'] as List)
-        .cast<Map<String, dynamic>>();
-    final chosen = await showModalBottomSheet<Map<String, dynamic>>(
+    final chosen = await showModalBottomSheet<Cargador>(
       context: context,
       builder: (context) => SafeArea(
         child: couriers.isEmpty
@@ -57,10 +66,10 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen> {
                       leading: const CircleAvatar(
                         child: Icon(Icons.delivery_dining),
                       ),
-                      title: Text(courier['nombre'] as String),
+                      title: Text(courier.nombre),
                       subtitle: Text(
-                        '${courier['nivel']} · ${courier['puntos']} puntos · '
-                        '⭐ ${asNumber(courier['calificacion']).toStringAsFixed(1)}',
+                        '${courier.nivel} · ${courier.puntos} puntos · '
+                        '⭐ ${courier.calificacion.toStringAsFixed(1)}',
                       ),
                       onTap: () => Navigator.pop(context, courier),
                     ),
@@ -71,9 +80,9 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen> {
     if (chosen == null || !mounted) return;
     setState(() => _busy = true);
     try {
-      await widget.api.createRoute(
-        userId: widget.actor['id'] as String,
-        courierId: chosen['id'] as String,
+      await widget.api.crearRecorrido(
+        userId: widget.actor.id,
+        courierId: chosen.id,
         orderIds: _selected.toList(),
       );
       if (mounted) {
@@ -95,7 +104,7 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen> {
     }
   }
 
-  Future<void> _rate(Map<String, dynamic> route) async {
+  Future<void> _rate(Recorrido route) async {
     var stars = 5;
     final comment = TextEditingController();
     final submit = await showDialog<bool>(
@@ -140,8 +149,8 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen> {
     );
     if (submit != true || !mounted) return;
     try {
-      await widget.api.rateRoute(
-        routeId: route['id'] as String,
+      await widget.api.calificarRecorrido(
+        routeId: route.id,
         stars: stars,
         comment: comment.text,
       );
@@ -157,7 +166,7 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen> {
   }
 
   @override
-  Widget build(BuildContext context) => FutureBuilder<Map<String, dynamic>>(
+  Widget build(BuildContext context) => FutureBuilder<List<PedidoComprador>>(
     future: _orders,
     builder: (context, snapshot) {
       if (snapshot.hasError) {
@@ -166,10 +175,9 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen> {
       if (!snapshot.hasData) {
         return const Center(child: CircularProgressIndicator());
       }
-      final orders = (snapshot.data!['pedidos'] as List)
-          .cast<Map<String, dynamic>>();
+      final orders = snapshot.data!;
       final ready = orders
-          .where((order) => order['estado'] == 'preparado')
+          .where((order) => order.estado == EstadoPedidoComprador.preparado)
           .toList();
       return RefreshIndicator(
         onRefresh: _refresh,
@@ -183,17 +191,17 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen> {
               ),
               for (final order in ready)
                 CheckboxListTile(
-                  value: _selected.contains(order['id']),
+                  value: _selected.contains(order.id),
                   onChanged: (selected) => setState(() {
                     if (selected == true) {
-                      _selected.add(order['id'] as String);
+                      _selected.add(order.id);
                     } else {
-                      _selected.remove(order['id']);
+                      _selected.remove(order.id);
                     }
                   }),
-                  title: Text(order['puesto'] as String),
+                  title: Text(order.puesto),
                   subtitle: Text(
-                    '${order['bultos']} bultos · ${money(asNumber(order['total']))}',
+                    '${quantity(order.bultos)} bultos · ${money(order.total)}',
                   ),
                   secondary: const Icon(Icons.inventory_2_outlined),
                 ),
@@ -215,17 +223,18 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen> {
             for (final order in orders)
               ListTile(
                 leading: const Icon(Icons.receipt_long_outlined),
-                title: Text(order['puesto'] as String),
+                title: Text(order.puesto),
                 subtitle: Text(
-                  '${statusLabel(order['estado'] as String)} · ${order['bultos']} bultos',
+                  '${order.estado.label} · ${quantity(order.bultos)} bultos',
                 ),
-                trailing: Text(money(asNumber(order['total']))),
+                trailing: Text(money(order.total)),
+                onTap: () => _openOrder(order),
               ),
             const Padding(
               padding: EdgeInsets.fromLTRB(16, 20, 16, 8),
               child: Text('Recorridos'),
             ),
-            FutureBuilder<Map<String, dynamic>>(
+            FutureBuilder<List<Recorrido>>(
               future: _routes,
               builder: (context, routeSnapshot) {
                 if (routeSnapshot.hasError) {
@@ -240,8 +249,7 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen> {
                     child: Center(child: CircularProgressIndicator()),
                   );
                 }
-                final routes = (routeSnapshot.data!['recorridos'] as List)
-                    .cast<Map<String, dynamic>>();
+                final routes = routeSnapshot.data!;
                 if (routes.isEmpty) {
                   return const ListTile(
                     title: Text('No hay recorridos todavía.'),
@@ -259,23 +267,23 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen> {
                           children: [
                             ListTile(
                               leading: const Icon(Icons.route_outlined),
-                              title: Text('Cargador: ${route['cargador']}'),
+                              title: Text('Cargador: ${route.cargador}'),
                               subtitle: Text(
-                                '${statusLabel(route['estado'] as String)} · ${route['bultos']} bultos',
+                                '${route.estado.label} · '
+                                '${quantity(route.bultos)} bultos',
                               ),
                             ),
-                            for (final stop
-                                in (route['paradas'] as List)
-                                    .cast<Map<String, dynamic>>())
+                            for (final stop in route.paradas)
                               ListTile(
                                 dense: true,
-                                title: Text(stop['puesto'] as String),
+                                title: Text(stop.puesto),
                                 subtitle: Text(
-                                  '${statusLabel(stop['estado'] as String)} · ${stop['bultos']} bultos',
+                                  '${stop.estado.label} · '
+                                  '${quantity(stop.bultos)} bultos',
                                 ),
                               ),
-                            if (route['estado'] == 'entregado' &&
-                                route['calificada'] != true)
+                            if (route.estado == EstadoRecorrido.entregado &&
+                                !route.calificada)
                               Padding(
                                 padding: const EdgeInsets.only(bottom: 12),
                                 child: OutlinedButton.icon(
@@ -284,7 +292,7 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen> {
                                   label: const Text('Calificar recorrido'),
                                 ),
                               ),
-                            if (route['calificada'] == true)
+                            if (route.calificada)
                               const Padding(
                                 padding: EdgeInsets.only(bottom: 12),
                                 child: Text('Recorrido calificado'),

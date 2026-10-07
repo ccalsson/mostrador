@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../market_api.dart';
+import '../models.dart';
 import '../widgets/common.dart';
 
 class CartLine {
@@ -15,7 +16,7 @@ class CartLine {
 
   final String tenantId;
   final String tenantName;
-  final Map<String, dynamic> product;
+  final Producto product;
   final double quantity;
   final DateTime readAt;
   final bool stale;
@@ -31,7 +32,7 @@ class CartLine {
 
   Map<String, dynamic> toCheckoutItem() => {
     'tenantId': tenantId,
-    'productoId': product['id'],
+    'productoId': product.id,
     'cantidad': quantity,
   };
 }
@@ -49,7 +50,7 @@ class CartScreen extends StatefulWidget {
   });
 
   final MercadoApi api;
-  final Map<String, dynamic> actor;
+  final MercadoActor actor;
   final Map<String, CartLine> lines;
   final void Function(String id, double quantity) onQuantityChanged;
   final ValueChanged<String> onRemove;
@@ -78,14 +79,12 @@ class _CartScreenState extends State<CartScreen> {
   }
 
   Future<void> _loadPending() async {
-    final pending = await widget.api.pendingCheckout(
-      widget.actor['id'] as String,
-    );
+    final pending = await widget.api.pendingCheckout(widget.actor.id);
     if (mounted) setState(() => _pending = pending);
   }
 
   Future<void> _checkout() async {
-    if (widget.actor['estadoIdentidad'] != 'documentacion_cargada') {
+    if (!widget.actor.puedeComprar) {
       widget.onIdentityNeeded();
       return;
     }
@@ -118,7 +117,7 @@ class _CartScreenState extends State<CartScreen> {
     setState(() => _busy = true);
     try {
       final result = await widget.api.checkout(
-        userId: widget.actor['id'] as String,
+        userId: widget.actor.id,
         items: widget.lines.values
             .map((line) => line.toCheckoutItem())
             .toList(),
@@ -160,8 +159,7 @@ class _CartScreenState extends State<CartScreen> {
             leading: const Icon(Icons.sync_problem),
             actions: const [],
           ),
-        if (widget.actor['estadoIdentidad'] != 'documentacion_cargada' &&
-            !isPending)
+        if (!widget.actor.puedeComprar && !isPending)
           MaterialBanner(
             content: const Text(
               'Completá tu documentación antes de confirmar una compra.',
@@ -212,10 +210,10 @@ class _CartScreenState extends State<CartScreen> {
                   ),
                   for (final item in entry.value)
                     ListTile(
-                      title: Text(item.value.product['nombre'] as String),
+                      title: Text(item.value.product.nombre),
                       subtitle: Text(
-                        '${money(asNumber(item.value.product['precio']))} · '
-                        '${item.value.product['unidadLabel']} · '
+                        '${money(item.value.product.precio)} · '
+                        '${item.value.product.unidadLabel} · '
                         '${item.value.stale ? 'Catálogo sin conexión' : timeLabel(item.value.readAt)}',
                       ),
                       leading: IconButton(

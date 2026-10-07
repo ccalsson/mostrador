@@ -44,7 +44,7 @@ class ProductRead {
     required this.isStale,
   });
 
-  final List<Map<String, dynamic>> products;
+  final List<Producto> products;
   final DateTime readAt;
   final bool isStale;
 }
@@ -52,7 +52,7 @@ class ProductRead {
 class _CachedProducts {
   const _CachedProducts(this.products, this.readAt);
 
-  final List<Map<String, dynamic>> products;
+  final List<Producto> products;
   final DateTime readAt;
 }
 
@@ -295,8 +295,7 @@ class MercadoApi {
       final response = await get(
         'puestos/${Uri.encodeComponent(tenantId)}/productos',
       );
-      final products = (response['productos'] as List)
-          .cast<Map<String, dynamic>>();
+      final products = _tipos(response['productos'], Producto.fromJson);
       final readAt = DateTime.now();
       _productsCache[tenantId] = _CachedProducts(products, readAt);
       return ProductRead(products: products, readAt: readAt, isStale: false);
@@ -470,10 +469,7 @@ class MercadoApi {
   Future<List<Producto>> listarProductos(
     String tenantId, {
     bool force = false,
-  }) async {
-    final result = await products(tenantId, force: force);
-    return _tipos(result.products, Producto.fromJson);
-  }
+  }) async => (await products(tenantId, force: force)).products;
 
   Future<List<PedidoComprador>> listarPedidosComprador() async {
     final response = await buyerOrders();

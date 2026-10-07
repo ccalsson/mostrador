@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../market_api.dart';
+import '../models.dart';
 import '../widgets/common.dart';
 
 class StandsScreen extends StatefulWidget {
@@ -10,7 +11,7 @@ class StandsScreen extends StatefulWidget {
   final void Function({
     required String tenantId,
     required String tenantName,
-    required Map<String, dynamic> product,
+    required Producto product,
     required DateTime readAt,
     required bool stale,
   })
@@ -21,44 +22,45 @@ class StandsScreen extends StatefulWidget {
 }
 
 class _StandsScreenState extends State<StandsScreen> {
-  late Future<List<Map<String, dynamic>>> _standsFuture;
-  String? _tenantId;
-  String? _tenantName;
+  late Future<List<Puesto>> _standsFuture;
+  Puesto? _puesto;
   late Future<ProductRead> _productsFuture;
 
   @override
   void initState() {
     super.initState();
-    _standsFuture = widget.api.stands();
+    _standsFuture = widget.api.listarPuestos();
   }
 
-  void _openStand(Map<String, dynamic> stand) {
+  void _openStand(Puesto stand) {
     setState(() {
-      _tenantId = stand['id'] as String;
-      _tenantName = stand['nombre'] as String;
-      _productsFuture = widget.api.products(_tenantId!);
+      _puesto = stand;
+      _productsFuture = widget.api.products(stand.id);
     });
   }
 
   Future<void> _refreshProducts() async {
-    final tenant = _tenantId;
-    if (tenant == null) return;
-    setState(() => _productsFuture = widget.api.products(tenant, force: true));
+    final puesto = _puesto;
+    if (puesto == null) return;
+    setState(
+      () => _productsFuture = widget.api.products(puesto.id, force: true),
+    );
     await _productsFuture;
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_tenantId != null) {
+    final puesto = _puesto;
+    if (puesto != null) {
       return Column(
         children: [
           ListTile(
             leading: IconButton(
               tooltip: 'Volver a los puestos',
-              onPressed: () => setState(() => _tenantId = null),
+              onPressed: () => setState(() => _puesto = null),
               icon: const Icon(Icons.arrow_back),
             ),
-            title: Text(_tenantName ?? 'Puesto'),
+            title: Text(puesto.nombre),
             trailing: IconButton(
               tooltip: 'Actualizar productos',
               onPressed: _refreshProducts,
@@ -107,20 +109,20 @@ class _StandsScreenState extends State<StandsScreen> {
                                 itemCount: result.products.length,
                                 itemBuilder: (context, index) {
                                   final product = result.products[index];
-                                  final stock = asNumber(product['disponible']);
                                   return ListTile(
-                                    title: Text(product['nombre'] as String),
+                                    title: Text(product.nombre),
                                     subtitle: Text(
-                                      '${money(asNumber(product['precio']))} · '
-                                      '${product['unidadLabel']} · Disponible: $stock',
+                                      '${money(product.precio)} · '
+                                      '${product.unidadLabel} · '
+                                      'Disponible: ${quantity(product.disponible)}',
                                     ),
                                     trailing: IconButton.filledTonal(
                                       tooltip: 'Agregar al carrito',
-                                      onPressed: stock <= 0
+                                      onPressed: product.disponible <= 0
                                           ? null
                                           : () => widget.onAdd(
-                                              tenantId: _tenantId!,
-                                              tenantName: _tenantName ?? '',
+                                              tenantId: puesto.id,
+                                              tenantName: puesto.nombre,
                                               product: product,
                                               readAt: result.readAt,
                                               stale: result.isStale,
@@ -140,14 +142,16 @@ class _StandsScreenState extends State<StandsScreen> {
         ],
       );
     }
-    return FutureBuilder<List<Map<String, dynamic>>>(
+    return FutureBuilder<List<Puesto>>(
       future: _standsFuture,
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           return ErrorPanel(
             error: snapshot.error,
             onRetry: () async {
-              setState(() => _standsFuture = widget.api.stands(force: true));
+              setState(
+                () => _standsFuture = widget.api.listarPuestos(force: true),
+              );
               await _standsFuture;
             },
           );
@@ -163,7 +167,9 @@ class _StandsScreenState extends State<StandsScreen> {
         }
         return RefreshIndicator(
           onRefresh: () async {
-            setState(() => _standsFuture = widget.api.stands(force: true));
+            setState(
+              () => _standsFuture = widget.api.listarPuestos(force: true),
+            );
             await _standsFuture;
           },
           child: ListView.separated(
@@ -176,10 +182,10 @@ class _StandsScreenState extends State<StandsScreen> {
                 leading: const CircleAvatar(
                   child: Icon(Icons.storefront_outlined),
                 ),
-                title: Text(stand['nombre'] as String),
+                title: Text(stand.nombre),
                 subtitle: Text(
-                  (stand['bajada'] as String?)?.isNotEmpty == true
-                      ? stand['bajada'] as String
+                  stand.bajada.isNotEmpty
+                      ? stand.bajada
                       : 'Ver productos disponibles',
                 ),
                 trailing: const Icon(Icons.chevron_right),
