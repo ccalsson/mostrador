@@ -92,6 +92,8 @@ class Pedido {
     required this.updatedAt,
     required this.formaPago,
     required this.comprobanteNombre,
+    this.pickedUpAt,
+    this.cargadorNombre,
   });
 
   final String id;
@@ -108,6 +110,8 @@ class Pedido {
   final String updatedAt;
   final String? formaPago;
   final String? comprobanteNombre;
+  final String? pickedUpAt;
+  final String? cargadorNombre;
 
   factory Pedido.fromJson(Map<String, dynamic> json) {
     return Pedido(
@@ -128,6 +132,8 @@ class Pedido {
       updatedAt: json['updatedAt'] as String? ?? '',
       formaPago: json['formaPago'] as String?,
       comprobanteNombre: json['comprobanteNombre'] as String?,
+      pickedUpAt: json['pickedUpAt'] as String?,
+      cargadorNombre: json['cargadorNombre'] as String?,
     );
   }
 }

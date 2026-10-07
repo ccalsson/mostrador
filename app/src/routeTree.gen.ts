@@ -29,6 +29,7 @@ import { Route as RemitosIdRouteImport } from './routes/remitos.$id'
 import { Route as TicketCobroIdRouteImport } from './routes/ticket.$cobroId'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiV1SplatRouteImport } from './routes/api/v1/$'
+import { Route as ApiMercadoV1SplatRouteImport } from './routes/api/mercado/v1/$'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -130,6 +131,11 @@ const ApiV1SplatRoute = ApiV1SplatRouteImport.update({
   path: '/api/v1/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiMercadoV1SplatRoute = ApiMercadoV1SplatRouteImport.update({
+  id: '/api/mercado/v1/$',
+  path: '/api/mercado/v1/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -152,6 +158,7 @@ export interface FileRoutesByFullPath {
   '/ticket/$cobroId': typeof TicketCobroIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/v1/$': typeof ApiV1SplatRoute
+  '/api/mercado/v1/$': typeof ApiMercadoV1SplatRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -174,6 +181,7 @@ export interface FileRoutesByTo {
   '/ticket/$cobroId': typeof TicketCobroIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/v1/$': typeof ApiV1SplatRoute
+  '/api/mercado/v1/$': typeof ApiMercadoV1SplatRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -197,6 +205,7 @@ export interface FileRoutesById {
   '/ticket/$cobroId': typeof TicketCobroIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/v1/$': typeof ApiV1SplatRoute
+  '/api/mercado/v1/$': typeof ApiMercadoV1SplatRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -221,6 +230,7 @@ export interface FileRouteTypes {
     | '/ticket/$cobroId'
     | '/api/auth/$'
     | '/api/v1/$'
+    | '/api/mercado/v1/$'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -243,6 +253,7 @@ export interface FileRouteTypes {
     | '/ticket/$cobroId'
     | '/api/auth/$'
     | '/api/v1/$'
+    | '/api/mercado/v1/$'
   id:
     | '__root__'
     | '/'
@@ -265,6 +276,7 @@ export interface FileRouteTypes {
     | '/ticket/$cobroId'
     | '/api/auth/$'
     | '/api/v1/$'
+    | '/api/mercado/v1/$'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -287,6 +299,7 @@ export interface RootRouteChildren {
   TicketCobroIdRoute: typeof TicketCobroIdRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiV1SplatRoute: typeof ApiV1SplatRoute
+  ApiMercadoV1SplatRoute: typeof ApiMercadoV1SplatRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -431,6 +444,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiV1SplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/mercado/v1/$': {
+      id: '/api/mercado/v1/$'
+      path: '/api/mercado/v1/$'
+      fullPath: '/api/mercado/v1/$'
+      preLoaderRoute: typeof ApiMercadoV1SplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -465,6 +485,7 @@ const rootRouteChildren: RootRouteChildren = {
   TicketCobroIdRoute: TicketCobroIdRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiV1SplatRoute: ApiV1SplatRoute,
+  ApiMercadoV1SplatRoute: ApiMercadoV1SplatRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

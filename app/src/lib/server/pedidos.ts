@@ -51,6 +51,40 @@ export async function updatePedidoEstadoForStaff(
 ): Promise<Pedido | null> {
   assertRole(staff, ["admin", "cajero"]);
   const sql = await getSql();
+  const rows = await sql<{ estado: PedidoEstado; origen: string }>`
+    select estado, origen from pedidos
+    where id = ${input.id} and tenant_id = ${staff.tenantId}
+    limit 1
+  `;
+  const current = rows[0];
+  if (!current) return null;
+  if (current.origen === "mercado_al_toque") {
+    const valid =
+      (current.estado === "enviado" && input.estado === "en_preparacion") ||
+      (current.estado === "en_preparacion" && input.estado === "listo") ||
+      (current.estado === "listo" && input.estado === "cobrado");
+    if (!valid && current.estado !== input.estado) {
+      const error = new Error("El pedido de Mercado debe pasar por preparación antes de marcarse listo.");
+      Object.assign(error, { status: 400 });
+      throw error;
+    }
+    await sql`
+      update pedidos
+      set estado = ${input.estado},
+          preparation_started_at = case
+            when ${input.estado} = 'en_preparacion' then coalesce(preparation_started_at, now())
+            else preparation_started_at
+          end,
+          prepared_at = case
+            when ${input.estado} = 'listo' then coalesce(prepared_at, now())
+            else prepared_at
+          end,
+          updated_at = now()
+      where id = ${input.id} and tenant_id = ${staff.tenantId}
+    `;
+    await audit(staff.tenantId, staff, "cambio_estado", "pedido", input);
+    return loadPedido(input.id, staff.tenantId);
+  }
   await sql`
     update pedidos set estado = ${input.estado}, updated_at = now()
     where id = ${input.id} and tenant_id = ${staff.tenantId}
@@ -61,10 +95,18 @@ export async function updatePedidoEstadoForStaff(
 
 export async function marcarEntregadoForStaff(staff: Staff, id: string) {
   assertRole(staff, ["admin", "cajero", "vendedor"]);
+  const sql = await getSql();
+  const mercado = await sql<{ origen: string }>`
+    select origen from pedidos where id = ${id} and tenant_id = ${staff.tenantId} limit 1
+  `;
+  if (mercado[0]?.origen === "mercado_al_toque") {
+    const error = new Error("Los pedidos de Mercado se entregan desde el recorrido del cargador.");
+    Object.assign(error, { status: 400 });
+    throw error;
+  }
   const pedido = await loadPedido(id, staff.tenantId);
   if (!pedido) throw new Error("Pedido no encontrado.");
   if (pedido.estado !== "cobrado") throw new Error("Solo se entrega un pedido ya cobrado.");
-  const sql = await getSql();
   await sql`
     update pedidos set estado = 'entregado', updated_at = now()
     where id = ${id} and tenant_id = ${staff.tenantId}

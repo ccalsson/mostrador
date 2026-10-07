@@ -87,6 +87,8 @@ export type Pedido = {
   updatedAt: string;
   formaPago?: FormaPago | null;
   comprobanteNombre?: string | null;
+  pickedUpAt?: string | null;
+  cargadorNombre?: string | null;
 };
 
 export type Alerta = {

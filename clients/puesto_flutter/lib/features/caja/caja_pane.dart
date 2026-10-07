@@ -170,7 +170,13 @@ class _CajaPaneState extends ConsumerState<CajaPane> {
           selected: pedido.id == _seleccionado,
           leading: const Icon(Icons.receipt_long_outlined),
           title: Text('Nº ${pedido.id}'),
-          subtitle: Text('${pedido.clienteNombre} · ${pedido.estado.label}'),
+          subtitle: Text(
+            pedido.pickedUpAt != null
+                ? '${pedido.clienteNombre} · ${pedido.estado.label} · '
+                    'Retirado · ${pedido.cargadorNombre ?? 'Cargador'} · '
+                    '${fechaCorta(pedido.pickedUpAt!)}'
+                : '${pedido.clienteNombre} · ${pedido.estado.label}',
+          ),
           trailing: Text(
             moneda(pedido.total),
             style: Theme.of(context).textTheme.titleSmall,

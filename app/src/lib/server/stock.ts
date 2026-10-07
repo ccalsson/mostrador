@@ -1,4 +1,5 @@
 import { getSql } from "@/lib/db";
+import type { Sql } from "@/lib/db";
 import { newId } from "@/lib/ids";
 import { num } from "@/lib/money";
 import { assertRole, audit } from "@/lib/server/context";
@@ -11,8 +12,8 @@ export async function applyStock(opts: {
   cantidad: number;
   referencia: string;
   staff: Staff | null;
-}) {
-  const sql = await getSql();
+}, transaction?: Sql) {
+  const sql = transaction ?? await getSql();
   await sql`
     insert into stock_movimientos (id, tenant_id, producto_id, tipo, cantidad, referencia, usuario_id)
     values (
@@ -64,8 +65,8 @@ export async function hayReserva(tenantId: string, pedidoId: string) {
   return Boolean(rows[0]);
 }
 
-export async function soltarReserva(tenantId: string, pedidoId: string) {
-  const sql = await getSql();
+export async function soltarReserva(tenantId: string, pedidoId: string, transaction?: Sql) {
+  const sql = transaction ?? await getSql();
   const rows = await sql<{ producto_id: string; n: unknown }>`
     select producto_id, sum(cantidad) as n
     from stock_movimientos
@@ -82,7 +83,7 @@ export async function soltarReserva(tenantId: string, pedidoId: string) {
       cantidad: qty,
       referencia: pedidoId,
       staff: null,
-    });
+    }, transaction);
   }
   await sql`
     delete from stock_movimientos
@@ -94,14 +95,17 @@ export async function reservarLineas(
   tenantId: string,
   pedidoId: string,
   items: { productoId: string; cantidad: number }[],
+  transaction?: Sql,
 ) {
-  const sql = await getSql();
-  for (const line of items) {
+  const sql = transaction ?? await getSql();
+  const sortedItems = [...items].sort((a, b) => a.productoId.localeCompare(b.productoId));
+  for (const line of sortedItems) {
     if (line.cantidad <= 0) continue;
     const rows = await sql<{ stock: unknown; nombre: string }>`
       select stock, nombre from productos
       where id = ${line.productoId} and tenant_id = ${tenantId}
       limit 1
+      for update
     `;
     const row = rows[0];
     if (!row) throw new Error("Hay un producto que ya no está en el catálogo.");
@@ -109,7 +113,7 @@ export async function reservarLineas(
       throw new Error(`No alcanza el stock de ${row.nombre}.`);
     }
   }
-  for (const line of items) {
+  for (const line of sortedItems) {
     if (line.cantidad <= 0) continue;
     await applyStock({
       tenantId,
@@ -118,7 +122,7 @@ export async function reservarLineas(
       cantidad: -line.cantidad,
       referencia: pedidoId,
       staff: null,
-    });
+    }, transaction);
   }
 }
 
@@ -139,4 +143,3 @@ export async function ajustarStockForStaff(
   await audit(staff.tenantId, staff, input.tipo, "stock", input);
   return { ok: true as const };
 }
-

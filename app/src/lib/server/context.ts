@@ -120,6 +120,8 @@ type PedidoRow = {
   comprobante_nombre: string | null;
   created_at: string;
   updated_at: string;
+  picked_up_at: string | null;
+  cargador_nombre: string | null;
 };
 
 type ItemRow = {
@@ -135,9 +137,13 @@ type ItemRow = {
 const PEDIDO_SELECT = `
     select p.id, p.client_uuid, p.vendedor_id, s.nombre as vendedor_nombre,
            p.cliente_id, p.cliente_nombre, p.estado, p.nota, p.forma_pago, p.comprobante_nombre,
-           p.created_at::text as created_at, p.updated_at::text as updated_at
+           p.created_at::text as created_at, p.updated_at::text as updated_at,
+           p.picked_up_at::text as picked_up_at, mc.nombre as cargador_nombre
     from pedidos p
     left join staff s on s.id = p.vendedor_id
+    left join mercado_recorrido_pedidos mrp on mrp.pedido_id = p.id
+    left join mercado_recorridos mr on mr.id = mrp.recorrido_id
+    left join mercado_cargadores mc on mc.id = mr.cargador_id
 `;
 
 function mapPedido(p: PedidoRow, items: PedidoItem[]): Pedido {
@@ -152,6 +158,8 @@ function mapPedido(p: PedidoRow, items: PedidoItem[]): Pedido {
     nota: p.nota,
     formaPago: p.forma_pago ?? null,
     comprobanteNombre: p.comprobante_nombre,
+    pickedUpAt: p.picked_up_at,
+    cargadorNombre: p.cargador_nombre,
     items,
     total: items.reduce((acc, it) => acc + it.subtotal, 0),
     createdAt: p.created_at,
