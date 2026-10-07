@@ -385,13 +385,46 @@ async function main() {
   )[0];
   assert(Boolean(picked?.t), "G. pedidos.picked_up_at escrito", String(picked?.t));
 
-  // ---------- H. ESTADO COMPRADOR FINAL ----------
+  const entregar = await mercadoApi(`/recorridos/${rec.id}/entregar`, {
+    method: "POST",
+    token: courierToken,
+    key: `e2e-ent-${Date.now()}`,
+    body: { pedidoId: pedido.id },
+  });
+  const entregaJson = JSON.stringify(entregar.json).slice(0, 300);
+  assert(
+    entregar.status === 200 &&
+      entregar.json?.recorrido?.estado === "entregado" &&
+      entregar.json?.recorrido?.paradas?.[0]?.estado === "entregado",
+    "G. parada y recorrido entregados",
+    entregaJson,
+  );
+  const punto = (
+    await sqlRows(
+      `select puntos::int as p from mercado_punto_movimientos where recorrido_id = $1 and motivo = 'recorrido_entregado'`,
+      [rec.id],
+    )
+  )[0];
+  assert(punto?.p === 1, "G. punto por recorrido entregado", String(punto?.p));
+
+  // ---------- H. CALIFICACIÓN Y ESTADO COMPRADOR FINAL ----------
+  const calificar = await mercadoApi(`/recorridos/${rec.id}/calificar`, {
+    method: "POST",
+    token: buyerToken,
+    body: { estrellas: 5, comentario: "e2e" },
+  });
+  assert(
+    calificar.status === 200 && calificar.json?.calificacion?.estrellas === 5,
+    "H. recorrido calificado",
+    JSON.stringify(calificar.json).slice(0, 200),
+  );
+
   const final = await mercadoApi(`/pedidos/${pedido.id}`, { token: buyerToken });
   const fp = final.json?.pedido;
-  assert(fp?.estado === "retirado" && Boolean(fp?.pickedUpAt), "H. comprador ve retirado", JSON.stringify(fp).slice(0, 300));
+  assert(fp?.estado === "entregado" && Boolean(fp?.deliveredAt), "H. comprador ve entregado", JSON.stringify(fp).slice(0, 300));
   const listado = await mercadoApi("/pedidos", { token: buyerToken });
   const enListado = (listado.json?.pedidos ?? []).find((p) => p.id === pedido.id);
-  assert(enListado?.estado === "retirado", "H. listado comprador incluye el pedido");
+  assert(enListado?.estado === "entregado", "H. listado comprador incluye el pedido");
 
   console.log(
     `\n[resumen] corrida completa — pedido ${pedido.id}, recorrido ${rec.id}, fallos: ${failures}`,
