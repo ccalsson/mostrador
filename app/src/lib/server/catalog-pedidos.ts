@@ -1,6 +1,6 @@
 import { getSql } from "@/lib/db";
 import { newId } from "@/lib/ids";
-import { audit, loadPedido, mapProducto } from "@/lib/server/context";
+import { audit, assertRole, loadPedido, mapProducto } from "@/lib/server/context";
 import type { Pedido, PedidoEstado, Producto, Staff } from "@/lib/types";
 
 export type PedidoLineaInput = { productoId: string; cantidad: number };
@@ -82,6 +82,7 @@ export async function syncCatalogoForStaff(
  * the lookup avoids needless writes on normal offline retries.
  */
 export async function crearPedidoForStaff(staff: Staff, input: CrearPedidoInput): Promise<Pedido> {
+  assertRole(staff, ["vendedor", "cajero"]);
   if (input.items.length === 0) throw new Error("El pedido no tiene productos.");
   const sql = await getSql();
   const rows = await sql<ProductoRow>`

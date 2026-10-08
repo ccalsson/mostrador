@@ -2,6 +2,7 @@ import { getSql } from "@/lib/db";
 import { newId } from "@/lib/ids";
 import { num } from "@/lib/money";
 import { assertRole, audit, getTenant, loadPedido } from "@/lib/server/context";
+import { exigirCuentaCorriente } from "@/lib/server/capabilities";
 import { applyStock, hayReserva, soltarReserva } from "@/lib/server/stock";
 import type { FormaPago, Staff } from "@/lib/types";
 
@@ -43,6 +44,7 @@ export async function cobrarPedidoForStaff(staff: Staff, input: CobrarPedidoInpu
   if (pedido.estado === "cobrado") throw new Error("El pedido ya está cobrado.");
   if (pedido.items.length === 0) throw new Error("No hay ítems para cobrar.");
   if (input.formaPago === "cuenta_corriente") {
+    await exigirCuentaCorriente(staff);
     if (!pedido.clienteId) throw new Error("La cuenta corriente es solo para un cliente cargado.");
     const ficha = await sql<{ cuenta_corriente: boolean }>`
       select cuenta_corriente from clientes

@@ -1,7 +1,8 @@
 import { getSql } from "@/lib/db";
 import { newId } from "@/lib/ids";
 import { num } from "@/lib/money";
-import { assertRole } from "@/lib/server/context";
+import { exigirCuentaCorriente } from "@/lib/server/capabilities";
+import { assertRole, audit } from "@/lib/server/context";
 import type { Cliente, Staff } from "@/lib/types";
 
 export async function listClientesForStaff(staff: Staff): Promise<Cliente[]> {
@@ -30,12 +31,15 @@ export async function createClienteForStaff(
   staff: Staff,
   input: { nombre: string; telefono?: string; cuentaCorriente?: boolean },
 ) {
+  assertRole(staff, ["admin"]);
+  if (input.cuentaCorriente) await exigirCuentaCorriente(staff);
   const sql = await getSql();
   const id = newId("cli");
   await sql`
     insert into clientes (id, tenant_id, nombre, telefono, cuenta_corriente)
     values (${id}, ${staff.tenantId}, ${input.nombre.trim()}, ${input.telefono ?? null}, ${input.cuentaCorriente ?? false})
   `;
+  await audit(staff.tenantId, staff, "alta_cliente", "cliente", { id, cc: input.cuentaCorriente ?? false });
   return { id, nombre: input.nombre.trim() };
 }
 

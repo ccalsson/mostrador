@@ -52,6 +52,11 @@ export async function createUsuarioForStaff(
 
 export async function toggleUsuarioForStaff(staff: Staff, input: { id: string; activo: boolean }) {
   assertRole(staff, ["admin"]);
+  if (!input.activo && input.id === staff.id) {
+    const err = new Error("No podés eliminarte a vos mismo.");
+    Object.assign(err, { status: 409 });
+    throw err;
+  }
   const sql = await getSql();
   await sql`
     update staff set activo = ${input.activo}
