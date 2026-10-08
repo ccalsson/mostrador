@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'market_api.dart';
+import 'tema.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({
@@ -9,6 +10,8 @@ class LoginScreen extends StatefulWidget {
     required this.onAuthenticated,
     required this.onRetry,
     this.startupError,
+    this.onAlternarTema,
+    this.temaOscuro = false,
     super.key,
   });
 
@@ -16,6 +19,8 @@ class LoginScreen extends StatefulWidget {
   final ValueChanged<Map<String, dynamic>> onAuthenticated;
   final VoidCallback onRetry;
   final String? startupError;
+  final VoidCallback? onAlternarTema;
+  final bool temaOscuro;
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -99,41 +104,87 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final tokens = context.tokens;
+    final oscuro = theme.brightness == Brightness.dark;
+
     return Scaffold(
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
+            padding: const EdgeInsets.all(16),
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 440),
+              constraints: const BoxConstraints(maxWidth: 448),
               child: Form(
                 key: _formKey,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const Icon(Icons.shopping_basket_outlined, size: 54),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: IconButton(
+                        tooltip: 'Cambiar tema',
+                        onPressed: widget.onAlternarTema,
+                        icon: Icon(oscuro ? Icons.light_mode : Icons.dark_mode),
+                      ),
+                    ),
+                    Center(
+                      child: Container(
+                        width: 64,
+                        height: 64,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: tokens.leaf,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Text(
+                          'M',
+                          style: theme.textTheme.displaySmall?.copyWith(
+                            color: tokens.leafFg,
+                            fontSize: 34,
+                          ),
+                        ),
+                      ),
+                    ),
                     const SizedBox(height: 12),
                     Text(
                       'Mercado al Toque',
                       textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.headlineMedium,
+                      style: theme.textTheme.displaySmall,
                     ),
                     const SizedBox(height: 8),
                     Text(
                       'Comprá a los puestos o trabajá como cargador.',
                       textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodyMedium,
+                      style: theme.textTheme.bodyMedium?.copyWith(color: tokens.inkSoft),
                     ),
-                    const SizedBox(height: 24),
-                    SegmentedButton<String>(
-                      segments: const [
-                        ButtonSegment(value: 'comprador', label: Text('Comprador')),
-                        ButtonSegment(value: 'cargador', label: Text('Cargador')),
+                    const SizedBox(height: 20),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _BotonPerfil(
+                            etiqueta: 'Comprador',
+                            icono: Icons.shopping_basket_outlined,
+                            iconoActivo: Icons.shopping_basket,
+                            seleccionado: _profile == 'comprador',
+                            onTap: _busy
+                                ? null
+                                : () => setState(() => _profile = 'comprador'),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _BotonPerfil(
+                            etiqueta: 'Cargador',
+                            icono: Icons.route_outlined,
+                            iconoActivo: Icons.route,
+                            seleccionado: _profile == 'cargador',
+                            onTap: _busy
+                                ? null
+                                : () => setState(() => _profile = 'cargador'),
+                          ),
+                        ),
                       ],
-                      selected: {_profile},
-                      onSelectionChanged: _busy
-                          ? null
-                          : (selection) => setState(() => _profile = selection.first),
                     ),
                     const SizedBox(height: 16),
                     if (_registering) ...[
@@ -192,35 +243,49 @@ class _LoginScreenState extends State<LoginScreen> {
                     ],
                     if (widget.startupError != null) ...[
                       const SizedBox(height: 12),
-                      Text(widget.startupError!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                      Text(widget.startupError!,
+                          style: TextStyle(color: theme.colorScheme.error)),
                       TextButton(onPressed: widget.onRetry, child: const Text('Reintentar conexión')),
                     ],
                     if (_error != null) ...[
                       const SizedBox(height: 12),
-                      Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                      Text(_error!, style: TextStyle(color: theme.colorScheme.error)),
                     ],
                     const SizedBox(height: 18),
-                    FilledButton(
-                      onPressed: _busy ? null : _submit,
-                      child: _busy
-                          ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                          : Text(_registering ? 'Crear cuenta' : 'Ingresar'),
+                    SizedBox(
+                      height: 48,
+                      child: FilledButton(
+                        onPressed: _busy ? null : _submit,
+                        child: _busy
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(strokeWidth: 2))
+                            : Text(_registering ? 'Crear cuenta' : 'Ingresar'),
+                      ),
                     ),
                     const SizedBox(height: 8),
-                    OutlinedButton.icon(
-                      onPressed: _busy ? null : _google,
-                      icon: const Icon(Icons.account_circle_outlined),
-                      label: const Text('Continuar con Google'),
+                    SizedBox(
+                      height: 48,
+                      child: OutlinedButton.icon(
+                        onPressed: _busy ? null : _google,
+                        icon: const Icon(Icons.account_circle_outlined),
+                        label: const Text('Continuar con Google'),
+                      ),
                     ),
-                    TextButton(
-                      onPressed: _busy
-                          ? null
-                          : () => setState(() {
-                                _registering = !_registering;
-                                _error = null;
-                              }),
-                      child: Text(
-                        _registering ? 'Ya tengo cuenta · Ingresar' : 'Crear una cuenta nueva',
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      height: 48,
+                      child: OutlinedButton(
+                        onPressed: _busy
+                            ? null
+                            : () => setState(() {
+                                  _registering = !_registering;
+                                  _error = null;
+                                }),
+                        child: Text(
+                          _registering ? 'Ya tengo cuenta · Ingresar' : 'Crear una cuenta nueva',
+                        ),
                       ),
                     ),
                   ],
@@ -235,4 +300,58 @@ class _LoginScreenState extends State<LoginScreen> {
 
   String? _required(String? value) =>
       (value?.trim().isNotEmpty ?? false) ? null : 'Este campo es obligatorio.';
+}
+
+class _BotonPerfil extends StatelessWidget {
+  const _BotonPerfil({
+    required this.etiqueta,
+    required this.icono,
+    required this.iconoActivo,
+    required this.seleccionado,
+    required this.onTap,
+  });
+
+  final String etiqueta;
+  final IconData icono;
+  final IconData iconoActivo;
+  final bool seleccionado;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    final colorTexto = seleccionado ? tokens.leafFg : tokens.inkSoft;
+    return Material(
+      color: seleccionado ? tokens.terra : tokens.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: seleccionado ? tokens.terra : tokens.line),
+      ),
+      child: InkWell(
+        customBorder: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                seleccionado ? iconoActivo : icono,
+                size: 18,
+                color: seleccionado ? tokens.leafFg : tokens.muted,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                etiqueta,
+                style: Theme.of(context)
+                    .textTheme
+                    .bodyMedium
+                    ?.copyWith(fontWeight: FontWeight.w600, color: colorTexto),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }

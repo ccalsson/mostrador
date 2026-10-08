@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mercado_al_toque/login_screen.dart';
 import 'package:mercado_al_toque/market_api.dart';
+import 'package:mercado_al_toque/tema.dart';
 
 void main() {
   testWidgets('Muestra los perfiles comprador y cargador', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
+        theme: temaClaro(),
         home: LoginScreen(
           api: MercadoApi(),
           onAuthenticated: (_) {},

@@ -56,6 +56,13 @@ class _CachedProducts {
   final DateTime readAt;
 }
 
+class _CachedLegal {
+  const _CachedLegal(this.documento, this.readAt);
+
+  final DocumentoLegalContenido documento;
+  final DateTime readAt;
+}
+
 class MercadoApi {
   MercadoApi({http.Client? client, FlutterSecureStorage? storage})
     : _client = client ?? http.Client(),
@@ -457,9 +464,74 @@ class MercadoApi {
   }
 
   // ---------------------------------------------------------------------------
-  // Accesos tipados: mismos endpoints, parseo con los modelos de models.dart.
+  // Documentos legales de la cuenta (contrato B, Parte B de suscripción y
+  // legal): listar, leer contenido y aceptar. Sólo-online: la aceptación se
+  // registra siempre en el backend, nunca localmente.
   // ---------------------------------------------------------------------------
 
+  static const _legalCacheTtl = Duration(seconds: 45);
+  final Map<String, _CachedLegal> _legalCache = {};
+
+  /// B.1: documentos del perfil del token, con su estado de aceptación.
+  Future<List<DocumentoLegal>> listarDocumentosLegales() async {
+    final response = await get('legal/documentos');
+    return DocumentoLegal.listFromJson(response['documentos']);
+  }
+
+  /// B.2: contenido de la versión vigente. La caché en memoria queda
+  /// identificada por documentoId + version + hash y expira pronto.
+  Future<DocumentoLegalContenido> obtenerDocumentoLegal(
+    String documentoId, {
+    bool force = false,
+  }) async {
+    final cached = _legalCache[documentoId];
+    if (!force &&
+        cached != null &&
+        DateTime.now().difference(cached.readAt) < _legalCacheTtl) {
+      return cached.documento;
+    }
+    final response = await get(
+      'legal/documentos/${Uri.encodeComponent(documentoId)}',
+    );
+    final documento = DocumentoLegalContenido.fromJson(_campo(response));
+    _legalCache[documentoId] = _CachedLegal(documento, DateTime.now());
+    return documento;
+  }
+
+  void invalidarDocumentoLegal(String documentoId) =>
+      _legalCache.remove(documentoId);
+
+  /// B.3: acepta la versión y hash exactos que entregó el backend. Con 409
+  /// (versión obsoleta o hash distinto) la copia local ya no sirve: se
+  /// descarta para que la UI reconsulte la vigente.
+  Future<Map<String, dynamic>> aceptarDocumentoLegal({
+    required String userId,
+    required String documentoId,
+    required int version,
+    required String hash,
+  }) async {
+    final actionId = 'aceptar-legal-$documentoId-$version';
+    final key = await _getActionKey(userId, actionId);
+    try {
+      final response = await post(
+        'legal/documentos/${Uri.encodeComponent(documentoId)}/aceptar',
+        body: {'version': version, 'hash': hash},
+        idempotencyKey: key,
+      );
+      await _storage.delete(key: _actionKey(userId, actionId));
+      return response;
+    } on MercadoApiException catch (error) {
+      if (error.definitiveClientError) {
+        await _storage.delete(key: _actionKey(userId, actionId));
+      }
+      if (error.statusCode == 409) invalidarDocumentoLegal(documentoId);
+      rethrow;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Accesos tipados: mismos endpoints, parseo con los modelos de models.dart.
+  // ---------------------------------------------------------------------------
   Future<MercadoActor> actorActual() async =>
       MercadoActor.fromJson(await me());
 

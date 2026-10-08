@@ -7,6 +7,7 @@ import 'package:mercado_al_toque/models.dart';
 import 'package:mercado_al_toque/screens/buyer_orders_screen.dart';
 import 'package:mercado_al_toque/screens/courier_screen.dart';
 import 'package:mercado_al_toque/screens/order_detail_screen.dart';
+import 'package:mercado_al_toque/screens/profile_screen.dart';
 import 'package:mercado_al_toque/screens/stands_screen.dart';
 
 Future<http.Response> _fueraDeRed(http.BaseRequest request) async =>
@@ -44,6 +45,37 @@ class ApiFalsa extends MercadoApi {
   @override
   Future<PedidoComprador> obtenerPedidoComprador(String pedidoId) async =>
       PedidoComprador.fromJson(pedidoMap(estado: 'confirmado'));
+
+  @override
+  Future<List<DocumentoLegal>> listarDocumentosLegales() async {
+    final error = errorListado;
+    if (error != null) throw error;
+    return documentosFijos;
+  }
+
+  @override
+  Future<DocumentoLegalContenido> obtenerDocumentoLegal(
+    String documentoId, {
+    bool force = false,
+  }) async => contenidoFijo!;
+
+  @override
+  Future<Map<String, dynamic>> aceptarDocumentoLegal({
+    required String userId,
+    required String documentoId,
+    required int version,
+    required String hash,
+  }) async {
+    final error = errorAceptar;
+    if (error != null) throw error;
+    aceptaciones.add((documentoId: documentoId, version: version, hash: hash));
+    return {
+      'documentoId': documentoId,
+      'version': version,
+      'estado': 'aceptado',
+      'fecha': '2026-10-07T12:00:00.000Z',
+    };
+  }
 }
 
 const puestoFijo = Puesto(
@@ -115,6 +147,37 @@ Map<String, dynamic> recorridoMap({
 
 List<PedidoComprador> pedidosFijos = [];
 List<Recorrido> recorridosFijos = [];
+List<DocumentoLegal> documentosFijos = const [];
+DocumentoLegalContenido? contenidoFijo;
+MercadoApiException? errorListado;
+MercadoApiException? errorAceptar;
+final aceptaciones = <({String documentoId, int version, String hash})>[];
+
+Map<String, dynamic> cargadorPerfilMap() => {
+  'id': 'usr_2',
+  'nombre': 'Carlos Gómez',
+  'email': 'cargador@test',
+  'perfil': 'cargador',
+  'pais': 'AR',
+};
+
+const documentoPendienteFijo = DocumentoLegal(
+  documentoId: 'terminos_cuenta',
+  titulo: 'Términos de la cuenta',
+  tipo: 'terminos',
+  versionVigente: 3,
+  hash: 'abc123',
+  estado: 'pendiente',
+);
+
+const contenidoFijoV3 = DocumentoLegalContenido(
+  documentoId: 'terminos_cuenta',
+  version: 3,
+  hash: 'abc123',
+  titulo: 'Términos de la cuenta',
+  formato: 'texto',
+  valor: 'Texto de los términos.',
+);
 
 MercadoActor cargadorActor() => MercadoActor.fromJson({
   'id': 'usr_2',
@@ -132,6 +195,11 @@ void main() {
   setUp(() {
     pedidosFijos = [];
     recorridosFijos = [];
+    documentosFijos = const [];
+    contenidoFijo = null;
+    errorListado = null;
+    errorAceptar = null;
+    aceptaciones.clear();
   });
 
   testWidgets('StandsScreen lista puestos y agrega producto con stock', (
@@ -253,5 +321,97 @@ void main() {
 
     // Desmonta para cancelar el timer de seguimiento antes de cerrar el test.
     await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('Perfil lista documentos legales y acepta la versión vigente', (
+    tester,
+  ) async {
+    documentosFijos = [documentoPendienteFijo];
+    contenidoFijo = contenidoFijoV3;
+    await tester.pumpWidget(
+      anclado(
+        ProfileScreen(
+          api: ApiFalsa(),
+          actor: cargadorPerfilMap(),
+          onRefresh: () async {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Términos de la cuenta'), findsOneWidget);
+    expect(find.text('Pendiente'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('legal_doc_terminos_cuenta')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('legal_hoja')), findsOneWidget);
+    expect(find.text('Texto de los términos.'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('legal_aceptar')));
+    await tester.pumpAndSettle();
+
+    expect(aceptaciones, hasLength(1));
+    expect(aceptaciones.single.documentoId, 'terminos_cuenta');
+    expect(aceptaciones.single.version, 3);
+    expect(aceptaciones.single.hash, 'abc123');
+    expect(find.text('Aceptaste la versión 3.'), findsOneWidget);
+    expect(find.byKey(const Key('legal_hoja')), findsNothing);
+  });
+
+  testWidgets('Perfil avisa cuando aún no hay documentos publicados', (
+    tester,
+  ) async {
+    errorListado = const MercadoApiException(
+      'Sin documentos publicados.',
+      statusCode: 404,
+    );
+    await tester.pumpWidget(
+      anclado(
+        ProfileScreen(
+          api: ApiFalsa(),
+          actor: cargadorPerfilMap(),
+          onRefresh: () async {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.textContaining('estarán disponibles cuando el puesto los publique'),
+      findsOneWidget,
+    );
+    expect(find.byType(ListTile), findsNothing);
+  });
+
+  testWidgets('Hoja legal con 409 muestra el mensaje del backend y reconsulta', (
+    tester,
+  ) async {
+    documentosFijos = [documentoPendienteFijo];
+    contenidoFijo = contenidoFijoV3;
+    errorAceptar = const MercadoApiException(
+      'La versión cambió: ahora hay una más reciente.',
+      statusCode: 409,
+    );
+    await tester.pumpWidget(
+      anclado(
+        ProfileScreen(
+          api: ApiFalsa(),
+          actor: cargadorPerfilMap(),
+          onRefresh: () async {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('legal_doc_terminos_cuenta')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('legal_aceptar')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('La versión cambió: ahora hay una más reciente.'),
+        findsOneWidget);
+    expect(find.byKey(const Key('legal_hoja')), findsOneWidget);
+    expect(find.text('Texto de los términos.'), findsOneWidget);
   });
 }

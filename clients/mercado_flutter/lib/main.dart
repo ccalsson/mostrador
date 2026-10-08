@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'login_screen.dart';
 import 'market_api.dart';
 import 'market_home.dart';
+import 'tema.dart';
 
 void main() => runApp(const MercadoAlToqueApp());
 
@@ -23,6 +24,7 @@ class _MercadoAlToqueAppState extends State<MercadoAlToqueApp> {
   Map<String, dynamic>? _actor;
   bool _loading = true;
   String? _startupError;
+  ThemeMode _tema = ThemeMode.light;
 
   @override
   void initState() {
@@ -42,6 +44,18 @@ class _MercadoAlToqueAppState extends State<MercadoAlToqueApp> {
     );
     unawaited(_restoreSession());
     unawaited(_restoreInitialLink());
+    unawaited(_cargarTema());
+  }
+
+  Future<void> _cargarTema() async {
+    final guardado = await TemaStore().leer();
+    if (guardado != null && mounted) setState(() => _tema = guardado);
+  }
+
+  Future<void> _alternarTema() async {
+    final nuevo = _tema == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark;
+    setState(() => _tema = nuevo);
+    await TemaStore().guardar(nuevo);
   }
 
   Future<void> _restoreInitialLink() async {
@@ -128,10 +142,9 @@ class _MercadoAlToqueAppState extends State<MercadoAlToqueApp> {
     return MaterialApp(
       title: 'Mercado al Toque',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xff176b4d)),
-        useMaterial3: true,
-      ),
+      theme: temaClaro(),
+      darkTheme: temaOscuro(),
+      themeMode: _tema,
       home: _loading
           ? const _LoadingScreen()
           : _actor == null
@@ -140,12 +153,16 @@ class _MercadoAlToqueAppState extends State<MercadoAlToqueApp> {
                   startupError: _startupError,
                   onAuthenticated: (actor) => setState(() => _actor = actor),
                   onRetry: _restoreSession,
+                  onAlternarTema: _alternarTema,
+                  temaOscuro: _tema == ThemeMode.dark,
                 )
               : MarketHome(
                   api: _api,
                   actor: _actor!,
                   onSignOut: _logout,
                   onRefreshActor: _restoreSession,
+                  onAlternarTema: _alternarTema,
+                  temaOscuro: _tema == ThemeMode.dark,
                 ),
     );
   }

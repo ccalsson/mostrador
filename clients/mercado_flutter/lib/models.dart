@@ -406,6 +406,94 @@ class Calificacion {
       );
 }
 
+/// Documentos legales de la cuenta del canal (Parte B del contrato de
+/// suscripción y legal). El backend resuelve qué ve cada perfil; la app
+/// muestra los códigos tal como llegan y nunca decide vigencia ni hash.
+class DocumentoLegal {
+  const DocumentoLegal({
+    required this.documentoId,
+    required this.titulo,
+    required this.tipo,
+    required this.versionVigente,
+    required this.hash,
+    required this.estado,
+    this.fechaAceptacion,
+    this.versionAceptada,
+  });
+
+  final String documentoId;
+  final String titulo;
+  final String tipo;
+  final int versionVigente;
+  final String hash;
+
+  /// 'pendiente' | 'aceptado' tal como lo emite el backend (contrato B.1).
+  final String estado;
+  final String? fechaAceptacion;
+  final int? versionAceptada;
+
+  bool get pendiente => estado == 'pendiente';
+
+  factory DocumentoLegal.fromJson(Map<String, dynamic> json) => DocumentoLegal(
+        documentoId: _str(json, 'documentoId'),
+        titulo: _str(json, 'titulo'),
+        tipo: _strOpt(json['tipo']) ?? '',
+        versionVigente: _intOpt(json['versionVigente']) ?? 0,
+        hash: _strOpt(json['hash']) ?? '',
+        estado: _str(json, 'estado'),
+        fechaAceptacion: _strOpt(json['fechaAceptacion']),
+        versionAceptada: _intOpt(json['versionAceptada']),
+      );
+
+  static List<DocumentoLegal> listFromJson(dynamic value) =>
+      _listaSegura(value, DocumentoLegal.fromJson);
+}
+
+/// Contenido de la versión vigente de un documento (contrato B.2). Toda copia
+/// local conserva documentoId + version + hash: si el backend informa otra
+/// vigente (409 al aceptar), la app descarta la copia y reconsulta.
+class DocumentoLegalContenido {
+  const DocumentoLegalContenido({
+    required this.documentoId,
+    required this.version,
+    required this.hash,
+    required this.titulo,
+    required this.formato,
+    required this.valor,
+    this.fechaVigencia,
+    this.miAceptacionVersion,
+    this.miAceptacionFecha,
+  });
+
+  final String documentoId;
+  final int version;
+  final String hash;
+  final String titulo;
+
+  /// 'texto' | 'html' | 'pdf_url' tal como lo define el contrato B.2.
+  final String formato;
+  final String valor;
+  final String? fechaVigencia;
+  final int? miAceptacionVersion;
+  final String? miAceptacionFecha;
+
+  factory DocumentoLegalContenido.fromJson(Map<String, dynamic> json) {
+    final contenido = _map(json['contenido']);
+    final mi = _map(json['miAceptacion']);
+    return DocumentoLegalContenido(
+      documentoId: _str(json, 'documentoId'),
+      version: _intOpt(json['version']) ?? 0,
+      hash: _strOpt(json['hash']) ?? '',
+      titulo: _strOpt(json['titulo']) ?? '',
+      formato: _strOpt(contenido['formato']) ?? 'texto',
+      valor: _strOpt(contenido['valor']) ?? '',
+      fechaVigencia: _strOpt(json['fechaVigencia']),
+      miAceptacionVersion: _intOpt(mi['version']),
+      miAceptacionFecha: _strOpt(mi['fecha']),
+    );
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Helpers de parsing. Si el backend envía otra cosa, falla rápido con un
 // mensaje claro en lugar de propagar nulls silenciosos.

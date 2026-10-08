@@ -280,4 +280,91 @@ void main() {
       expect(EstadoPedidoComprador.enPreparacion.wire, 'en_preparacion');
     });
   });
+
+  group('DocumentoLegal', () {
+    test('parsea listado B.1 con estado pendiente', () {
+      final documento = DocumentoLegal.fromJson({
+        'documentoId': 'terminos_comprador',
+        'titulo': 'Términos del comprador',
+        'tipo': 'terminos',
+        'versionVigente': 3,
+        'hash': 'abc123',
+        'estado': 'pendiente',
+      });
+
+      expect(documento.pendiente, isTrue);
+      expect(documento.versionVigente, 3);
+      expect(documento.hash, 'abc123');
+      expect(documento.fechaAceptacion, isNull);
+    });
+
+    test('parsea documento ya aceptado con versión aceptada', () {
+      final documento = DocumentoLegal.fromJson({
+        'documentoId': 'terminos_comprador',
+        'titulo': 'Términos del comprador',
+        'tipo': 'terminos',
+        'versionVigente': 3,
+        'hash': 'abc123',
+        'estado': 'aceptado',
+        'versionAceptada': 2,
+        'fechaAceptacion': '2026-10-01T10:00:00.000Z',
+      });
+
+      expect(documento.pendiente, isFalse);
+      expect(documento.versionAceptada, 2);
+      expect(documento.fechaAceptacion, isNotNull);
+    });
+
+    test('listFromJson ignora entradas malformadas', () {
+      final documentos = DocumentoLegal.listFromJson([
+        {
+          'documentoId': 'terminos_comprador',
+          'titulo': 'Términos',
+          'estado': 'pendiente',
+        },
+        {'basura': true},
+      ]);
+
+      expect(documentos, hasLength(1));
+      expect(documentos.single.documentoId, 'terminos_comprador');
+    });
+  });
+
+  group('DocumentoLegalContenido', () {
+    test('parsea contenido B.2 en texto sin aceptación previa', () {
+      final contenido = DocumentoLegalContenido.fromJson({
+        'documentoId': 'terminos_comprador',
+        'version': 3,
+        'hash': 'abc123',
+        'titulo': 'Términos del comprador',
+        'fechaVigencia': '2026-10-01',
+        'contenido': {'formato': 'texto', 'valor': 'Texto de los términos.'},
+      });
+
+      expect(contenido.version, 3);
+      expect(contenido.hash, 'abc123');
+      expect(contenido.formato, 'texto');
+      expect(contenido.valor, 'Texto de los términos.');
+      expect(contenido.miAceptacionVersion, isNull);
+    });
+
+    test('parsea miAceptacion y formato pdf_url', () {
+      final contenido = DocumentoLegalContenido.fromJson({
+        'documentoId': 'privacidad_comprador',
+        'version': 1,
+        'hash': 'def456',
+        'titulo': 'Privacidad',
+        'contenido': {
+          'formato': 'pdf_url',
+          'valor': 'https://example.com/p.pdf',
+        },
+        'miAceptacion': {'version': 1, 'fecha': '2026-10-02T09:00:00.000Z'},
+      });
+
+      expect(contenido.formato, 'pdf_url');
+      expect(contenido.valor, 'https://example.com/p.pdf');
+      expect(contenido.miAceptacionVersion, 1);
+      expect(contenido.miAceptacionFecha, isNotNull);
+    });
+  });
 }

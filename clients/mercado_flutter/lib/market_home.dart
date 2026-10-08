@@ -14,6 +14,8 @@ class MarketHome extends StatefulWidget {
     required this.actor,
     required this.onSignOut,
     required this.onRefreshActor,
+    this.onAlternarTema,
+    this.temaOscuro = false,
     super.key,
   });
 
@@ -21,6 +23,8 @@ class MarketHome extends StatefulWidget {
   final Map<String, dynamic> actor;
   final Future<void> Function() onSignOut;
   final Future<void> Function() onRefreshActor;
+  final VoidCallback? onAlternarTema;
+  final bool temaOscuro;
 
   @override
   State<MarketHome> createState() => _MarketHomeState();
@@ -83,6 +87,13 @@ class _MarketHomeState extends State<MarketHome> {
           Padding(
             padding: const EdgeInsets.only(right: 12),
             child: Center(child: Text(_isBuyer ? 'Comprador' : 'Cargador')),
+          ),
+          IconButton(
+            tooltip: 'Cambiar tema',
+            onPressed: widget.onAlternarTema,
+            icon: Icon(Theme.of(context).brightness == Brightness.dark
+                ? Icons.light_mode
+                : Icons.dark_mode),
           ),
           IconButton(
             tooltip: 'Cerrar sesión',

@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../market_api.dart';
+import '../models.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({
@@ -30,6 +31,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Uint8List? _selfie;
   String _country = 'AR';
   bool _busy = false;
+  List<DocumentoLegal> _documentos = const [];
+  bool _legalCargando = false;
+  bool _legalNoPublicado = false;
+  String? _legalError;
 
   bool get _isBuyer => widget.actor['perfil'] == 'comprador';
   bool get _identityDone =>
@@ -39,6 +44,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void initState() {
     super.initState();
     _country = widget.actor['pais'] as String? ?? 'AR';
+    _cargarDocumentos();
   }
 
   @override
@@ -114,6 +120,46 @@ class _ProfileScreenState extends State<ProfileScreen> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  Future<void> _cargarDocumentos() async {
+    setState(() {
+      _legalCargando = true;
+      _legalError = null;
+    });
+    try {
+      final documentos = await widget.api.listarDocumentosLegales();
+      if (!mounted) return;
+      setState(() {
+        _documentos = documentos;
+        _legalCargando = false;
+        _legalNoPublicado = false;
+      });
+    } on MercadoApiException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _legalCargando = false;
+        if (error.statusCode == 404) {
+          _documentos = const [];
+          _legalNoPublicado = true;
+        } else {
+          _legalError = error.message;
+        }
+      });
+    }
+  }
+
+  Future<void> _abrirDocumento(DocumentoLegal documento) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => _HojaDocumento(
+        api: widget.api,
+        userId: widget.actor['id'] as String? ?? '',
+        documento: documento,
+        onAceptado: _cargarDocumentos,
+      ),
+    );
   }
 
   @override
@@ -202,6 +248,215 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
         ],
       ],
+      const SizedBox(height: 24),
+      Row(
+        children: [
+          Expanded(
+            child: Text(
+              'Documentos legales',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+          ),
+          IconButton(
+            key: const Key('legal_refrescar'),
+            tooltip: 'Actualizar documentos',
+            onPressed: _legalCargando ? null : _cargarDocumentos,
+            icon: const Icon(Icons.refresh),
+          ),
+        ],
+      ),
+      if (_legalCargando)
+        const LinearProgressIndicator(key: Key('legal_cargando')),
+      if (_legalNoPublicado)
+        const Text(
+          'Los documentos legales estarán disponibles cuando el puesto los publique.',
+        )
+      else if (_legalError != null)
+        Text(_legalError!)
+      else ...[
+        for (final documento in _documentos)
+          ListTile(
+            key: Key('legal_doc_${documento.documentoId}'),
+            contentPadding: EdgeInsets.zero,
+            title: Text(documento.titulo),
+            subtitle: Text('Versión ${documento.versionVigente}'),
+            trailing: documento.pendiente
+                ? const Text(
+                    'Pendiente',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  )
+                : const Icon(Icons.check_circle_outline),
+            onTap: () => _abrirDocumento(documento),
+          ),
+      ],
     ],
   );
+}
+
+/// Hoja de lectura de un documento legal. Muestra la versión vigente que
+/// entrega el backend y, si está pendiente, permite aceptar ESA versión con
+/// su hash. La aceptación es sólo-online: el resultado real es el que
+/// confirma el backend (un 409 obliga a reconsultar la versión nueva).
+class _HojaDocumento extends StatefulWidget {
+  const _HojaDocumento({
+    required this.api,
+    required this.userId,
+    required this.documento,
+    required this.onAceptado,
+  });
+
+  final MercadoApi api;
+  final String userId;
+  final DocumentoLegal documento;
+  final Future<void> Function() onAceptado;
+
+  @override
+  State<_HojaDocumento> createState() => _HojaDocumentoState();
+}
+
+class _HojaDocumentoState extends State<_HojaDocumento> {
+  DocumentoLegalContenido? _contenido;
+  String? _error;
+  bool _cargando = true;
+  bool _aceptando = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _cargar();
+  }
+
+  Future<void> _cargar() async {
+    setState(() {
+      _cargando = true;
+      _error = null;
+    });
+    try {
+      final documento = await widget.api.obtenerDocumentoLegal(
+        widget.documento.documentoId,
+      );
+      if (!mounted) return;
+      setState(() {
+        _contenido = documento;
+        _cargando = false;
+      });
+    } on MercadoApiException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = error.message;
+        _cargando = false;
+      });
+    }
+  }
+
+  Future<void> _aceptar() async {
+    final contenido = _contenido;
+    if (contenido == null || _aceptando) return;
+    final mensajero = ScaffoldMessenger.of(context);
+    setState(() => _aceptando = true);
+    try {
+      await widget.api.aceptarDocumentoLegal(
+        userId: widget.userId,
+        documentoId: contenido.documentoId,
+        version: contenido.version,
+        hash: contenido.hash,
+      );
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      mensajero.showSnackBar(
+        SnackBar(content: Text('Aceptaste la versión ${contenido.version}.')),
+      );
+      await widget.onAceptado();
+    } on MercadoApiException catch (error) {
+      if (!mounted) return;
+      setState(() => _aceptando = false);
+      mensajero.showSnackBar(SnackBar(content: Text(error.message)));
+      if (error.statusCode == 409) await _cargar();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final contenido = _contenido;
+    return SafeArea(
+      child: SizedBox(
+        height: MediaQuery.of(context).size.height * 0.85,
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 8, 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      widget.documento.titulo,
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: _cargando
+                  ? const Center(
+                      key: Key('legal_hoja_cargando'),
+                      child: CircularProgressIndicator(),
+                    )
+                  : _error != null
+                      ? ListView(
+                          padding: const EdgeInsets.all(16),
+                          children: [
+                            Text(_error!),
+                            const SizedBox(height: 12),
+                            OutlinedButton(
+                              onPressed: _cargar,
+                              child: const Text('Reintentar'),
+                            ),
+                          ],
+                        )
+                      : ListView(
+                          key: const Key('legal_hoja'),
+                          padding: const EdgeInsets.all(16),
+                          children: [
+                            Text(
+                              'Versión ${contenido!.version}'
+                              '${contenido.fechaVigencia == null ? '' : ' · vigente desde ${contenido.fechaVigencia}'}',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                            const SizedBox(height: 12),
+                            SelectableText(
+                              contenido.formato == 'pdf_url'
+                                  ? 'El documento está publicado en: ${contenido.valor}'
+                                  : contenido.valor,
+                            ),
+                          ],
+                        ),
+            ),
+            if (widget.documento.pendiente &&
+                contenido != null &&
+                _error == null)
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: FilledButton(
+                  key: const Key('legal_aceptar'),
+                  onPressed: _aceptando ? null : _aceptar,
+                  child: _aceptando
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Text('Aceptar versión ${contenido.version}'),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
 }
