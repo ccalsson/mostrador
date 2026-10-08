@@ -3,7 +3,9 @@ import { getSql } from "@/lib/db";
 import type { Sql } from "@/lib/db";
 import { newId } from "@/lib/ids";
 import { num } from "@/lib/money";
-import { reservarLineas } from "@/lib/server/stock";
+import { reservarLineas, soltarReserva } from "@/lib/server/stock";
+import { textoCondicion } from "@/lib/torre/condiciones";
+import { avisosDe, comisionDePuesto, puedeAparecer } from "@/lib/torre/presencia";
 
 export type MercadoPerfil = "comprador" | "cargador";
 export type MercadoActor = {
@@ -42,6 +44,7 @@ type PedidoMercadoRow = {
   delivered_at: string | null;
   total: unknown;
   bultos: unknown;
+  condicion: unknown;
 };
 
 function fail(status: number, code: string, message: string): never {
@@ -543,6 +546,9 @@ export async function createOrders(
         select id from tenants where id = ${tenantId} and config->>'mercadoAlToque' = 'true'
       `;
       if (!enabled[0]) fail(404, "not_found", "Uno de los puestos no tiene el canal habilitado.");
+      const presencia = await puedeAparecer(tenantId, { mercadoAlToque: true });
+      const comision = await comisionDePuesto(tenantId);
+      const condicion = { ...comision, tier: presencia.tier };
       const productoRows: Array<{
         id: string;
         nombre: string;
@@ -578,10 +584,11 @@ export async function createOrders(
       await tx`
         insert into pedidos (
           id, tenant_id, client_uuid, vendedor_id, cliente_id, cliente_nombre, estado, nota,
-          origen, comprador_mercado_id, forma_pago, pago_estado, confirmed_at
+          origen, comprador_mercado_id, forma_pago, pago_estado, condicion, confirmed_at
         ) values (
           ${pedidoId}, ${tenantId}, ${clientUuid}, ${null}, ${null}, ${actor.nombre}, ${"enviado"},
-          ${nota || null}, ${"mercado_al_toque"}, ${actor.id}, ${medioPago}, ${"pendiente"}, now()
+          ${nota || null}, ${"mercado_al_toque"}, ${actor.id}, ${medioPago},
+          ${medioPago === "transferencia" ? "informado" : "pendiente"}, ${JSON.stringify(condicion)}::jsonb, now()
         )
       `;
       for (let index = 0; index < lines.length; index += 1) {
@@ -626,8 +633,9 @@ export async function createOrders(
         tenantId,
         estado: "confirmado",
         medioPago,
-        pagoEstado: "pendiente",
+        pagoEstado: medioPago === "transferencia" ? "informado" : "pendiente",
         nota,
+        comision: textoCondicion(condicion),
         items: itemsRespuesta,
         total: totalPedido,
         bultos: itemsRespuesta.reduce((sum, item) => sum + (item.unidad === "bulto" ? num(item.cantidad) : 0), 0),
@@ -657,7 +665,7 @@ function minutesBetween(start: string | null, end: string | null): number | null
 async function selectBuyerOrders(sql: Sql, buyerId: string, orderId?: string) {
   const rows = await sql.query<PedidoMercadoRow>(
     `select p.id, p.tenant_id, t.nombre as tenant_nombre, p.estado, p.nota,
-            p.forma_pago, p.pago_estado, p.created_at::text as created_at,
+            p.forma_pago, p.pago_estado, p.condicion, p.created_at::text as created_at,
             p.confirmed_at::text as confirmed_at,
             p.preparation_started_at::text as preparation_started_at,
             p.prepared_at::text as prepared_at, p.picked_up_at::text as picked_up_at,
@@ -706,6 +714,7 @@ async function selectBuyerOrders(sql: Sql, buyerId: string, orderId?: string) {
       })),
       total: num(row.total),
       bultos: num(row.bultos),
+      comision: textoCondicion(row.condicion),
       tiempos: {
         preparacion: minutesBetween(row.preparation_started_at, row.prepared_at),
         espera: minutesBetween(row.prepared_at, row.picked_up_at),
@@ -733,6 +742,31 @@ export async function getBuyerOrder(actor: MercadoActor, id: string) {
   const pedidos = await selectBuyerOrders(await getSql(), actor.id, id);
   if (!pedidos[0]) fail(404, "not_found", "Pedido no encontrado.");
   return { pedido: pedidos[0] };
+}
+
+export async function listAvisos() {
+  return { avisos: await avisosDe() };
+}
+
+export async function cancelBuyerOrder(actor: MercadoActor, pedidoId: string) {
+  assertPerfil(actor, "comprador", "Solo el comprador puede cancelar sus pedidos.");
+  const sql = await getSql();
+  const rows = await sql<{ id: string; tenant_id: string; estado: string }>`
+    select id, tenant_id, estado from pedidos
+    where id = ${pedidoId} and comprador_mercado_id = ${actor.id}
+    limit 1
+  `;
+  const pedido = rows[0];
+  if (!pedido) fail(403, "forbidden", "Ese pedido no es tuyo.");
+  if (pedido.estado !== "enviado") fail(409, "order_in_progress", "El puesto ya lo está trabajando.");
+  const asignado = await sql<{ recorrido_id: string }>`
+    select recorrido_id from mercado_recorrido_pedidos where pedido_id = ${pedidoId} limit 1
+  `;
+  if (asignado[0]) fail(409, "order_assigned", "Ese pedido ya tiene cargador.");
+  await soltarReserva(pedido.tenant_id, pedido.id);
+  await sql`update pedidos set estado = 'anulado', updated_at = now() where id = ${pedido.id}`;
+  await auditMercado(sql, actor, "mercado_pedido_cancelado", pedido.tenant_id, { id: pedido.id });
+  return { ok: true };
 }
 
 export async function listCouriers() {

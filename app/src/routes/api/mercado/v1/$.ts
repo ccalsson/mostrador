@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { MercadoError, authenticate, clearExpiredGoogleStates, createOAuthSession, createOrders, createRoute, emailFromExternal, findGoogleCredential, getBuyerOrder, getMe, listBuyerOrders, listCouriers, listPublicRanking, listRoutes, listStandProducts, listStands, newGoogleState, rateRoute, registerBuyer, registerCourier, restablecer, setCourierAvailability, signIn, signOut, solicitarRecuperacion, updateStop, uploadIdentity, changeRoute } from "@/lib/server/mercado";
+import { MercadoError, authenticate, cancelBuyerOrder, clearExpiredGoogleStates, createOAuthSession, createOrders, createRoute, emailFromExternal, findGoogleCredential, getBuyerOrder, getMe, listAvisos, listBuyerOrders, listCouriers, listPublicRanking, listRoutes, listStandProducts, listStands, newGoogleState, rateRoute, registerBuyer, registerCourier, restablecer, setCourierAvailability, signIn, signOut, solicitarRecuperacion, updateStop, uploadIdentity, changeRoute } from "@/lib/server/mercado";
 import {
   aceptarDocumentoLegal,
   documentoLegalContenido,
@@ -240,6 +240,9 @@ async function handle(method: "GET" | "POST", request: Request, splat?: string) 
     if (method === "GET" && segments.join("/") === "ranking") {
       return json(await listPublicRanking(), { headers: { "cache-control": "public, max-age=60" } });
     }
+    if (method === "GET" && segments.join("/") === "avisos") {
+      return json(await listAvisos(), { headers: { "cache-control": "public, max-age=60" } });
+    }
 
     const actor = await authenticate(tokenFrom(request));
     const route = segments.join("/");
@@ -255,6 +258,9 @@ async function handle(method: "GET" | "POST", request: Request, splat?: string) 
     }
     if (method === "GET" && segments.length === 2 && segments[0] === "pedidos") {
       return json(await getBuyerOrder(actor, segments[1]!));
+    }
+    if (method === "POST" && segments.length === 3 && segments[0] === "pedidos" && segments[2] === "cancelar") {
+      return json(await cancelBuyerOrder(actor, segments[1]!));
     }
     if (method === "GET" && route === "cargadores") return json(await listCouriers());
     if (method === "POST" && route === "recorridos") {

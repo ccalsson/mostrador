@@ -8,8 +8,10 @@
 // tenant, idempotencia (client_uuid), cobros y anulaciones, cuenta corriente,
 // remitos, proveedores, caja, auditoría, suscripción/contratos + legal del
 // canal (torre), facturación ARCA (config/emisión sin credenciales reales),
-// mensajería del pedido y portal de clientes (registro, catálogo, pedidos
-// propios, comprobante y mensajes).
+// mensajería del pedido, portal de clientes (registro, catálogo, pedidos
+// propios, comprobante y mensajes) y Mercado al Toque (avisos públicos,
+// cancelación de pedido con restitución de reserva y condición comercial
+// congelada en pedidos.condicion).
 // Los datos que crea se limpian en `after` tomando el reloj de la base
 // (runStart) como referencia, para no tocar el seed demo. Las versiones
 // publicadas y las aceptaciones legales son inmutables por diseño (trigger
@@ -2176,5 +2178,218 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
     const movimientos = await api("GET", "/portal/movimientos", { token: tokenCliente });
     assert.equal(movimientos.status, 200, JSON.stringify(movimientos.data));
     assert.deepEqual(movimientos.data.data, []);
+  });
+
+  it("23. mercado: avisos públicos, cancelación de pedido y condición comercial (M9g)", async () => {
+    const mercado = (method, path, opts) => request(method, `/api/mercado/v1${path}`, opts);
+    const stamp = Date.now();
+    const marca = `m9g-${stamp}`;
+
+    // GET /avisos: pública, shape uniforme.
+    const avisos = await mercado("GET", "/avisos");
+    assert.equal(avisos.status, 200, JSON.stringify(avisos.data));
+    assert.ok(Array.isArray(avisos.data.avisos));
+    for (const aviso of avisos.data.avisos) {
+      assert.equal(typeof aviso.id, "string");
+      assert.equal(typeof aviso.placement, "string");
+      assert.equal(typeof aviso.contentRef, "string");
+      assert.equal(typeof aviso.tenantId, "string");
+      assert.equal(typeof aviso.tenantNombre, "string");
+    }
+
+    // Registro de comprador y carga de identidad (requisito para comprar).
+    const email = `e2e-${marca}@e2e.example.com`;
+    const dni = String(stamp).slice(-8);
+    const registro = await mercado("POST", "/auth/registro", {
+      body: {
+        nombre: "E2E M9g Comprador",
+        email,
+        password: "e2e-clave-123",
+        telefono: "3000",
+        pais: "AR",
+        tipoDocumento: "DNI",
+        numeroDocumento: dni,
+      },
+    });
+    assert.equal(registro.status, 201, JSON.stringify(registro.data));
+    const token = registro.data.token;
+    state.mercadoUsuarioIds.push(registro.data.usuario.id);
+
+    const png1x1 =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const identidad = await mercado("POST", "/identidad", {
+      token,
+      body: {
+        pais: "AR",
+        tipoDocumento: "DNI",
+        numeroDocumento: dni,
+        documentoBase64: png1x1,
+        selfieBase64: png1x1,
+      },
+    });
+    assert.equal(identidad.status, 200, JSON.stringify(identidad.data));
+    assert.equal(identidad.data.estado, "documentacion_cargada");
+
+    // Comprador ajeno para el caso 403 (con identidad propia cargada).
+    const dniAjeno = `9${String(stamp).slice(-7)}`;
+    const regAjeno = await mercado("POST", "/auth/registro", {
+      body: {
+        nombre: "E2E M9g Ajeno",
+        email: `e2e-${marca}-ajeno@e2e.example.com`,
+        password: "e2e-clave-123",
+        telefono: "3001",
+        pais: "AR",
+        tipoDocumento: "DNI",
+        numeroDocumento: dniAjeno,
+      },
+    });
+    assert.equal(regAjeno.status, 201, JSON.stringify(regAjeno.data));
+    const tokenAjeno = regAjeno.data.token;
+    state.mercadoUsuarioIds.push(regAjeno.data.usuario.id);
+    const identidadAjeno = await mercado("POST", "/identidad", {
+      token: tokenAjeno,
+      body: {
+        pais: "AR",
+        tipoDocumento: "DNI",
+        numeroDocumento: dniAjeno,
+        documentoBase64: png1x1,
+        selfieBase64: png1x1,
+      },
+    });
+    assert.equal(identidadAjeno.status, 200, JSON.stringify(identidadAjeno.data));
+
+    // Producto del canal con stock conocido (publicación online se restaura).
+    const prod = await state.pool.query(
+      "select id, stock, publicado_online from productos where tenant_id = $1 and activo = true order by stock desc limit 1",
+      [TENANT],
+    );
+    assert.ok(prod.rows[0], "el tenant no tiene productos activos para la prueba");
+    const productoId = prod.rows[0].id;
+    const stockInicial = Number(prod.rows[0].stock);
+    const publicadoPrevio = prod.rows[0].publicado_online;
+    await state.pool.query("update productos set publicado_online = true where id = $1", [productoId]);
+
+    // Canal Mercado al Toque: el test 17 puede dejarlo apagado durante la
+    // corrida (sin tier no se puede reactivar por API), así que se enciende
+    // acá y se restaura la config previa al terminar.
+    const canalSnap = await state.pool.query("select config::text as config from tenants where id = $1", [TENANT]);
+    const configCanalPrevio = canalSnap.rows[0].config;
+    const configCanal = JSON.parse(configCanalPrevio ?? "{}");
+    configCanal.mercadoAlToque = "true";
+    await state.pool.query("update tenants set config = $1::jsonb where id = $2", [
+      JSON.stringify(configCanal),
+      TENANT,
+    ]);
+
+    const cargadorId = `e2e-cargador-${marca}`;
+    const recorridoId = `e2e-recorrido-${marca}`;
+    try {
+      // Creación: condición congelada y pagoEstado según medio de pago.
+      const creadoA = await mercado("POST", "/pedidos", {
+        token,
+        headers: { "idempotency-key": `${marca}-pedido-a` },
+        body: {
+          medioPago: "transferencia",
+          nota: "Pedido M9g A",
+          items: [{ tenantId: TENANT, productoId, cantidad: 2 }],
+        },
+      });
+      assert.equal(creadoA.status, 201, JSON.stringify(creadoA.data));
+      const pedidoA = creadoA.data.pedidos[0];
+      assert.equal(pedidoA.estado, "confirmado");
+      assert.equal(pedidoA.medioPago, "transferencia");
+      assert.equal(pedidoA.pagoEstado, "informado");
+      assert.ok("comision" in pedidoA, "la creación debe exponer comision");
+
+      // La condición quedó congelada en la fila y el texto expuesto coincide.
+      const filaA = await state.pool.query("select condicion from pedidos where id = $1", [pedidoA.id]);
+      const condicionA = filaA.rows[0].condicion;
+      assert.ok(condicionA && typeof condicionA === "object", "la condición debe quedar congelada en pedidos.condicion");
+      const esperadoA =
+        condicionA.source === "override" && typeof condicionA.percent === "number"
+          ? `Comisión: ${condicionA.percent}%`
+          : condicionA.source === "policy" &&
+              typeof condicionA.percentMin === "number" &&
+              typeof condicionA.percentMax === "number"
+            ? `Comisión: entre ${condicionA.percentMin}% y ${condicionA.percentMax}%`
+            : null;
+      assert.equal(pedidoA.comision, esperadoA);
+
+      // Lecturas: GET /pedidos y GET /pedidos/:id exponen la misma condición.
+      const lista = await mercado("GET", "/pedidos", { token });
+      assert.equal(lista.status, 200, JSON.stringify(lista.data));
+      const enLista = lista.data.pedidos.find((p) => p.id === pedidoA.id);
+      assert.ok(enLista, "el pedido A debe listarse en /pedidos");
+      assert.equal(enLista.comision, esperadoA);
+      assert.equal(enLista.pagoEstado, "informado");
+      const detalle = await mercado("GET", `/pedidos/${pedidoA.id}`, { token });
+      assert.equal(detalle.status, 200, JSON.stringify(detalle.data));
+      assert.equal(detalle.data.pedido.comision, esperadoA);
+
+      // La reserva descontó stock.
+      approx(await stockOf(productoId), stockInicial - 2, "la reserva debe descontar stock");
+
+      // Cancelación feliz: ok, estado cancelado, stock restituido y auditoría.
+      const cancelA = await mercado("POST", `/pedidos/${pedidoA.id}/cancelar`, { token });
+      assert.equal(cancelA.status, 200, JSON.stringify(cancelA.data));
+      assert.equal(cancelA.data.ok, true);
+      approx(await stockOf(productoId), stockInicial, "la cancelación debe restituir el stock");
+      const detalleCancelado = await mercado("GET", `/pedidos/${pedidoA.id}`, { token });
+      assert.equal(detalleCancelado.data.pedido.estado, "cancelado");
+      const audCancel = await state.pool.query(
+        "select count(*)::int as n from auditoria where tenant_id = $1 and accion = 'mercado_pedido_cancelado' and detalle->>'id' = $2",
+        [TENANT, pedidoA.id],
+      );
+      assert.equal(audCancel.rows[0].n, 1, "la cancelación debe quedar en auditoría");
+
+      // 409: el puesto ya lo está trabajando (el pedido A ya está anulado).
+      const dobleCancel = await mercado("POST", `/pedidos/${pedidoA.id}/cancelar`, { token });
+      expectError(dobleCancel, 409, /trabajando/i);
+
+      // 403: un comprador ajeno no puede cancelar el pedido de otro.
+      const cancelAjeno = await mercado("POST", `/pedidos/${pedidoA.id}/cancelar`, { token: tokenAjeno });
+      expectError(cancelAjeno, 403, /tuyo/i);
+
+      // 409 con cargador: pedido asignado a un recorrido no se puede cancelar.
+      const creadoB = await mercado("POST", "/pedidos", {
+        token,
+        headers: { "idempotency-key": `${marca}-pedido-b` },
+        body: { medioPago: "efectivo", items: [{ tenantId: TENANT, productoId, cantidad: 1 }] },
+      });
+      assert.equal(creadoB.status, 201, JSON.stringify(creadoB.data));
+      const pedidoB = creadoB.data.pedidos[0];
+      assert.equal(pedidoB.pagoEstado, "pendiente", "efectivo queda pendiente de cobro");
+
+      await state.pool.query(
+        "insert into mercado_cargadores (id, nombre, email, telefono) values ($1, $2, $3, $4)",
+        [cargadorId, "E2E M9g Cargador", `e2e-${marca}-cargador@e2e.example.com`, "4000"],
+      );
+      await state.pool.query(
+        "insert into mercado_recorridos (id, comprador_id, cargador_id) values ($1, $2, $3)",
+        [recorridoId, registro.data.usuario.id, cargadorId],
+      );
+      await state.pool.query(
+        "insert into mercado_recorrido_pedidos (id, recorrido_id, pedido_id, tenant_id) values ($1, $2, $3, $4)",
+        [`e2e-parada-${marca}`, recorridoId, pedidoB.id, TENANT],
+      );
+
+      const cancelAsignado = await mercado("POST", `/pedidos/${pedidoB.id}/cancelar`, { token });
+      expectError(cancelAsignado, 409, /cargador/i);
+      approx(await stockOf(productoId), stockInicial - 1, "el pedido asignado mantiene la reserva");
+
+      // Sin la asignación, la cancelación vuelve a funcionar.
+      await state.pool.query("delete from mercado_recorrido_pedidos where pedido_id = $1", [pedidoB.id]);
+      const cancelB = await mercado("POST", `/pedidos/${pedidoB.id}/cancelar`, { token });
+      assert.equal(cancelB.status, 200, JSON.stringify(cancelB.data));
+      approx(await stockOf(productoId), stockInicial, "la cancelación B debe restituir el stock");
+    } finally {
+      await state.pool.query("update tenants set config = $1::jsonb where id = $2", [configCanalPrevio, TENANT]);
+      await state.pool.query("delete from mercado_recorrido_pedidos where recorrido_id = $1", [recorridoId]);
+      await state.pool.query("delete from mercado_recorridos where id = $1", [recorridoId]);
+      await state.pool.query("delete from mercado_cargadores where id = $1", [cargadorId]);
+      await state.pool
+        .query("update productos set publicado_online = $1 where id = $2", [publicadoPrevio, productoId])
+        .catch(() => {});
+    }
   });
 });
