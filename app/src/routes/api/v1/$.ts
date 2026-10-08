@@ -9,7 +9,7 @@ import {
   type CrearPedidoInput,
   type PedidoLineaInput,
 } from "@/lib/server/catalog-pedidos";
-import { createClienteForStaff, cuentaClienteForStaff, listClientesForStaff } from "@/lib/server/clientes";
+import { createClienteForStaff, anotarPagoCuentaForStaff, cuentaClienteForStaff, listClientesForStaff, updateClienteForStaff } from "@/lib/server/clientes";
 import {
   anularCobroForStaff,
   anularPedidoForStaff,
@@ -398,6 +398,41 @@ const ROUTES: Entry[] = [
     method: "GET",
     path: ["clientes", ":", "cuenta"],
     handler: async ({ segments, staff }) => json({ data: await cuentaClienteForStaff(staff, segments[1]) }),
+  },
+  {
+    method: "POST",
+    path: ["clientes", ":"],
+    handler: async ({ request, segments, staff }) => {
+      const body = asRecord(await readJson(request));
+      if (typeof body.cuentaCorriente !== "boolean") throw new HttpError(400, "invalid_request", "cuentaCorriente debe ser booleano.");
+      if (typeof body.activo !== "boolean") throw new HttpError(400, "invalid_request", "activo debe ser booleano.");
+      return json({
+        data: await updateClienteForStaff(staff, {
+          id: segments[1],
+          nombre: asString(body.nombre, "nombre", 120),
+          telefono: asOptionalString(body.telefono, 40),
+          cuit: asOptionalString(body.cuit, 20),
+          direccion: asOptionalString(body.direccion, 200),
+          cuentaCorriente: body.cuentaCorriente,
+          condicionIva: asString(body.condicionIva, "condicionIva", 40),
+          activo: body.activo,
+        }),
+      });
+    },
+  },
+  {
+    method: "POST",
+    path: ["clientes", ":", "pagos"],
+    handler: async ({ request, segments, staff }) => {
+      const body = asRecord(await readJson(request));
+      return json({
+        data: await anotarPagoCuentaForStaff(staff, {
+          clienteId: segments[1],
+          monto: asNumber(body.monto, "monto"),
+          nota: asOptionalString(body.nota, 200),
+        }),
+      });
+    },
   },
   {
     method: "POST",

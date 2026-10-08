@@ -1274,4 +1274,122 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
     assert.ok(acciones.includes("marca"), "falta auditoría de marca");
     assert.ok(acciones.includes("canal_mercado"), "falta auditoría de canal_mercado");
   });
+
+  it("18. edición de cliente, pago de cuenta corriente y listado de remitos", async () => {
+    // Listado de remitos: admin/cajero sí, vendedor no.
+    const remitosNegado = await api("GET", "/remitos", { token: state.tokens.vendedor });
+    expectError(remitosNegado, 403, /permiso/i);
+
+    const remitoNuevo = await api("POST", "/remitos", {
+      token: state.tokens.cajero,
+      body: {
+        proveedor: "Proveedor E2E 18",
+        fuente: "manual",
+        lineas: [{ descripcion: state.banana.nombre, cantidad: 1 }],
+      },
+    });
+    assert.equal(remitoNuevo.status, 201, JSON.stringify(remitoNuevo.data));
+
+    const listado = await api("GET", "/remitos", { token: state.tokens.cajero });
+    assert.equal(listado.status, 200);
+    assert.ok(Array.isArray(listado.data.data));
+    assert.ok(listado.data.data.length <= 30, "el listado se acota a los últimos 30");
+    assert.ok(
+      listado.data.data.some((r) => r.id === remitoNuevo.data.data.id && r.proveedor === "Proveedor E2E 18"),
+      "el remito creado debe aparecer en el listado",
+    );
+    assert.ok(listado.data.data.some((r) => r.estado === "confirmado"), "el remito confirmado del test 11 figura");
+
+    // Edición de cliente: solo admin; valida condición IVA y existencia.
+    const editarNegado = await api("POST", `/clientes/${state.e2eClienteId}`, {
+      token: state.tokens.cajero,
+      body: { nombre: "X", cuentaCorriente: false, condicionIva: "ri", activo: true },
+    });
+    expectError(editarNegado, 403, /permiso/i);
+
+    const condicionInvalida = await api("POST", `/clientes/${state.e2eClienteId}`, {
+      token: state.tokens.admin,
+      body: {
+        nombre: "Cliente E2E CC",
+        cuentaCorriente: false,
+        condicionIva: "invalida",
+        activo: true,
+      },
+    });
+    expectError(condicionInvalida, 400, /condición frente al IVA/i);
+
+    const inexistente = await api("POST", "/clientes/cli-no-existe", {
+      token: state.tokens.admin,
+      body: { nombre: "Nadie", cuentaCorriente: false, condicionIva: "consumidor_final", activo: true },
+    });
+    expectError(inexistente, 400, /no encontrado/i);
+
+    const editar = await api("POST", `/clientes/${state.e2eClienteId}`, {
+      token: state.tokens.admin,
+      body: {
+        nombre: "Cliente E2E CC Editado",
+        telefono: "1100000002",
+        cuit: "20123456789",
+        direccion: "Calle E2E 123",
+        cuentaCorriente: true,
+        condicionIva: "ri",
+        activo: true,
+      },
+    });
+    assert.equal(editar.status, 200, JSON.stringify(editar.data));
+    assert.equal(editar.data.data.ok, true);
+
+    const fila = await state.pool.query(
+      "select nombre, telefono, cuit, direccion, condicion_iva, activo from clientes where id = $1",
+      [state.e2eClienteId],
+    );
+    assert.equal(fila.rows[0].nombre, "Cliente E2E CC Editado");
+    assert.equal(fila.rows[0].telefono, "1100000002");
+    assert.equal(fila.rows[0].cuit, "20123456789");
+    assert.equal(fila.rows[0].direccion, "Calle E2E 123");
+    assert.equal(fila.rows[0].condicion_iva, "ri");
+    assert.equal(fila.rows[0].activo, true);
+
+    // Pago de cuenta corriente: solo admin, monto positivo, cliente existente.
+    const pagoNegado = await api("POST", `/clientes/${state.e2eClienteId}/pagos`, {
+      token: state.tokens.cajero,
+      body: { monto: 100 },
+    });
+    expectError(pagoNegado, 403, /permiso/i);
+
+    const pagoCero = await api("POST", `/clientes/${state.e2eClienteId}/pagos`, {
+      token: state.tokens.admin,
+      body: { monto: 0 },
+    });
+    expectError(pagoCero, 400, /mayor a cero/i);
+
+    const pagoInexistente = await api("POST", "/clientes/cli-no-existe/pagos", {
+      token: state.tokens.admin,
+      body: { monto: 100 },
+    });
+    expectError(pagoInexistente, 400, /no encontrado/i);
+
+    const saldoAntes = (
+      await api("GET", `/clientes/${state.e2eClienteId}/cuenta`, { token: state.tokens.admin })
+    ).data.data.saldo;
+
+    const pago = await api("POST", `/clientes/${state.e2eClienteId}/pagos`, {
+      token: state.tokens.admin,
+      body: { monto: 500, nota: "Pago e2e" },
+    });
+    assert.equal(pago.status, 200, JSON.stringify(pago.data));
+    assert.equal(pago.data.data.ok, true);
+
+    const cuenta = await api("GET", `/clientes/${state.e2eClienteId}/cuenta`, { token: state.tokens.admin });
+    approx(cuenta.data.data.saldo, saldoAntes - 500, "el pago descuenta del saldo");
+    assert.equal(cuenta.data.data.movimientos[0].tipo, "pago");
+    approx(cuenta.data.data.movimientos[0].monto, -500);
+    assert.equal(cuenta.data.data.movimientos[0].nota, "Pago e2e");
+
+    const auditoria = await api("GET", "/auditoria", { token: state.tokens.admin });
+    assert.equal(auditoria.status, 200);
+    const acciones = auditoria.data.data.map((a) => a.accion);
+    assert.ok(acciones.includes("editar_cliente"), "falta auditoría de edición de cliente");
+    assert.ok(acciones.includes("pago_cuenta"), "falta auditoría de pago de cuenta");
+  });
 });
