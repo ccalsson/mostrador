@@ -21,11 +21,14 @@ class UsuariosPane extends ConsumerWidget {
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
           child: Row(
             children: [
-              const Text(
-                'Usuarios',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+              const Expanded(
+                child: Text(
+                  'Usuarios',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                ),
               ),
-              const Spacer(),
               FilledButton.icon(
                 key: const Key('admin_nuevo_usuario'),
                 onPressed: () => mostrarFormUsuario(context),

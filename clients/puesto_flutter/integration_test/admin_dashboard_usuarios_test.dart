@@ -67,6 +67,27 @@ Future<void> _login(WidgetTester tester, String email) async {
   await _esperar(tester, find.byKey(const Key('dashboard_lista')));
 }
 
+/// El menú de secciones es una fila horizontal de píldoras: en pantallas
+/// angostas las últimas quedan fuera del viewport. Desplaza el menú hasta la
+/// píldora y recién ahí toca.
+Future<void> _tocarPildora(WidgetTester tester, String etiqueta) async {
+  final pildora = find.text(etiqueta);
+  await tester.scrollUntilVisible(
+    pildora,
+    100,
+    scrollable: find
+        .byWidgetPredicate(
+          (widget) =>
+              widget is Scrollable && widget.axisDirection == AxisDirection.right,
+        )
+        .first,
+  );
+  await tester.ensureVisible(pildora);
+  await tester.pump(const Duration(milliseconds: 300));
+  await tester.tap(pildora);
+  await tester.pump();
+}
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
@@ -87,8 +108,7 @@ void main() {
     await _esperar(tester, find.text('Datos de los últimos 30 días'));
 
     // 2. Navegar a Usuarios
-    await tester.tap(find.text('Usuarios'));
-    await tester.pump();
+    await _tocarPildora(tester, 'Usuarios');
     await _esperar(tester, find.byKey(const Key('admin_usuarios_lista')));
 
     // 3. Crear usuario

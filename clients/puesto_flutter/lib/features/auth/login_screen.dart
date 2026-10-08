@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/auth/auth_controller.dart';
 import '../../core/errors/api_exceptions.dart';
+import '../../core/tema.dart';
+import '../../services/tenant_service.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -55,6 +57,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final tokens = context.tokens;
+    final tenant = ref.watch(tenantProvider).value;
+    final oscuro = theme.brightness == Brightness.dark;
+
     return Scaffold(
       body: Center(
         child: SingleChildScrollView(
@@ -65,17 +71,30 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text(
-                  'Mostrador',
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.headlineMedium,
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: IconButton(
+                    key: const Key('btn_tema'),
+                    tooltip: 'Cambiar tema',
+                    onPressed: () =>
+                        ref.read(temaControllerProvider.notifier).alternar(),
+                    icon: Icon(oscuro ? Icons.light_mode : Icons.dark_mode),
+                  ),
                 ),
-                const SizedBox(height: 8),
                 Text(
-                  'Frutas Román',
+                  tenant?.nombre ?? 'Mostrador',
                   textAlign: TextAlign.center,
-                  style: theme.textTheme.bodyMedium,
+                  style: theme.textTheme.headlineLarge,
                 ),
+                if (tenant != null && tenant.bajada.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    tenant.bajada,
+                    textAlign: TextAlign.center,
+                    style:
+                        theme.textTheme.bodyMedium?.copyWith(color: tokens.inkSoft),
+                  ),
+                ],
                 const SizedBox(height: 32),
                 TextField(
                   key: const Key('login_email'),

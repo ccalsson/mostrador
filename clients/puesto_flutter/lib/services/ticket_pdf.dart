@@ -9,9 +9,15 @@ import '../models/ticket.dart';
 
 /// Ticket en rollo de 80 mm (mismo ancho que la térmica de la web),
 /// espejo del diálogo en pantalla, para la impresión del sistema.
+/// Tipografía Courier 12, como en las impresoras térmicas reales.
 Future<Uint8List> construirTicketPdf(Ticket ticket) async {
   final c = ticket.contenido;
-  const base = pw.TextStyle(fontSize: 9);
+  final base = pw.TextStyle(
+    font: pw.Font.courier(),
+    fontBold: pw.Font.courierBold(),
+    fontSize: 12,
+    color: PdfColors.black,
+  );
   final doc = pw.Document();
   // Page (no MultiPage): el rollo 80 mm es una sola página de altura
   // variable; MultiPage exige una altura de página finita.
@@ -23,7 +29,10 @@ Future<Uint8List> construirTicketPdf(Ticket ticket) async {
         children: [
           pw.Text(
             c.puesto,
-            style: base.copyWith(fontSize: 11, fontWeight: pw.FontWeight.bold),
+            style: base.copyWith(
+              fontSize: 14,
+              fontWeight: pw.FontWeight.bold,
+            ),
             textAlign: pw.TextAlign.center,
           ),
           pw.Text(
@@ -33,12 +42,12 @@ Future<Uint8List> construirTicketPdf(Ticket ticket) async {
           ),
           pw.Text(
             fechaCorta(c.fecha),
-            style: base.copyWith(fontSize: 7.5),
+            style: base.copyWith(fontSize: 10),
             textAlign: pw.TextAlign.center,
           ),
-          pw.Divider(),
+          _separador(base),
           pw.Text('Cliente: ${c.cliente}', style: base),
-          pw.Divider(),
+          _separador(base),
           for (final item in c.items)
             pw.Row(
               children: [
@@ -49,7 +58,7 @@ Future<Uint8List> construirTicketPdf(Ticket ticket) async {
                   ),
                 ),
                 pw.SizedBox(
-                  width: 50,
+                  width: 64,
                   child: pw.Text(
                     moneda(item.subtotal),
                     style: base,
@@ -58,19 +67,19 @@ Future<Uint8List> construirTicketPdf(Ticket ticket) async {
                 ),
               ],
             ),
-          pw.Divider(),
+          _separador(base),
           pw.Text(
             'TOTAL: ${moneda(c.total)}',
-            style: base.copyWith(fontWeight: pw.FontWeight.bold),
+            style: base.copyWith(fontSize: 13, fontWeight: pw.FontWeight.bold),
           ),
           pw.Text('Pago: ${_formaPagoLabel(c.formaPago)}', style: base),
           pw.Text('Recibido: ${moneda(c.recibido)}', style: base),
           pw.Text('Vuelto: ${moneda(c.vuelto)}', style: base),
           if (c.pie.isNotEmpty) ...[
-            pw.Divider(),
+            _separador(base),
             pw.Text(
               c.pie,
-              style: base.copyWith(fontSize: 7.5),
+              style: base.copyWith(fontSize: 10),
               textAlign: pw.TextAlign.center,
             ),
           ],
@@ -80,6 +89,15 @@ Future<Uint8List> construirTicketPdf(Ticket ticket) async {
   );
   return doc.save();
 }
+
+pw.Widget _separador(pw.TextStyle base) => pw.Padding(
+      padding: const pw.EdgeInsets.symmetric(vertical: 4),
+      child: pw.Text(
+        '-' * 26,
+        style: base.copyWith(color: PdfColors.grey),
+        textAlign: pw.TextAlign.center,
+      ),
+    );
 
 String _formaPagoLabel(String apiValue) =>
     FormaPago.fromApi(apiValue)?.label ?? apiValue;

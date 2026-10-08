@@ -18,11 +18,14 @@ class ClientesPane extends ConsumerWidget {
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
           child: Row(
             children: [
-              const Text(
-                'Clientes',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+              const Expanded(
+                child: Text(
+                  'Clientes',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                ),
               ),
-              const Spacer(),
               FilledButton.icon(
                 key: const Key('admin_nuevo_cliente'),
                 onPressed: () => mostrarFormCliente(context),

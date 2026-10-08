@@ -18,11 +18,14 @@ class RemitosPane extends ConsumerWidget {
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
           child: Row(
             children: [
-              const Text(
-                'Remitos',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+              const Expanded(
+                child: Text(
+                  'Remitos',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                ),
               ),
-              const Spacer(),
               IconButton(
                 icon: const Icon(Icons.refresh),
                 onPressed: () => ref.invalidate(remitosProvider),

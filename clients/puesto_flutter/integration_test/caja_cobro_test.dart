@@ -180,7 +180,13 @@ Future<void> _loginYIrACaja(WidgetTester tester) async {
   await tester.pump();
   await _esperar(tester, find.byKey(const Key('catalogo_lista')));
 
-  await tester.tap(find.text('Caja'));
+  // El chip de rol del header también dice "Caja": la píldora se acota al
+  // menú horizontal de secciones.
+  await tester.tap(find.descendant(
+    of: find.byWidgetPredicate(
+        (widget) => widget is ListView && widget.scrollDirection == Axis.horizontal),
+    matching: find.text('Caja'),
+  ));
   await tester.pump();
   await _esperar(tester, find.byKey(const Key('caja_lista')));
 }

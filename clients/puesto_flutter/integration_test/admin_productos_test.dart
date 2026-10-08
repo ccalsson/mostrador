@@ -164,6 +164,27 @@ Future<void> _buscarProducto(WidgetTester tester, String nombre, String id) asyn
   await _esperar(tester, find.byKey(Key('admin_producto_$id')));
 }
 
+/// El menú de secciones es una fila horizontal de píldoras: en pantallas
+/// angostas las últimas quedan fuera del viewport. Desplaza el menú hasta la
+/// píldora y recién ahí toca.
+Future<void> _tocarPildora(WidgetTester tester, String etiqueta) async {
+  final pildora = find.text(etiqueta);
+  await tester.scrollUntilVisible(
+    pildora,
+    100,
+    scrollable: find
+        .byWidgetPredicate(
+          (widget) =>
+              widget is Scrollable && widget.axisDirection == AxisDirection.right,
+        )
+        .first,
+  );
+  await tester.ensureVisible(pildora);
+  await tester.pump(const Duration(milliseconds: 300));
+  await tester.tap(pildora);
+  await tester.pump();
+}
+
 String _subtitulo(WidgetTester tester, String id) =>
     ((tester
                 .widget<ListTile>(find.byKey(Key('admin_producto_$id')))
@@ -207,8 +228,7 @@ void main() {
     await _login(tester, _emailDueno);
 
     // ---- Alta con stock inicial bajo el mínimo ----
-    await tester.tap(find.text('Productos'));
-    await tester.pump();
+    await _tocarPildora(tester, 'Productos');
     await _esperar(tester, find.byKey(const Key('admin_productos_lista')));
 
     await tester.tap(find.byKey(const Key('admin_nuevo_producto')));
@@ -240,8 +260,7 @@ void main() {
     expect(find.text('Stock bajo'), findsOneWidget);
 
     // ---- Alerta de stock bajo y marcar leída ----
-    await tester.tap(find.text('Alertas'));
-    await tester.pump();
+    await _tocarPildora(tester, 'Alertas');
     await _esperar(tester, find.byKey(const Key('alertas_lista')));
 
     final alerta = await _alertaRemota(tokenDueno, nombre);
@@ -253,8 +272,7 @@ void main() {
         reason: 'tras marcar leída el botón desaparece');
 
     // ---- Ajuste: sumar 10 y luego merma 2 ----
-    await tester.tap(find.text('Productos'));
-    await tester.pump();
+    await _tocarPildora(tester, 'Productos');
     await _esperar(tester, find.byKey(const Key('admin_productos_lista')));
     await _buscarProducto(tester, nombre, id);
 

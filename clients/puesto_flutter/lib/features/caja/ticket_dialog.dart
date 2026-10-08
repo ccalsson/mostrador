@@ -82,7 +82,10 @@ class TicketDialog extends ConsumerWidget {
     final estilo = Theme.of(context)
         .textTheme
         .bodyMedium
-        ?.copyWith(fontFamily: 'monospace');
+        ?.copyWith(
+          fontFamily: 'Courier New',
+          fontFamilyFallback: const ['monospace'],
+        );
     return SingleChildScrollView(
       child: Column(
         key: const Key('ticket_contenido'),
