@@ -1,7 +1,8 @@
 import { getSql } from "@/lib/db";
 import { newId } from "@/lib/ids";
 import { num } from "@/lib/money";
-import { assertRole, audit, getTenant, loadPedido } from "@/lib/server/context";
+import { assertRole, audit, loadPedido } from "@/lib/server/context";
+import { getMarcaCompleta } from "@/lib/server/marca";
 import { exigirCuentaCorriente } from "@/lib/server/capabilities";
 import { applyStock, hayReserva, soltarReserva } from "@/lib/server/stock";
 import type { FormaPago, Staff } from "@/lib/types";
@@ -104,10 +105,12 @@ export async function cobrarPedidoForStaff(staff: Staff, input: CobrarPedidoInpu
   const seq = await sql<{ ultimo: number }>`
     update ticket_seq set ultimo = ultimo + 1 where tenant_id = ${staff.tenantId} returning ultimo
   `;
-  const tenant = await getTenant();
+  const tenant = await getMarcaCompleta(staff.tenantId);
   const numero = seq[0]?.ultimo ?? 1;
   const contenido = {
     puesto: tenant.nombre,
+    bajada: tenant.bajada,
+    membrete: tenant.membrete,
     numero,
     fecha: new Date().toISOString(),
     cliente: pedido.clienteNombre,

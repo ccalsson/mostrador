@@ -616,6 +616,16 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
     approx(ticket.data.data.contenido.total, state.p1.total);
     approx(ticket.data.data.contenido.vuelto, 500);
     assert.equal(ticket.data.data.contenido.items[0].cantidad, 2);
+
+    // Marca en el ticket (F5, paridad con repoweb): bajada y membrete del
+    // tenant, igual que el resto de la identidad del puesto.
+    const marca = await api("GET", "/marca", { token: state.tokens.admin });
+    assert.equal(marca.status, 200);
+    const contenido = ticket.data.data.contenido;
+    assert.equal(contenido.puesto, marca.data.data.nombre);
+    assert.equal(contenido.bajada, marca.data.data.bajada);
+    assert.equal(contenido.membrete, marca.data.data.membrete);
+    assert.equal(contenido.pie, marca.data.data.pieTicket);
   });
 
   it("8. entregar y anular pedido: stock restituido y anulación idempotente", async () => {

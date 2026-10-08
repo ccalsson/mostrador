@@ -23,7 +23,7 @@ function leerConfig(raw: unknown): MarcaConfig {
   return {};
 }
 
-async function getMarcaCompleta(tenantId: string): Promise<Marca> {
+export async function getMarcaCompleta(tenantId: string): Promise<Marca> {
   const sql = await getSql();
   const rows = await sql<{ id: string; nombre: string; config: unknown }>`
     select id, nombre, config from tenants where id = ${tenantId}
