@@ -531,6 +531,47 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
     });
     expectError(ccSinCliente, 400, /cuenta corriente/i);
     approx(await stockOf(state.banana.id), state.bananaStock0);
+
+    // Preparación (F4, paridad con repoweb): enviado→en_preparacion→listo con
+    // timestamps; saltos inválidos rechazados; reintento idempotente; solo admin/cajero.
+    const saltoInvalido = await api("POST", `/pedidos/${pedido.id}/estado`, {
+      token: state.tokens.cajero,
+      body: { estado: "listo" },
+    });
+    expectError(saltoInvalido, 400, /preparaci.n/i);
+
+    const estadoVendedor = await api("POST", `/pedidos/${pedido.id}/estado`, {
+      token: state.tokens.vendedor,
+      body: { estado: "en_preparacion" },
+    });
+    expectError(estadoVendedor, 403, /permiso/i);
+
+    const preparar = await api("POST", `/pedidos/${pedido.id}/estado`, {
+      token: state.tokens.cajero,
+      body: { estado: "en_preparacion" },
+    });
+    assert.equal(preparar.status, 200, JSON.stringify(preparar.data));
+    assert.equal(preparar.data.data.estado, "en_preparacion");
+
+    const reintento = await api("POST", `/pedidos/${pedido.id}/estado`, {
+      token: state.tokens.cajero,
+      body: { estado: "en_preparacion" },
+    });
+    assert.equal(reintento.status, 200, "repetir en_preparacion es idempotente");
+
+    const listo = await api("POST", `/pedidos/${pedido.id}/estado`, {
+      token: state.tokens.cajero,
+      body: { estado: "listo" },
+    });
+    assert.equal(listo.status, 200, JSON.stringify(listo.data));
+    assert.equal(listo.data.data.estado, "listo");
+
+    const timestamps = await state.pool.query(
+      "select preparation_started_at, prepared_at from pedidos where id = $1",
+      [pedido.id],
+    );
+    assert.ok(timestamps.rows[0].preparation_started_at, "en_preparacion debe fijar preparation_started_at");
+    assert.ok(timestamps.rows[0].prepared_at, "listo debe fijar prepared_at");
   });
 
   it("7. cobro en efectivo: ticket, vuelto y doble cobro rechazado", async () => {

@@ -85,8 +85,28 @@ export async function updatePedidoEstadoForStaff(
     await audit(staff.tenantId, staff, "cambio_estado", "pedido", input);
     return loadPedido(input.id, staff.tenantId);
   }
+  if (input.estado === "en_preparacion" && current.estado !== "enviado" && current.estado !== "en_preparacion") {
+    const error = new Error("Ese pedido no se puede preparar.");
+    Object.assign(error, { status: 400 });
+    throw error;
+  }
+  if (input.estado === "listo" && current.estado !== "en_preparacion" && current.estado !== "listo") {
+    const error = new Error("Antes tenés que empezar la preparación.");
+    Object.assign(error, { status: 400 });
+    throw error;
+  }
   await sql`
-    update pedidos set estado = ${input.estado}, updated_at = now()
+    update pedidos
+    set estado = ${input.estado},
+        preparation_started_at = case
+          when ${input.estado} = 'en_preparacion' then coalesce(preparation_started_at, now())
+          else preparation_started_at
+        end,
+        prepared_at = case
+          when ${input.estado} = 'listo' then coalesce(prepared_at, now())
+          else prepared_at
+        end,
+        updated_at = now()
     where id = ${input.id} and tenant_id = ${staff.tenantId}
   `;
   await audit(staff.tenantId, staff, "cambio_estado", "pedido", input);
