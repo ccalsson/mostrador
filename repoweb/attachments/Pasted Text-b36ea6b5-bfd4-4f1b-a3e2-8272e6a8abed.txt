@@ -1,0 +1,530 @@
+La auditoría ya terminó.
+
+El resultado fue:
+
+PASS CON OBSERVACIONES — NO LISTO PARA PRUEBA FÍSICA.
+
+Ahora sí quiero que corrijas exclusivamente los problemas detectados en la auditoría.
+
+NO agregues funcionalidades nuevas.
+
+NO hagas refactors generales.
+
+NO cambies la arquitectura.
+
+NO implementes todavía ranking, premios, puntos ni niveles adicionales.
+
+El objetivo de esta etapa es llevar Mercado al Toque desde:
+
+PASS CON OBSERVACIONES
+
+a:
+
+LISTO PARA PRUEBA FÍSICA
+
+---
+
+1. PRIORIDAD MÁXIMA — ATOMICIDAD DEL CARRITO MULTI-TENANT
+
+Actualmente existe este problema:
+
+Carrito:
+    Tenant A → válido
+    Tenant B → inexistente/inválido
+
+Resultado actual:
+    API devuelve error
+    PERO Tenant A queda creado
+    Y su stock queda reservado
+
+Esto es incorrecto.
+
+El checkout debe ser atómico.
+
+El resultado debe ser:
+
+TODOS LOS PEDIDOS VÁLIDOS
+        +
+TODAS LAS RESERVAS VÁLIDAS
+        ↓
+       COMMIT
+
+o:
+
+CUALQUIER ERROR
+        ↓
+     ROLLBACK
+        ↓
+NO queda ningún pedido
+NO queda ninguna reserva
+NO queda descuento de stock
+
+La operación debe utilizar una única transacción de base de datos cuando técnicamente corresponda.
+
+No implementes una segunda lógica de stock.
+
+Debe continuar utilizando:
+
+reservarLineas
+soltarReserva
+
+y la lógica existente de Mostrador.
+
+Pero el conjunto de operaciones del checkout multi-tenant debe quedar correctamente protegido contra resultados parciales.
+
+Prueba obligatoria
+
+Reproducir:
+
+Pedido A → tenant válido
+Pedido B → tenant inexistente
+
+Resultado esperado:
+
+HTTP error
++
+Pedido A NO existe
++
+Pedido B NO existe
++
+stock A permanece igual
++
+ninguna reserva queda pendiente
+
+Después probar:
+
+Pedido A → válido
+Pedido B → válido
+
+Resultado esperado:
+
+Pedido A creado
+Pedido B creado
+stock reservado correctamente
+
+---
+
+2. GOOGLE LOGIN — CERRAR FLUJO END TO END
+
+Actualmente:
+
+- el botón existe;
+- se llama al broker;
+- no es 501;
+- pero no se logró completar el login;
+- el callback utiliza una ruta relativa;
+- no existe evidencia de sesión real posterior.
+
+Esto NO puede quedar como "funciona".
+
+Auditar:
+
+iniciarGoogle
+      ↓
+broker
+      ↓
+Google
+      ↓
+callback
+      ↓
+validación
+      ↓
+creación/recuperación de usuario
+      ↓
+sesión Mercado al Toque
+      ↓
+usuario autenticado
+
+Corregir solamente lo necesario para que el flujo completo funcione.
+
+No reemplazar el sistema de autenticación existente.
+
+No crear otro proveedor de identidad.
+
+No implementar un OAuth propio.
+
+Prueba obligatoria
+
+Realizar un login real con Google y demostrar:
+
+Google autenticó
+        ↓
+callback correcto
+        ↓
+usuario identificado
+        ↓
+sesión creada
+        ↓
+/mercado accesible
+
+También probar:
+
+- usuario nuevo;
+- usuario existente;
+- logout;
+- acceso nuevamente.
+
+Si el entorno actual no permite completar el flujo por una limitación externa del broker, NO inventes una solución. Informá exactamente qué dependencia externa impide cerrarlo.
+
+Pero mientras sea técnicamente corregible desde nuestro código, corregilo.
+
+---
+
+3. MOSTRADOR DEBE VER EL RETIRO
+
+Actualmente:
+
+Changarín
+   ↓
+retira pedido
+   ↓
+picked_up_at
+
+pero Mostrador no visualiza ese cambio.
+
+Eso debe corregirse.
+
+Cuando el changarín marca:
+
+RETIRADO
+
+el pedido debe quedar claramente identificado para el personal del puesto.
+
+Por ejemplo:
+
+PEDIDO #351
+
+Estado: RETIRADO
+Changarín: Juan
+Retirado: 11:42
+
+No agregues una pantalla nueva si puede resolverse incorporando el estado/indicador en la pantalla existente de pedidos.
+
+La información debe provenir del backend real.
+
+No duplicar el estado en otra tabla innecesariamente.
+
+---
+
+4. TIEMPO DE PREPARACIÓN
+
+Actualmente es posible:
+
+CONFIRMADO
+   ↓
+LISTO/PREPARADO
+
+sin pasar por:
+
+EN_PREPARACION
+
+y entonces:
+
+preparation_started_at = null
+
+Eso invalida el cálculo del tiempo de preparación.
+
+Resolverlo de una de estas dos formas, eligiendo la que mejor respete el modelo existente:
+
+Opción A — estricta
+
+No permitir:
+
+CONFIRMADO → PREPARADO
+
+y exigir:
+
+CONFIRMADO
+    ↓
+EN_PREPARACION
+    ↓
+PREPARADO
+
+Opción B — automática
+
+Si el puesto marca directamente:
+
+PREPARADO
+
+y no existe "preparation_started_at", establecer automáticamente el inicio de preparación en el momento en que comenzó la transición correspondiente.
+
+Preferir A si no rompe el flujo real de Mostrador.
+
+NO inventar timestamps.
+
+NO modificar históricos.
+
+---
+
+5. MÉTRICAS DE TIEMPO
+
+Después de corregir el punto anterior, verificar:
+
+preparation_started_at
+prepared_at
+picked_up_at
+delivered_at
+
+y que puedan calcularse:
+
+Tiempo de preparación
+= prepared_at - preparation_started_at
+
+Espera para retiro
+= picked_up_at - prepared_at
+
+Tiempo de entrega
+= delivered_at - picked_up_at
+
+Tiempo total
+= delivered_at - created_at
+
+No es obligatorio almacenar los resultados calculados.
+
+---
+
+6. PRUEBA REAL CON DOS PUESTOS
+
+Actualmente solamente existe un tenant real de prueba.
+
+Antes de declarar terminado:
+
+Crear/publicar o utilizar un segundo puesto de prueba.
+
+No modificar la arquitectura.
+
+Debe existir:
+
+Puesto A
+Producto A
+publicado_online = true
+
+Puesto B
+Producto B
+publicado_online = true
+
+Realizar:
+
+Comprador
+   ↓
+Producto A
++
+Producto B
+   ↓
+Checkout
+
+Verificar:
+
+Pedido A → tenant A
+Pedido B → tenant B
+
+y que:
+
+- ambos tengan sus propios items;
+- ambos tengan sus propios precios;
+- ambos tengan sus propias reservas;
+- ninguno vea datos del otro;
+- el recorrido pueda agrupar ambos pedidos.
+
+---
+
+7. RECORRIDO DEL CHANGARÍN
+
+Después de la prueba anterior verificar:
+
+Pedido A
+Pedido B
+      ↓
+Changarín seleccionado
+      ↓
+Recorrido
+
+Los pedidos NO deben fusionarse.
+
+Debe existir:
+
+Recorrido
+ ├── Pedido A
+ └── Pedido B
+
+El changarín debe poder:
+
+ACEPTAR
+   ↓
+RETIRAR
+   ↓
+ENTREGAR
+
+y los timestamps deben quedar correctamente registrados.
+
+---
+
+8. SEGURIDAD
+
+Repetir después de las correcciones:
+
+Comprador
+
+No puede:
+
+- aceptar recorrido;
+- retirar;
+- entregar;
+- modificar pedido ajeno.
+
+Changarín
+
+No puede:
+
+- crear pedidos;
+- modificar pedidos ajenos;
+- acceder a documentos;
+- modificar datos de otro changarín.
+
+Tenant
+
+No puede:
+
+- leer pedidos de otro tenant;
+- modificar stock de otro tenant;
+- modificar productos de otro tenant.
+
+Todo debe estar protegido en backend.
+
+---
+
+9. IDEMPOTENCIA
+
+Volver a probar:
+
+mismo checkout
++
+misma Idempotency-Key
+
+Resultado:
+
+un único conjunto de pedidos
+
+No crear pedidos duplicados.
+
+También verificar que la corrección de atomicidad no rompa la idempotencia.
+
+---
+
+10. NO TOCAR AHORA
+
+Dejar fuera de esta etapa:
+
+- pagos;
+- Mercado Pago;
+- liquidaciones;
+- tarifas del changarín;
+- algoritmo definitivo de ranking;
+- premios;
+- reglas definitivas de puntos;
+- niveles;
+- geolocalización avanzada;
+- incidencias;
+- reclamos;
+- biometría externa.
+
+La estructura existente para esas funciones puede permanecer.
+
+---
+
+11. NOMENCLATURA
+
+En interfaz utilizar:
+
+Changarín
+
+Internamente puede mantenerse:
+
+changarin
+
+No hagas una migración masiva de nombres de tablas solamente por cambiar "cargador" a "changarín".
+
+Corregir únicamente la interfaz y documentación donde corresponda.
+
+---
+
+12. TEST FINAL OBLIGATORIO
+
+Al terminar, ejecutar nuevamente toda la matriz:
+
+Prueba| Resultado esperado
+Registro| PASS
+Login| PASS
+Google Login real| PASS
+Logout| PASS
+Catálogo publicado| PASS
+Precio real| PASS
+Stock real| PASS
+Checkout un tenant| PASS
+Checkout dos tenants| PASS
+Checkout con tenant inválido| ROLLBACK COMPLETO
+Idempotencia| PASS
+Stock insuficiente| PASS
+Estado EN_PREPARACION| PASS
+Estado PREPARADO| PASS
+Timestamp preparación| PASS
+Selección changarín| PASS
+Aceptación| PASS
+Retiro| PASS
+Mostrador visualiza retiro| PASS
+Entrega| PASS
+Timestamp entrega| PASS
+Calificación| PASS
+Doble calificación| RECHAZADA
+Aislamiento comprador| PASS
+Aislamiento changarín| PASS
+Aislamiento tenant| PASS
+
+---
+
+13. CRITERIO DE TERMINACIÓN
+
+NO declarar "listo" solamente porque compile.
+
+Mercado al Toque queda listo para prueba física solamente si:
+
+1. Google funciona end-to-end, o existe una limitación externa documentada que impide probarlo.
+2. El checkout multi-tenant es atómico.
+3. No existen reservas parciales ante errores.
+4. Mostrador visualiza el retiro.
+5. El tiempo de preparación queda correctamente registrado.
+6. Se probaron al menos dos tenants reales.
+7. El flujo completo comprador → puestos → changarín → retiro → entrega funciona.
+8. Los pedidos siguen separados por tenant.
+9. Stock y reservas continúan utilizando la lógica de Mostrador.
+10. Las pruebas de autorización continúan pasando.
+
+Al finalizar entregar:
+
+CAMBIOS REALIZADOS
+
+Archivos y funciones modificadas.
+
+MIGRACIONES
+
+Indicar si hubo alguna y por qué.
+
+TESTS
+
+Resultado de cada prueba.
+
+PROBLEMAS RESTANTES
+
+Solo problemas que realmente impidan o condicionen la prueba física.
+
+ESTADO FINAL
+
+Una única conclusión:
+
+LISTO PARA PRUEBA FÍSICA
+
+o:
+
+NO LISTO PARA PRUEBA FÍSICA
+
+No agregues ninguna funcionalidad fuera de este alcance.

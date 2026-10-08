@@ -1,0 +1,582 @@
+La implementación ya fue realizada dentro del mismo sitio y utilizando la API existente.
+
+Ahora NO agregues nuevas funcionalidades.
+
+Quiero una auditoría técnica y funcional de cierre contra los requisitos definidos para Mercado al Toque y Changarín.
+
+El objetivo es determinar si lo implementado realmente cumple el diseño y si la integración con Mostrador es correcta.
+
+No asumas que algo funciona porque exista una pantalla o un endpoint.
+
+VERIFICÁ el comportamiento real.
+
+---
+
+1. ARQUITECTURA
+
+Confirmá mediante código que:
+
+- Mercado al Toque está dentro del mismo sitio.
+- "/mercado" utiliza la API existente.
+- No existe un segundo servidor.
+- No existe un backend paralelo.
+- Flutter/web no accede directamente a Neon.
+- No se duplicó la lógica de negocio de Mostrador.
+
+Informá exactamente qué rutas, servicios y endpoints utiliza.
+
+---
+
+2. AUTENTICACIÓN
+
+Verificá:
+
+- registro;
+- login;
+- sesión;
+- Google Login;
+- logout;
+- autorización.
+
+Google Login debe funcionar realmente.
+
+No acepto:
+
+- mock;
+- placeholder;
+- 501;
+- código muerto;
+- "preparado para implementar".
+
+Informá el flujo exacto.
+
+---
+
+3. ROLES
+
+Verificá que estén claramente diferenciados:
+
+COMPRADOR
+CHANGARIN
+STAFF / USUARIO DE PUESTO
+ADMINISTRADOR
+
+No debe ser posible que un comprador pueda ejecutar operaciones de changarín simplemente modificando una petición HTTP.
+
+La autorización debe existir en backend.
+
+---
+
+4. PRODUCTOS
+
+Verificá que los puestos visibles en Mercado al Toque:
+
+- correspondan a tenants reales;
+- tengan productos reales;
+- solamente aparezcan cuando el dueño los haya publicado;
+- utilicen precio real;
+- utilicen disponibilidad real.
+
+No debe existir un catálogo duplicado mantenido manualmente por Mercado al Toque.
+
+Informá qué tabla/consulta determina:
+
+publicado_online
+
+o su equivalente real.
+
+---
+
+5. CARRITO MULTI-TENANT
+
+Probá un carrito con productos de:
+
+Tenant A
+Tenant B
+Tenant C
+
+Verificá que al confirmar se creen:
+
+Pedido A → tenant A
+Pedido B → tenant B
+Pedido C → tenant C
+
+y nunca un único pedido multitenant.
+
+---
+
+6. STOCK Y RESERVAS
+
+Este punto es crítico.
+
+Demostrá mediante código que Mercado al Toque reutiliza la lógica existente de Mostrador para:
+
+- verificar stock;
+- reservar;
+- confirmar;
+- liberar;
+- descontar.
+
+NO debe existir:
+
+stock_mercado
+
+ni un segundo motor de reservas.
+
+Si existe lógica duplicada, señalala y NO la corrijas todavía.
+
+---
+
+7. PEDIDOS
+
+Verificá cómo se crea realmente un pedido desde Mercado al Toque.
+
+Confirmá:
+
+- endpoint;
+- servicio;
+- función;
+- tablas afectadas;
+- tenant;
+- cliente;
+- items;
+- reserva;
+- idempotencia.
+
+Verificá también qué sucede ante:
+
+- doble click;
+- timeout;
+- reintento;
+- stock insuficiente;
+- cambio de precio.
+
+---
+
+8. ESTADO PREPARADO
+
+Verificá que Mostrador pueda marcar un pedido como:
+
+PREPARADO
+
+o equivalente funcional.
+
+Debe existir una diferencia real entre:
+
+EN_PREPARACION
+
+y:
+
+PREPARADO
+
+El estado PREPARADO significa que físicamente el puesto terminó de armar el pedido y está disponible para retiro.
+
+Verificá también que Mercado al Toque vea ese cambio.
+
+---
+
+9. TIMESTAMPS
+
+Verificá que el sistema registre correctamente:
+
+created_at
+confirmed_at
+preparation_started_at
+prepared_at
+picked_up_at
+delivered_at
+
+o equivalentes reales.
+
+Demostrá que pueden calcularse:
+
+tiempo de preparación
+
+tiempo desde preparado hasta retiro
+
+tiempo de traslado
+
+tiempo total
+
+No necesito que todos sean columnas si el sistema puede derivarlos correctamente.
+
+---
+
+10. CHANGARÍN
+
+IMPORTANTE:
+
+La denominación interna debe ser:
+
+changarin
+
+y la interfaz:
+
+Changarín
+
+Verificá:
+
+- registro;
+- perfil;
+- disponibilidad;
+- estado;
+- historial.
+
+El changarín es independiente.
+
+NO requiere aprobación previa de un mercado para registrarse.
+
+Debe existir capacidad futura de suspender/bloquear una cuenta.
+
+---
+
+11. ELECCIÓN DEL CHANGARÍN
+
+Este es un requisito fundamental.
+
+El comprador debe elegir al changarín.
+
+El sistema NO debe generar automáticamente una asignación sin intervención del comprador.
+
+Verificá que el comprador pueda ver:
+
+- changarines disponibles;
+- reputación;
+- experiencia;
+- información necesaria para elegir.
+
+Y pueda seleccionar uno.
+
+---
+
+12. VARIOS PEDIDOS
+
+Probá:
+
+Comprador X
+
+Pedido A → Puesto 1
+Pedido B → Puesto 2
+Pedido C → Puesto 3
+
+El comprador selecciona un changarín.
+
+Verificá que el changarín pueda visualizar correctamente los pedidos que debe retirar.
+
+No fusionar los pedidos originales.
+
+Debe existir una agrupación logística equivalente a:
+
+Recorrido
+   ├── Pedido A
+   ├── Pedido B
+   └── Pedido C
+
+---
+
+13. FLUJO DEL CHANGARÍN
+
+El flujo requerido es:
+
+ACEPTADA
+   ↓
+RETIRADA
+   ↓
+ENTREGADA
+
+Verificá que las transiciones sean controladas por backend.
+
+No permitir:
+
+ENTREGADA → RETIRADA
+
+ni otras transiciones inválidas.
+
+---
+
+14. RETIRO
+
+Cuando el changarín retira un pedido:
+
+Debe quedar registrado:
+
+picked_up_at
+
+o equivalente.
+
+Verificá que el puesto pueda saber que el pedido fue retirado.
+
+---
+
+15. ENTREGA
+
+Cuando el changarín entrega:
+
+Debe quedar registrado:
+
+delivered_at
+
+o equivalente.
+
+Verificá que el comprador pueda ver el estado.
+
+---
+
+16. PAGO
+
+Confirmá que Mercado al Toque:
+
+NO procesa el pago del changarín.
+
+NO tiene:
+
+- Mercado Pago;
+- billetera;
+- liquidación;
+- comisión automática;
+- saldo interno.
+
+El pago del changarín queda fuera de la plataforma en este MVP.
+
+---
+
+17. CALIFICACIÓN
+
+Verificá que después de una entrega el comprador pueda:
+
+1–5 estrellas
+
+y opcionalmente comentario.
+
+Debe evitarse que una misma operación sea calificada múltiples veces.
+
+---
+
+18. MÉTRICAS
+
+Verificá que el sistema pueda obtener:
+
+- recorridos realizados;
+- pedidos entregados;
+- cancelaciones;
+- puntualidad;
+- tiempo de retiro;
+- tiempo de entrega;
+- promedio de calificación;
+- cantidad de calificaciones;
+- incidencias.
+
+No necesito todavía un algoritmo complejo de ranking.
+
+Necesito que los datos necesarios existan.
+
+---
+
+19. RANKING / PUNTOS / NIVELES
+
+Verificá que la estructura actual no impida implementar posteriormente:
+
+Puntos
+↓
+Nivel
+↓
+Ranking
+↓
+Premios
+
+Debe existir una separación razonable entre:
+
+datos históricos
+
+y:
+
+score/ranking calculado
+
+NO agregues ahora un sistema de premios complejo.
+
+Solamente verificá que la arquitectura pueda soportarlo.
+
+---
+
+20. PRIVACIDAD
+
+Auditar especialmente:
+
+- DNI;
+- selfie;
+- documentos;
+- datos personales.
+
+Confirmar que:
+
+- no son públicos;
+- no aparecen innecesariamente en API;
+- no pueden ser descargados por otro comprador;
+- no pueden ser accedidos por un changarín sin autorización.
+
+---
+
+21. MULTI-TENANCY
+
+Intentá explícitamente romper el aislamiento.
+
+Casos:
+
+Comprador A → Pedido B
+
+Changarín A → Recorrido B
+
+Tenant A → Pedido Tenant B
+
+Todos deben devolver:
+
+403
+
+o:
+
+404
+
+según la estrategia de seguridad utilizada.
+
+No aceptar simplemente que el frontend oculte los datos.
+
+---
+
+22. IDEMPOTENCIA
+
+Probar:
+
+crear pedido
+
+dos veces con el mismo "Idempotency-Key".
+
+Resultado esperado:
+
+un solo pedido
+
+Repetir la prueba con operaciones críticas del changarín cuando corresponda.
+
+---
+
+23. MIGRACIONES
+
+Comparar las migraciones aplicadas con el esquema real de Neon.
+
+Informar:
+
+- tablas nuevas;
+- columnas nuevas;
+- índices;
+- foreign keys;
+- constraints;
+- posibles riesgos.
+
+No modificar migraciones históricas destructivamente.
+
+---
+
+24. NO CORREGIR TODAVÍA
+
+Durante esta auditoría:
+
+NO agregues funcionalidades.
+
+NO hagas refactors grandes.
+
+NO cambies la arquitectura.
+
+NO modifiques el modelo de negocio.
+
+Si encontrás un problema:
+
+1. documentalo;
+2. indicá archivo;
+3. indicá función;
+4. explicá por qué es incorrecto;
+5. proponé la corrección;
+6. indicá prioridad.
+
+---
+
+25. INFORME FINAL
+
+Entregá el resultado con esta estructura:
+
+ESTADO GENERAL
+
+PASS
+PASS CON OBSERVACIONES
+FAIL
+
+ARQUITECTURA
+
+Qué está correcto y qué no.
+
+AUTENTICACIÓN
+
+Qué está correcto y qué no.
+
+MULTI-TENANT
+
+Qué está correcto y qué no.
+
+PEDIDOS
+
+Qué está correcto y qué no.
+
+STOCK / RESERVAS
+
+Qué está correcto y qué no.
+
+PREPARADO / TIMESTAMPS
+
+Qué está correcto y qué no.
+
+CHANGARÍN
+
+Qué está correcto y qué no.
+
+CALIFICACIÓN
+
+Qué está correcto y qué no.
+
+RANKING / INCENTIVOS
+
+Qué está preparado y qué falta.
+
+SEGURIDAD
+
+Vulnerabilidades encontradas.
+
+MIGRACIONES
+
+Estado.
+
+TESTS
+
+Lista de pruebas ejecutadas con:
+
+PASS / FAIL
+
+PROBLEMAS
+
+Tabla:
+
+Prioridad| Problema| Archivo| Función| Riesgo| Corrección propuesta
+
+Clasificar:
+
+CRÍTICO
+ALTO
+MEDIO
+BAJO
+
+CONCLUSIÓN
+
+Responder explícitamente:
+
+«¿Mercado al Toque + Changarín está realmente listo para comenzar pruebas físicas con Mostrador?»
+
+Si la respuesta es NO, indicar exactamente qué falta.
+
+NO declarar "listo" simplemente porque las pantallas funcionen.

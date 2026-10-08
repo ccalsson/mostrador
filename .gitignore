@@ -42,6 +42,8 @@ npm-debug.log*
 
 # --- Artefactos regenerables de QA y generación ---
 app/screenshots/
+repoweb/screenshots/
+repoweb/spa.traineddata
 app/artifacts/
 
 # --- Flutter / Dart ---

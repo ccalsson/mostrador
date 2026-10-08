@@ -1,0 +1,1134 @@
+Quiero que implementes la siguiente etapa de Mercado al Toque, integrado con el sistema existente Mostrador.
+
+IMPORTANTE:
+
+NO empieces programando.
+
+Primero conectate al repositorio real de Mostrador en GitHub, auditá su arquitectura y entendé cómo funcionan actualmente autenticación, usuarios, tenants, productos, precios, stock, reservas, clientes, pedidos y estados.
+
+La secuencia obligatoria es:
+
+AUDITAR → INFORMAR → DISEÑAR → MIGRAR → IMPLEMENTAR → TESTEAR → DOCUMENTAR
+
+No inventes tablas, endpoints, funciones ni mecanismos paralelos si ya existe una implementación equivalente.
+
+---
+
+1. OBJETIVO GENERAL
+
+Mercado al Toque será una aplicación multitenant que permitirá:
+
+- registrar compradores;
+- autenticar usuarios;
+- consultar productos publicados por distintos puestos;
+- comprar a diferentes puestos;
+- generar pedidos independientes por tenant;
+- elegir un changarín para retirar y entregar los pedidos;
+- realizar seguimiento de los pedidos;
+- calificar al changarín;
+- construir posteriormente ranking, niveles, puntos e incentivos.
+
+Mostrador continúa siendo el sistema operativo de cada puesto.
+
+Arquitectura objetivo:
+
+Mercado al Toque
+        ↓
+API Mercado al Toque
+        ↓
+API / lógica existente de Mostrador
+        ↓
+Neon / PostgreSQL
+
+NO hacer:
+
+Flutter → Neon
+
+NO crear un segundo sistema de stock.
+
+NO crear un segundo motor de reservas.
+
+NO duplicar productos.
+
+NO duplicar inventario.
+
+NO duplicar la lógica de creación de pedidos si Mostrador ya tiene una implementación existente.
+
+---
+
+2. PRIMERA ETAPA: AUDITORÍA OBLIGATORIA
+
+Antes de modificar código, inspeccioná el repositorio real de Mostrador.
+
+Localizá exactamente:
+
+Autenticación
+
+- login;
+- sesiones;
+- tokens;
+- usuarios;
+- roles;
+- tenants;
+- autorización;
+- Google OAuth si existe;
+- mecanismos de identificación del usuario.
+
+Productos
+
+- productos;
+- precios;
+- disponibilidad;
+- publicación;
+- relación producto/tenant.
+
+Stock
+
+- stock actual;
+- movimientos;
+- reservas;
+- liberación de reservas;
+- actualización de stock.
+
+Pedidos
+
+Localizá:
+
+- "crearPedido";
+- creación de "pedido_items";
+- estados;
+- reservas;
+- cancelación;
+- confirmación;
+- actualización;
+- relación con cliente;
+- relación con tenant.
+
+Multi-tenancy
+
+Determinar exactamente cómo se garantiza que:
+
+tenant A
+
+no pueda acceder a:
+
+tenant B
+
+Clientes
+
+Determinar cómo se identifica actualmente al cliente dentro de Mostrador.
+
+Estados
+
+Determinar todos los estados actuales de pedido.
+
+NO reemplazar el modelo existente sin necesidad.
+
+Al finalizar esta auditoría, informá:
+
+1. arquitectura encontrada;
+2. tablas relevantes;
+3. funciones existentes;
+4. endpoints existentes;
+5. flujo actual de pedido;
+6. flujo actual de reservas;
+7. modelo de autenticación;
+8. modelo multitenant;
+9. qué puede reutilizar Mercado al Toque;
+10. qué cambios mínimos son necesarios.
+
+NO implementes nada todavía si no terminaste esta auditoría.
+
+---
+
+3. GOOGLE LOGIN
+
+Google Login es requisito del MVP.
+
+NO dejar:
+
+501 Not Implemented
+
+NO considerarlo una funcionalidad futura.
+
+Implementarlo utilizando el mecanismo de autenticación compatible con la arquitectura real de Mostrador.
+
+No crear un sistema paralelo de autenticación.
+
+El diseño debe quedar preparado para incorporar otros proveedores posteriormente, pero el proveedor requerido ahora es Google.
+
+---
+
+4. IDENTIDAD DEL COMPRADOR
+
+Separar claramente:
+
+usuario registrado
+
+de:
+
+identidad verificada
+
+y de:
+
+documentación cargada
+
+Nunca asumir que:
+
+DNI + selfie cargados = identidad verificada
+
+El sistema debe poder representar estados como:
+
+PENDIENTE
+DOCUMENTACION_CARGADA
+EN_VALIDACION
+VERIFICADA
+RECHAZADA
+
+El proveedor biométrico debe quedar desacoplado.
+
+Si todavía no existe proveedor de verificación, no inventarlo.
+
+La arquitectura debe quedar preparada para incorporarlo posteriormente.
+
+---
+
+5. DOCUMENTOS SENSIBLES
+
+NO almacenar DNI/selfie como información pública ni exponerlos directamente desde endpoints normales.
+
+Evitar almacenar Base64 dentro de tablas si existe una alternativa razonable.
+
+Utilizar:
+
+documento_ref
+selfie_ref
+
+y una capa de almacenamiento privado.
+
+Los archivos deben:
+
+- tener acceso restringido;
+- no ser públicos;
+- no aparecer en respuestas normales de API;
+- estar desacoplados del modelo de negocio;
+- poder eliminarse posteriormente.
+
+No implementar una infraestructura innecesariamente compleja si todavía no es necesaria, pero dejar correctamente separada la referencia del archivo respecto de la identidad.
+
+---
+
+6. MERCADO AL TOQUE Y PRODUCTOS
+
+Mercado al Toque debe consultar productos reales de Mostrador.
+
+No crear una copia independiente del catálogo.
+
+La publicación online debe poder controlarse mediante un campo equivalente a:
+
+publicado_online
+
+pero primero verificá si ya existe algo equivalente.
+
+No dupliques información que ya exista.
+
+El producto mostrado al comprador debe tener como mínimo:
+
+- tenant;
+- producto;
+- nombre;
+- precio vigente;
+- disponibilidad;
+- información necesaria para comprar.
+
+---
+
+7. CARRITO MULTI-TENANT
+
+El comprador puede comprar a varios puestos.
+
+Ejemplo:
+
+Frutas Román
+Puesto 7
+Puesto 12
+
+Pero cada pedido debe continuar perteneciendo a un único tenant.
+
+Por lo tanto:
+
+Carrito general
+      ↓
+agrupación por tenant
+      ↓
+Pedido tenant A
+Pedido tenant B
+Pedido tenant C
+
+No crear un pedido multitenant dentro de Mostrador.
+
+---
+
+8. CREACIÓN DEL PEDIDO
+
+Antes de implementar, localizá cómo Mostrador crea actualmente un pedido.
+
+Mercado al Toque debe reutilizar las mismas reglas.
+
+Flujo:
+
+Mercado al Toque
+      ↓
+endpoint externo
+      ↓
+validación
+      ↓
+precio actual
+      ↓
+stock actual
+      ↓
+reserva
+      ↓
+creación del pedido
+      ↓
+pedido_items
+
+Debe existir una única fuente de verdad para:
+
+- precio;
+- stock;
+- reserva;
+- pedido.
+
+NO implementar una segunda lógica de reserva en Mercado al Toque.
+
+Antes de confirmar un pedido, volver a validar:
+
+- precio;
+- stock;
+- disponibilidad;
+- tenant;
+- producto.
+
+Mantener "Idempotency-Key" para evitar pedidos duplicados.
+
+---
+
+9. NUEVO ESTADO PREPARADO EN MOSTRADOR
+
+Durante la auditoría verificá cómo funcionan actualmente los estados de pedido.
+
+Necesitamos incorporar, si no existe un equivalente funcional:
+
+PREPARADO
+
+El objetivo es poder saber cuándo el puesto terminó físicamente de preparar el pedido.
+
+Flujo mínimo esperado:
+
+CREADO
+   ↓
+CONFIRMADO
+   ↓
+EN_PREPARACION
+   ↓
+PREPARADO
+   ↓
+RETIRADO
+   ↓
+ENTREGADO
+
+No agregues estados redundantes si el modelo actual ya tiene equivalentes.
+
+---
+
+10. TIMESTAMPS OPERATIVOS
+
+Registrar timestamps de las transiciones importantes.
+
+Como mínimo:
+
+created_at
+confirmed_at
+preparation_started_at
+prepared_at
+picked_up_at
+delivered_at
+
+Si el modelo actual usa otra estrategia, adaptarla sin duplicar información.
+
+A partir de esos timestamps debe ser posible calcular:
+
+tiempo de preparación
+= prepared_at - preparation_started_at
+
+espera del changarín
+= picked_up_at - prepared_at
+
+tiempo de entrega
+= delivered_at - picked_up_at
+
+tiempo total
+= delivered_at - created_at
+
+No necesariamente almacenar todos estos valores como columnas.
+
+Preferir métricas derivadas cuando sea apropiado.
+
+---
+
+11. MÓDULO CHANGARÍN
+
+Implementar el módulo Changarín como parte del MVP.
+
+El changarín es:
+
+«un prestador independiente que utiliza Mercado al Toque para realizar retiros y entregas.»
+
+No pertenece obligatoriamente a un mercado.
+
+No requiere aprobación previa del administrador del mercado para registrarse.
+
+No convertir el registro en una barrera innecesaria.
+
+Sin embargo, debe existir la posibilidad futura de:
+
+ACTIVO
+SUSPENDIDO
+BLOQUEADO
+
+para poder moderar cuentas.
+
+---
+
+12. REGISTRO DEL CHANGARÍN
+
+Crear el rol/perfil correspondiente.
+
+No duplicar el usuario de autenticación.
+
+Separar:
+
+Usuario
+   ↓
+Perfil Changarín
+
+El perfil debe permitir almacenar como mínimo:
+
+- datos básicos;
+- disponibilidad;
+- estado;
+- reputación;
+- estadísticas;
+- nivel;
+- puntos;
+- historial.
+
+No implementar pagos.
+
+---
+
+13. DISPONIBILIDAD
+
+El changarín debe poder indicar:
+
+DISPONIBLE
+NO_DISPONIBLE
+
+Solo los changarines disponibles deben aparecer como candidatos para nuevos recorridos.
+
+La arquitectura debe permitir posteriormente agregar:
+
+- ubicación;
+- zona;
+- radio de operación;
+- horarios.
+
+No convertir esto en una funcionalidad compleja si no es necesaria para el MVP.
+
+---
+
+14. ELECCIÓN DEL CHANGARÍN
+
+IMPORTANTE:
+
+El comprador elige al changarín.
+
+El comprador NO crea manualmente una "orden de changarín".
+
+No debe existir una acción como:
+
+Armar recorrido del changarín
+
+desde el carrito del comprador.
+
+La lógica debe ser:
+
+Comprador
+    ↓
+confirma pedidos
+    ↓
+selecciona changarín
+    ↓
+asocia changarín a los pedidos correspondientes
+
+El sistema debe mostrar changarines disponibles.
+
+Ordenarlos inicialmente por criterios útiles como:
+
+1. disponibilidad;
+2. reputación;
+3. experiencia;
+4. cercanía, si existe información de ubicación.
+
+No bloquear el MVP esperando geolocalización avanzada.
+
+---
+
+15. UN CHANGARÍN PUEDE TENER VARIOS PEDIDOS
+
+Un changarín puede encargarse de varios pedidos pertenecientes al mismo comprador.
+
+Ejemplo:
+
+Comprador X
+
+Pedido 351 → Frutas Román
+Pedido 352 → Puesto 7
+Pedido 353 → Puesto 12
+
+El changarín debe visualizar algo equivalente a:
+
+RECORRIDO #1842
+
+Frutas Román
+Pedido #351
+Estado: preparado
+
+Puesto 7
+Pedido #352
+Estado: preparado
+
+Puesto 12
+Pedido #353
+Estado: en preparación
+
+La operación debe permitir controlar individualmente los pedidos y el recorrido general.
+
+---
+
+16. ESTADOS DEL CHANGARÍN
+
+El flujo MVP debe ser:
+
+ASIGNADO
+   ↓
+ACEPTADO
+   ↓
+RETIRADO
+   ↓
+ENTREGADO
+
+No agregar estados innecesarios.
+
+Cada pedido debe poder registrar:
+
+accepted_at
+picked_up_at
+delivered_at
+
+adaptándolo al modelo real encontrado.
+
+---
+
+17. PAGO DEL CHANGARÍN
+
+NO implementar pagos dentro de Mercado al Toque en este MVP.
+
+El comprador paga al changarín directamente por fuera de la plataforma.
+
+No integrar:
+
+- Mercado Pago;
+- billeteras;
+- liquidaciones;
+- cuentas corrientes;
+- comisiones automáticas.
+
+Pero diseñar el modelo de forma que posteriormente pueda agregarse una tarifa.
+
+---
+
+18. TARIFAS
+
+Todavía no está definido el modelo económico.
+
+Por lo tanto:
+
+NO fijar una tarifa rígida.
+
+NO asumir:
+
+$X por pedido
+
+ni:
+
+$X por kilómetro
+
+ni:
+
+$X por puesto
+
+La arquitectura debe poder soportar posteriormente:
+
+- tarifa fija;
+- tarifa por pedido;
+- tarifa por cantidad de puestos;
+- tarifa por distancia;
+- combinación de criterios.
+
+Pero el MVP puede dejar el importe fuera de la operación.
+
+---
+
+19. CALIFICACIÓN
+
+Después de una entrega, el comprador debe poder calificar al changarín.
+
+Escala:
+
+1 a 5 estrellas
+
+Opcionalmente permitir comentario.
+
+La calificación debe estar asociada a:
+
+- comprador;
+- changarín;
+- recorrido/pedido;
+- fecha;
+- puntuación.
+
+Evitar que un comprador pueda calificar múltiples veces la misma operación.
+
+---
+
+20. MÉTRICAS DEL CHANGARÍN
+
+No depender exclusivamente de estrellas.
+
+Registrar métricas objetivas:
+
+- recorridos aceptados;
+- recorridos completados;
+- cancelaciones;
+- pedidos retirados;
+- pedidos entregados;
+- entregas a tiempo;
+- entregas demoradas;
+- tiempo promedio de retiro;
+- tiempo promedio de entrega;
+- calificación promedio;
+- cantidad de calificaciones;
+- incidencias;
+- reclamos.
+
+Estas métricas serán utilizadas posteriormente para ranking.
+
+---
+
+21. RANKING
+
+Implementar la estructura necesaria para un ranking.
+
+El ranking no debe depender únicamente de:
+
+promedio de estrellas
+
+Debe poder considerar métricas objetivas.
+
+Por ejemplo:
+
+calificación
++ entregas completadas
++ puntualidad
++ tasa de cancelación
++ experiencia
+
+No inventes todavía una fórmula económica compleja.
+
+Crear una estructura que permita modificar posteriormente el algoritmo de ranking.
+
+Idealmente separar:
+
+datos originales
+
+de:
+
+score calculado
+
+para poder modificar la fórmula sin perder historial.
+
+---
+
+22. PUNTOS
+
+Preparar un sistema de puntos.
+
+Ejemplo conceptual:
+
+entrega completada      +10
+buena calificación       +5
+entrega a tiempo         +5
+cancelación injustificada -20
+
+Los valores deben ser configurables posteriormente.
+
+No hardcodear la lógica si puede evitarse razonablemente.
+
+---
+
+23. NIVELES
+
+Preparar niveles:
+
+NUEVO
+BRONCE
+PLATA
+ORO
+ELITE
+
+Los requisitos deben poder modificarse posteriormente.
+
+No es necesario crear un sistema gigantesco de gamificación.
+
+Solo dejar una estructura sólida para:
+
+- nivel actual;
+- puntos;
+- requisitos;
+- historial de cambios.
+
+---
+
+24. PREMIOS
+
+La arquitectura debe permitir posteriormente crear premios.
+
+Ejemplo:
+
+Ranking mensual
+
+1° → Premio
+2° → Premio
+3° → Premio
+
+No procesar pagos ni premios automáticamente.
+
+La Torre podrá posteriormente administrar:
+
+- premio;
+- período;
+- puesto;
+- estado;
+- entrega.
+
+---
+
+25. PRIVACIDAD DEL COMPRADOR
+
+El changarín debe recibir solamente la información necesaria para realizar la entrega.
+
+No exponer innecesariamente:
+
+- DNI;
+- documentación;
+- información sensible;
+- historial completo del comprador;
+- datos internos del mercado.
+
+Definir claramente qué información necesita el changarín para:
+
+1. retirar;
+2. transportar;
+3. entregar.
+
+Aplicar mínimo privilegio.
+
+---
+
+26. RECORRIDO
+
+El concepto de recorrido debe ser una agrupación operativa de varios pedidos del mismo comprador.
+
+No debe reemplazar los pedidos originales.
+
+Ejemplo:
+
+RECORRIDO 1842
+
+pedido 351 → tenant A
+pedido 352 → tenant B
+pedido 353 → tenant C
+
+Cada pedido mantiene:
+
+- su tenant;
+- sus productos;
+- su stock;
+- su estado;
+- sus datos de Mostrador.
+
+El recorrido solamente coordina la operación logística.
+
+---
+
+27. TORRE
+
+No convertir estas funcionalidades en un producto independiente.
+
+La Torre es nuestra consola administrativa.
+
+Debe quedar preparada para que posteriormente pueda visualizar:
+
+- changarines;
+- estado;
+- ranking;
+- puntos;
+- niveles;
+- incidencias;
+- métricas;
+- premios.
+
+No crear pantallas innecesarias ahora.
+
+Implementar solamente lo necesario para que el backend y MVP funcionen correctamente.
+
+---
+
+28. SEGURIDAD
+
+Verificar obligatoriamente:
+
+- autenticación;
+- autorización;
+- aislamiento por tenant;
+- autorización del comprador;
+- autorización del changarín;
+- acceso a pedidos;
+- acceso a recorridos;
+- acceso a documentos;
+- modificación de estados.
+
+Un changarín no puede modificar pedidos ajenos arbitrariamente.
+
+Un comprador no puede modificar pedidos de otro comprador.
+
+Un tenant no puede acceder a pedidos de otro tenant.
+
+No confiar solamente en controles del frontend.
+
+La autorización debe existir en backend.
+
+---
+
+29. MIGRACIONES
+
+NO ejecutar ciegamente ninguna migración propuesta anteriormente.
+
+Primero comparar contra el esquema real.
+
+Después generar una migración compatible con la base actual.
+
+Documentar:
+
+- tablas nuevas;
+- columnas nuevas;
+- índices;
+- constraints;
+- relaciones;
+- migraciones de datos si fueran necesarias.
+
+No romper datos existentes.
+
+---
+
+30. API
+
+Crear o adaptar la API:
+
+/api/mercado/v1
+
+pero primero verificar si ya existe.
+
+Mantener contratos claros.
+
+Documentar endpoints de:
+
+Compradores
+
+- registro;
+- login;
+- perfil;
+- identidad;
+- productos;
+- carrito;
+- pedidos.
+
+Changarines
+
+- registro/perfil;
+- disponibilidad;
+- listado;
+- selección;
+- recorridos;
+- aceptación;
+- retiro;
+- entrega;
+- historial;
+- calificaciones.
+
+Pedidos
+
+- crear;
+- consultar;
+- estado;
+- cancelación cuando corresponda.
+
+Ranking
+
+Preparar endpoints necesarios, evitando sobreconstrucción.
+
+---
+
+31. IDEMPOTENCIA
+
+Mantener "Idempotency-Key" para operaciones críticas.
+
+Especialmente:
+
+crear pedido
+asociar recorrido
+aceptar recorrido
+marcar retiro
+marcar entrega
+
+Evitar duplicaciones por:
+
+- doble click;
+- mala conexión;
+- reintentos;
+- timeout;
+- reconexión.
+
+---
+
+32. FLUTTER
+
+El cliente Flutter debe consumir exclusivamente la API.
+
+No acceder directamente a Neon.
+
+Separar claramente:
+
+auth
+catalog
+cart
+orders
+chagarin
+rating
+profile
+
+No crear lógica de negocio crítica únicamente en Flutter.
+
+---
+
+33. TESTS
+
+Crear pruebas para los casos críticos.
+
+Como mínimo:
+
+Multi-tenant
+
+- comprador compra a tenant A;
+- comprador compra a tenant B;
+- ambos pedidos quedan separados.
+
+Stock
+
+- stock suficiente;
+- stock insuficiente;
+- reserva;
+- liberación;
+- confirmación.
+
+Idempotencia
+
+- misma solicitud dos veces;
+- debe producir un único pedido.
+
+Changarín
+
+- registro;
+- disponibilidad;
+- selección;
+- aceptación;
+- retiro;
+- entrega.
+
+Seguridad
+
+- comprador A no accede al pedido B;
+- changarín A no modifica recorrido B;
+- tenant A no accede a tenant B.
+
+Calificación
+
+- una calificación por operación;
+- promedio correcto.
+
+Estados
+
+Verificar transiciones válidas:
+
+CONFIRMADO
+→ EN_PREPARACION
+→ PREPARADO
+→ RETIRADO
+→ ENTREGADO
+
+y rechazar transiciones inválidas.
+
+---
+
+34. CRITERIOS DE ACEPTACIÓN
+
+La implementación se considera correcta únicamente si:
+
+1. Google Login funciona.
+2. Mercado al Toque no accede directamente a Neon.
+3. Los productos provienen del catálogo real.
+4. Los pedidos se crean mediante la lógica existente de Mostrador.
+5. El stock continúa teniendo una única fuente de verdad.
+6. Las reservas continúan teniendo una única fuente de verdad.
+7. Los pedidos continúan separados por tenant.
+8. Existe el estado PREPARADO o equivalente funcional.
+9. Se registran timestamps operativos.
+10. Se puede calcular demora de preparación, retiro y entrega.
+11. El comprador puede elegir changarín.
+12. El changarín puede aceptar.
+13. El changarín puede marcar retiro.
+14. El changarín puede marcar entrega.
+15. El comprador puede calificar.
+16. Se generan métricas objetivas.
+17. Existe estructura para ranking.
+18. Existe estructura para puntos.
+19. Existe estructura para niveles.
+20. No se procesan pagos de changarines.
+21. Los documentos sensibles no quedan expuestos.
+22. Existen controles de autorización backend.
+23. No se rompe Mostrador.
+24. Las pruebas críticas pasan.
+
+---
+
+35. REGLA FUNDAMENTAL
+
+No agregues funcionalidades simplemente porque parezcan útiles.
+
+Si encontrás una decisión arquitectónica ambigua:
+
+1. detenete;
+2. documentá el problema;
+3. explicá las alternativas;
+4. elegí la opción que preserve compatibilidad con Mostrador;
+5. implementá solamente después de verificar.
+
+Prioridad absoluta:
+
+NO ROMPER MOSTRADOR
+        ↓
+REUTILIZAR LÓGICA EXISTENTE
+        ↓
+MANTENER MULTI-TENANCY
+        ↓
+UNA SOLA FUENTE DE VERDAD PARA STOCK/PEDIDOS
+        ↓
+MERCADO AL TOQUE
+        ↓
+CHANGARÍN
+        ↓
+RANKING / INCENTIVOS
+
+---
+
+36. ENTREGA FINAL
+
+Al terminar, entregar un informe técnico con:
+
+A. Auditoría
+
+Qué encontraste en Mostrador.
+
+B. Cambios
+
+Qué archivos modificaste.
+
+C. Base de datos
+
+Qué tablas/columnas/índices agregaste.
+
+D. API
+
+Endpoints nuevos o modificados.
+
+E. Estados
+
+Flujo definitivo de pedidos.
+
+F. Changarín
+
+Flujo completo.
+
+G. Seguridad
+
+Cómo se garantiza autorización y aislamiento.
+
+H. Tests
+
+Qué pruebas ejecutaste y resultado.
+
+I. Riesgos pendientes
+
+Qué quedó deliberadamente fuera del MVP.
+
+J. Compatibilidad
+
+Confirmar explícitamente que Mostrador continúa funcionando.
+
+NO declares terminado simplemente porque compile.
+
+Debe existir evidencia de:
+
+build
+tests
+migraciones
+API
+autorización
+multi-tenant
+pedido
+stock
+reserva
+PREPARADO
+chagarín
+entrega
+calificación
+
+Primero AUDITÁ.
+
+Después INFORMÁ.
+
+Luego implementá.
+
+No saltees la auditoría.

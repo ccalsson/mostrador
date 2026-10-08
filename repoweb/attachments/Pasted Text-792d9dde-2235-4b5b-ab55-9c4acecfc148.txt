@@ -1,0 +1,305 @@
+La auditoría de la Torre quedó aprobada en arquitectura y controles principales.
+
+Ahora NO agregues pantallas, módulos, funcionalidades ni nuevas capacidades administrativas.
+
+El objetivo de esta tarea es exclusivamente cerrar, validar y dejar estable la Torre MVP contra Neon DEV.
+
+1. Aplicar la migración real
+
+Usá la "DATABASE_URL" disponible para el entorno DEV de Mostrador y aplicá:
+
+"migrations/0008_torre.sql"
+
+Verificá que la migración se aplique correctamente sobre Neon DEV.
+
+Antes de ejecutarla:
+
+- inspeccioná el estado actual de las migraciones;
+- no borres datos;
+- no recrees tablas existentes;
+- no hagas reset de la base;
+- no modifiques tablas ni relaciones existentes de Mostrador.
+
+Después de aplicarla, verificá que existan correctamente las tablas del schema "torre":
+
+- "torre.saas_access"
+- "torre.saas_apps"
+- "torre.saas_clients"
+- "torre.saas_plans"
+- "torre.saas_tenants"
+- "torre.saas_subscriptions"
+- "torre.saas_payments"
+- "torre.saas_expenses"
+- "torre.saas_versions"
+- "torre.saas_deployments"
+
+2. Configurar la cuenta inicial
+
+Configurá "TORRE_INITIAL_PASSWORD" únicamente como variable de entorno del servidor DEV.
+
+No la:
+
+- hardcodees;
+- guardes en Git;
+- envíes desde el frontend;
+- incluyas en el bundle;
+- expongas en logs.
+
+La variable debe cumplir la validación existente de 8 caracteres o más.
+
+Verificá que el bootstrap cree únicamente:
+
+"calssonclaudio@gmail.com"
+
+si la cuenta todavía no existe.
+
+No permitas que el navegador pueda elegir o enviar la contraseña inicial.
+
+3. Validar autorización real
+
+Probá contra Neon DEV, no solamente con mocks.
+
+Casos obligatorios:
+
+Sin sesión
+
+Intentar acceder a las operaciones de Torre.
+
+Resultado esperado:
+
+"HTTP 401"
+
+Usuario de Mostrador
+
+Usar una sesión real de:
+
+"dueno@frutasroman.com"
+
+Resultado esperado para tablero, tenants y alta de aplicación:
+
+"HTTP 403"
+
+No alcanza con ocultar la pantalla.
+
+Debe verificarse que el backend rechace la operación.
+
+Administrador de Torre
+
+Usar:
+
+"calssonclaudio@gmail.com"
+
+Resultado esperado:
+
+- acceso autorizado;
+- lectura de datos de Torre;
+- escritura de datos de Torre según las funciones existentes.
+
+4. Verificar torreGuard
+
+Confirmá que todas las funciones administrativas existentes de Torre continúan protegidas por "torreGuard".
+
+Especialmente:
+
+- "torreYo"
+- "dashboardTorre"
+- "listApps"
+- "saveApp"
+- "listClients"
+- "saveClient"
+- "listPlans"
+- "savePlan"
+- "listTenants"
+- "saveTenant"
+- "desactivarTenant"
+- "listSubscriptions"
+- "saveSubscription"
+- "listPayments"
+- "savePayment"
+- "listExpenses"
+- "saveExpense"
+- "listVersions"
+- "saveVersion"
+- "listDeployments"
+- "saveDeployment"
+- "listAccess"
+- "addAccess"
+- "removeAccess"
+
+La única excepción deliberada continúa siendo el endpoint de alta inicial de clave, que debe responder "403" desde el navegador.
+
+Si encontrás alguna operación sin protección, corregila.
+
+No agregues nuevas operaciones.
+
+5. Verificar aislamiento de Neon
+
+Hacé una auditoría final de las relaciones.
+
+Objetivo:
+
+Mostrador
+   ↓
+tablas existentes de Mostrador
+
+Torre
+   ↓
+schema torre
+   ↓
+tablas torre.*
+
+Confirmá que ninguna FK nueva desde "torre.*" apunte a tablas operativas de Mostrador.
+
+"operational_tenant_ref" debe continuar siendo "text" y no convertirse en FK hacia las tablas de Mostrador.
+
+La Torre puede guardar referencias administrativas, pero no debe generar acoplamiento estructural con el modelo operativo.
+
+6. Diff contra Mostrador
+
+Revisá nuevamente el diff de:
+
+- "src/lib/fn.ts"
+- "src/routes/index.tsx"
+- "src/components/app-shell.tsx"
+- "src/lib/server/bootstrap.ts"
+
+Confirmá que los cambios realizados ahí sean únicamente los necesarios para:
+
+1. evitar que "calssonclaudio@gmail.com" sea tratado como empleado del puesto;
+2. permitir el bootstrap controlado de la cuenta inicial de Torre.
+
+No introduzcas lógica adicional de Torre dentro de esos archivos si puede permanecer en el código específico de Torre.
+
+Todo lo demás debe continuar desacoplado en:
+
+- "src/lib/torre-fn.ts"
+- "src/components/torre-shell.tsx"
+- rutas "src/routes/torre*.tsx"
+- schema "torre"
+- migración correspondiente.
+
+7. Tests
+
+Ejecutá:
+
+- tests específicos de Torre;
+- TypeScript;
+- build;
+- suite completa.
+
+Resultado esperado mínimo:
+
+- tests de Torre: "3/3";
+- TypeScript: "55/55";
+- build: correcto;
+- no introducir nuevos fallos.
+
+Respecto de los 13 tests antiguos que actualmente fallan:
+
+NO los arregles inventando compatibilidad ni modificando la Torre para satisfacerlos.
+
+Primero verificá que efectivamente sean los tests obsoletos identificados:
+
+- auth apagada del template;
+- carpeta de migraciones vacía;
+- metadatos OG.
+
+Si siguen siendo obsoletos, actualizalos o reemplazalos por tests que representen el estado actual del proyecto, sin modificar la funcionalidad de Mostrador ni Torre.
+
+El objetivo final debe ser que la suite no reporte falsos negativos por tests del template que ya no representan el proyecto.
+
+8. Prueba de regresión de Mostrador
+
+Después de aplicar la migración y los cambios de Torre, verificá que Mostrador continúe funcionando.
+
+Como mínimo:
+
+- autenticación;
+- acceso del dueño del puesto;
+- funciones existentes del puesto;
+- lectura/escritura de sus datos;
+- build Flutter/web si forman parte del workspace actual.
+
+No modificar reglas de negocio de Mostrador para solucionar problemas de Torre.
+
+9. No hacer
+
+Durante esta tarea NO:
+
+- agregues pantallas;
+- agregues dashboards;
+- agregues módulos;
+- agregues roles nuevos;
+- agregues nuevas tablas;
+- cambies el modelo de tenants de Mostrador;
+- migres Neon a Supabase;
+- cambies PostgreSQL;
+- refactorices Mostrador innecesariamente;
+- implementes funcionalidades futuras de la Torre;
+- agregues facturación;
+- agregues analítica;
+- agregues notificaciones;
+- agregues sistema de actualizaciones;
+- conviertas la Torre en un producto para clientes.
+
+La Torre es una consola administrativa interna.
+
+10. Entregable final
+
+Al terminar, entregame un informe corto con:
+
+TORRE MVP — CIERRE DEV
+
+Migración Neon DEV:
+[OK / ERROR]
+
+Bootstrap de administrador:
+[OK / ERROR]
+
+TORRE_INITIAL_PASSWORD:
+[OK / ERROR — sin mostrar la contraseña]
+
+401 sin sesión:
+[OK / ERROR]
+
+403 usuario de Mostrador:
+[OK / ERROR]
+
+Acceso administrador Torre:
+[OK / ERROR]
+
+torreGuard:
+[OK / ERROR]
+
+FK Torre → Mostrador:
+[OK / ERROR]
+
+Mostrador sin regresiones:
+[OK / ERROR]
+
+TypeScript:
+[resultado]
+
+Tests Torre:
+[resultado]
+
+Tests completos:
+[resultado]
+
+Build:
+[resultado]
+
+Archivos modificados:
+[lista]
+
+Migraciones ejecutadas:
+[lista]
+
+Problemas pendientes:
+[lista]
+
+Si todo está correcto, declaralo explícitamente:
+
+TORRE MVP CERRADA Y VALIDADA CONTRA NEON DEV.
+
+No continúes desarrollando funcionalidades de Torre después de alcanzar ese estado.
