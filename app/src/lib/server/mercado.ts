@@ -279,6 +279,50 @@ export async function signOut(token: string | undefined) {
   return { ok: true };
 }
 
+const RESET_TTL_MINUTOS = 30;
+
+export async function solicitarRecuperacion(input: Record<string, unknown>) {
+  const email = emailValue(input.email);
+  const sql = await getSql();
+  const credencial = await sql<{ perfil: MercadoPerfil; usuario_id: string }>`
+    select perfil, usuario_id from mercado_credenciales where email = ${email} limit 1
+  `;
+  if (credencial[0]) {
+    await sql`delete from mercado_reset_tokens where email = ${email}`;
+    const token = createToken();
+    await sql`
+      insert into mercado_reset_tokens (id, email, token_hash, expires_at)
+      values (${newId("mrt")}, ${email}, ${tokenHash(token)}, now() + ${`${RESET_TTL_MINUTOS} minutes`}::interval)
+    `;
+    const base = process.env.BETTER_AUTH_URL?.trim() || "http://localhost:8080";
+    console.log(
+      `[mercado] Recuperación de contraseña para ${email}: ${base}/reset-password?mercado=${token}`,
+    );
+  }
+  return { ok: true, mensaje: "Si el correo tiene una cuenta, el enlace fue generado." };
+}
+
+export async function restablecer(input: Record<string, unknown>) {
+  const token = textValue(input.token, "token", 200);
+  const password = passwordValue(input.password);
+  const sql = await getSql();
+  const rows = await sql<{ email: string }>`
+    delete from mercado_reset_tokens
+    where token_hash = ${tokenHash(token)} and expires_at > now() and used_at is null
+    returning email
+  `;
+  const row = rows[0];
+  if (!row) fail(400, "token_invalido", "El enlace no es válido o ya venció. Pedí otro.");
+  await sql.transaction(async (tx) => {
+    await tx`update mercado_credenciales set password_hash = ${passwordHash(password)} where email = ${row.email}`;
+    await tx`
+      delete from mercado_sesiones s using mercado_credenciales c
+      where s.perfil = c.perfil and s.usuario_id = c.usuario_id and c.email = ${row.email}
+    `;
+  });
+  return { ok: true, mensaje: "Contraseña actualizada. Entrá con la nueva." };
+}
+
 export async function getMe(actor: MercadoActor) {
   const sql = await getSql();
   const extra =

@@ -22,8 +22,10 @@ import { Route as ProveedoresRouteImport } from './routes/proveedores'
 import { Route as RecuperarRouteImport } from './routes/recuperar'
 import { Route as RegistroRouteImport } from './routes/registro'
 import { Route as RemitosRouteImport } from './routes/remitos'
+import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as UsuariosRouteImport } from './routes/usuarios'
 import { Route as VendedorRouteImport } from './routes/vendedor'
+import { Route as ApiTenantRouteImport } from './routes/api/tenant'
 import { Route as FacturaIdRouteImport } from './routes/factura.$id'
 import { Route as RemitosIdRouteImport } from './routes/remitos.$id'
 import { Route as TicketCobroIdRouteImport } from './routes/ticket.$cobroId'
@@ -96,6 +98,11 @@ const RemitosRoute = RemitosRouteImport.update({
   path: '/remitos',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ResetPasswordRoute = ResetPasswordRouteImport.update({
+  id: '/reset-password',
+  path: '/reset-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const UsuariosRoute = UsuariosRouteImport.update({
   id: '/usuarios',
   path: '/usuarios',
@@ -104,6 +111,11 @@ const UsuariosRoute = UsuariosRouteImport.update({
 const VendedorRoute = VendedorRouteImport.update({
   id: '/vendedor',
   path: '/vendedor',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiTenantRoute = ApiTenantRouteImport.update({
+  id: '/api/tenant',
+  path: '/api/tenant',
   getParentRoute: () => rootRouteImport,
 } as any)
 const FacturaIdRoute = FacturaIdRouteImport.update({
@@ -151,8 +163,10 @@ export interface FileRoutesByFullPath {
   '/recuperar': typeof RecuperarRoute
   '/registro': typeof RegistroRoute
   '/remitos': typeof RemitosRouteWithChildren
+  '/reset-password': typeof ResetPasswordRoute
   '/usuarios': typeof UsuariosRoute
   '/vendedor': typeof VendedorRoute
+  '/api/tenant': typeof ApiTenantRoute
   '/factura/$id': typeof FacturaIdRoute
   '/remitos/$id': typeof RemitosIdRoute
   '/ticket/$cobroId': typeof TicketCobroIdRoute
@@ -174,8 +188,10 @@ export interface FileRoutesByTo {
   '/recuperar': typeof RecuperarRoute
   '/registro': typeof RegistroRoute
   '/remitos': typeof RemitosRouteWithChildren
+  '/reset-password': typeof ResetPasswordRoute
   '/usuarios': typeof UsuariosRoute
   '/vendedor': typeof VendedorRoute
+  '/api/tenant': typeof ApiTenantRoute
   '/factura/$id': typeof FacturaIdRoute
   '/remitos/$id': typeof RemitosIdRoute
   '/ticket/$cobroId': typeof TicketCobroIdRoute
@@ -198,8 +214,10 @@ export interface FileRoutesById {
   '/recuperar': typeof RecuperarRoute
   '/registro': typeof RegistroRoute
   '/remitos': typeof RemitosRouteWithChildren
+  '/reset-password': typeof ResetPasswordRoute
   '/usuarios': typeof UsuariosRoute
   '/vendedor': typeof VendedorRoute
+  '/api/tenant': typeof ApiTenantRoute
   '/factura/$id': typeof FacturaIdRoute
   '/remitos/$id': typeof RemitosIdRoute
   '/ticket/$cobroId': typeof TicketCobroIdRoute
@@ -223,8 +241,10 @@ export interface FileRouteTypes {
     | '/recuperar'
     | '/registro'
     | '/remitos'
+    | '/reset-password'
     | '/usuarios'
     | '/vendedor'
+    | '/api/tenant'
     | '/factura/$id'
     | '/remitos/$id'
     | '/ticket/$cobroId'
@@ -246,8 +266,10 @@ export interface FileRouteTypes {
     | '/recuperar'
     | '/registro'
     | '/remitos'
+    | '/reset-password'
     | '/usuarios'
     | '/vendedor'
+    | '/api/tenant'
     | '/factura/$id'
     | '/remitos/$id'
     | '/ticket/$cobroId'
@@ -269,8 +291,10 @@ export interface FileRouteTypes {
     | '/recuperar'
     | '/registro'
     | '/remitos'
+    | '/reset-password'
     | '/usuarios'
     | '/vendedor'
+    | '/api/tenant'
     | '/factura/$id'
     | '/remitos/$id'
     | '/ticket/$cobroId'
@@ -293,8 +317,10 @@ export interface RootRouteChildren {
   RecuperarRoute: typeof RecuperarRoute
   RegistroRoute: typeof RegistroRoute
   RemitosRoute: typeof RemitosRouteWithChildren
+  ResetPasswordRoute: typeof ResetPasswordRoute
   UsuariosRoute: typeof UsuariosRoute
   VendedorRoute: typeof VendedorRoute
+  ApiTenantRoute: typeof ApiTenantRoute
   FacturaIdRoute: typeof FacturaIdRoute
   TicketCobroIdRoute: typeof TicketCobroIdRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
@@ -395,6 +421,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RemitosRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/reset-password': {
+      id: '/reset-password'
+      path: '/reset-password'
+      fullPath: '/reset-password'
+      preLoaderRoute: typeof ResetPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/usuarios': {
       id: '/usuarios'
       path: '/usuarios'
@@ -407,6 +440,13 @@ declare module '@tanstack/react-router' {
       path: '/vendedor'
       fullPath: '/vendedor'
       preLoaderRoute: typeof VendedorRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/tenant': {
+      id: '/api/tenant'
+      path: '/api/tenant'
+      fullPath: '/api/tenant'
+      preLoaderRoute: typeof ApiTenantRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/factura/$id': {
@@ -479,8 +519,10 @@ const rootRouteChildren: RootRouteChildren = {
   RecuperarRoute: RecuperarRoute,
   RegistroRoute: RegistroRoute,
   RemitosRoute: RemitosRouteWithChildren,
+  ResetPasswordRoute: ResetPasswordRoute,
   UsuariosRoute: UsuariosRoute,
   VendedorRoute: VendedorRoute,
+  ApiTenantRoute: ApiTenantRoute,
   FacturaIdRoute: FacturaIdRoute,
   TicketCobroIdRoute: TicketCobroIdRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,

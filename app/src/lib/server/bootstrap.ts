@@ -3,6 +3,7 @@ import {
   CATALOG,
   DEMO_USERS,
   SEED_CLIENTES,
+  TENANT_BAJADA,
   TENANT_ID,
   TENANT_NOMBRE,
   TENANT_PIE,
@@ -73,7 +74,11 @@ async function seedCore() {
     `insert into tenants (id, nombre, config)
      values ($1,$2,$3::jsonb)
      on conflict (id) do nothing`,
-    [TENANT_ID, TENANT_NOMBRE, JSON.stringify({ pieTicket: TENANT_PIE })],
+    [TENANT_ID, TENANT_NOMBRE, JSON.stringify({ pieTicket: TENANT_PIE, bajada: TENANT_BAJADA })],
+  );
+  await sql.query(
+    `update tenants set config = jsonb_set(config, '{bajada}', $2::jsonb) where id = $1 and config->>'bajada' is null`,
+    [TENANT_ID, JSON.stringify(TENANT_BAJADA)],
   );
   await sql`
     insert into ticket_seq (tenant_id, ultimo)

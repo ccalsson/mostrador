@@ -12,6 +12,7 @@ export type CatalogItem = {
 
 export const TENANT_ID = "frutas-roman";
 export const TENANT_NOMBRE = "Frutas Román, el Jujeño";
+export const TENANT_BAJADA = "Frutas y verduras del Mercado Central";
 export const TENANT_PIE =
   "Gracias por su compra. Cambio y reclamos el mismo día. Mercado Central — Nave 3.";
 

@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { MercadoError, authenticate, clearExpiredGoogleStates, createOAuthSession, createOrders, createRoute, emailFromExternal, findGoogleCredential, getBuyerOrder, getMe, listBuyerOrders, listCouriers, listPublicRanking, listRoutes, listStandProducts, listStands, newGoogleState, rateRoute, registerBuyer, registerCourier, setCourierAvailability, signIn, signOut, updateStop, uploadIdentity, changeRoute } from "@/lib/server/mercado";
+import { MercadoError, authenticate, clearExpiredGoogleStates, createOAuthSession, createOrders, createRoute, emailFromExternal, findGoogleCredential, getBuyerOrder, getMe, listBuyerOrders, listCouriers, listPublicRanking, listRoutes, listStandProducts, listStands, newGoogleState, rateRoute, registerBuyer, registerCourier, restablecer, setCourierAvailability, signIn, signOut, solicitarRecuperacion, updateStop, uploadIdentity, changeRoute } from "@/lib/server/mercado";
 import { getSql } from "@/lib/db";
 import type { MercadoPerfil } from "@/lib/server/mercado";
 
@@ -216,6 +216,12 @@ async function handle(method: "GET" | "POST", request: Request, splat?: string) 
     }
     if (method === "POST" && segments.join("/") === "auth/ingreso") {
       return json(await signIn(await bodyOf(request)));
+    }
+    if (method === "POST" && segments.join("/") === "auth/recuperar") {
+      return json(await solicitarRecuperacion(await bodyOf(request)));
+    }
+    if (method === "POST" && segments.join("/") === "auth/restablecer") {
+      return json(await restablecer(await bodyOf(request)));
     }
     if (method === "POST" && segments.join("/") === "auth/google") {
       return startGoogle(request, await bodyOf(request));

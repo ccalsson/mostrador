@@ -113,7 +113,19 @@ export const auth = betterAuth({
   session: { cookieCache: { enabled: true, maxAge: 300 } },
 
   // Local email/password — toggled only via `./email-password` (not a plugin).
-  ...(emailAndPasswordEnabled ? { emailAndPassword: { enabled: true } } : {}),
+  // Password reset: there is no SMTP in this stack yet, so in DEV the reset
+  // link is printed to the server console (same convention as the seed).
+  ...(emailAndPasswordEnabled
+    ? {
+        emailAndPassword: {
+          enabled: true,
+          forgetPasswordCallbackPath: "/reset-password",
+          sendResetPassword: async ({ user, url }: { user: { email: string }; url: string }) => {
+            console.log(`[auth] Recuperación de contraseña para ${user.email}: ${url}`);
+          },
+        },
+      }
+    : {}),
 
   // `__Host-` prefixed cookies: the browser REFUSES any same-named cookie that
   // carries a `Domain` attribute, so a sibling app cannot "toss" a session
