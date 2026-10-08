@@ -5,7 +5,7 @@ import { getSql, withTransaction, type Sql } from "@/lib/db";
 import { newId } from "@/lib/ids";
 import { num } from "@/lib/money";
 import { reservarLineas, soltarReserva } from "@/lib/server/stock";
-import { createCredentialUser, ensureBootstrapped, PRUEBA_EMAIL } from "@/lib/server/bootstrap";
+import { createCredentialUser, ensureBootstrapped } from "@/lib/server/bootstrap";
 import { textoCondicion, tierContratado } from "@/lib/torre/condiciones";
 import { avisosDe, comisionDePuesto, lineasPorPuesto, puedeAparecer } from "@/lib/torre/presencia";
 import {
@@ -136,8 +136,7 @@ async function publicoComprador(
     pais: row.pais,
     tipoDocumento: row.tipo_documento,
     numeroDocumento: row.numero_documento,
-    identidadEstado:
-      email.trim().toLowerCase() === PRUEBA_EMAIL ? "documentacion_cargada" : row.identidad_estado,
+    identidadEstado: row.identidad_estado,
     documentoRef: row.documento_ref,
     selfieRef: row.selfie_ref,
     foto: await fotoDataUrl(row.foto_id),
@@ -462,11 +461,7 @@ export async function crearPedidos(ses: Sesion, clave: string, lineas: LineaCana
   }
   const comprador = await compradorDe(ses.userId);
   if (!comprador) throw new MercadoError("No hay perfil de comprador.", 403);
-  const email = (await emailDe(ses.userId)).trim().toLowerCase();
-  if (
-    email !== PRUEBA_EMAIL &&
-    (comprador.identidad_estado === "pendiente" || comprador.identidad_estado === "rechazada")
-  ) {
+  if (comprador.identidad_estado === "pendiente" || comprador.identidad_estado === "rechazada") {
     throw new MercadoError("Antes tenés que cargar el documento y la selfie.");
   }
   const db = await sql();
