@@ -54,9 +54,16 @@ enviar un cuerpo válido.
 | `POST` | `/api/v1/productos/orden` | admin | Reordena con una lista de ids. |
 | `POST` | `/api/v1/stock/ajuste` | admin, cajero | Ajuste o merma `{ productoId, cantidad, tipo, motivo }`. |
 | `POST` | `/api/v1/remitos` | admin, cajero | Crea remito (csv, foto, pdf o manual). |
+| `GET` | `/api/v1/remitos` | admin, cajero | Últimos 30 remitos, sin líneas. |
 | `GET` | `/api/v1/remitos/:id` | cualquier staff | Detalle del remito con líneas. |
 | `POST` | `/api/v1/remitos/items` | admin, cajero | Actualiza una línea (cantidad/confirmado). |
 | `POST` | `/api/v1/remitos/:id/confirmar` | admin, cajero | Confirma y suma stock. |
+| `POST` | `/api/v1/remitos/ocr` | admin, cajero | OCR de foto por xAI; 503 `ocr_unavailable` sin `XAI_API_KEY`. |
+| `POST` | `/api/v1/remitos/:id/proveedor` | admin, cajero | Asigna un proveedor activo al remito. |
+| `GET` | `/api/v1/proveedores` | admin, cajero | Lista de proveedores (activos primero). |
+| `POST` | `/api/v1/proveedores` | admin | Alta de proveedor. |
+| `POST` | `/api/v1/proveedores/:id` | admin | Edición; `activo` booleano obligatorio. |
+| `GET` | `/api/v1/proveedores/:id/productos` | admin | Nombres distintos de productos comprados (máx. 40). |
 | `GET` | `/api/v1/usuarios` | admin | Lista de staff. |
 | `POST` | `/api/v1/usuarios` | admin | Alta de staff con rol explícito. |
 | `POST` | `/api/v1/usuarios/:id/toggle` | admin | Activa/desactiva staff. |

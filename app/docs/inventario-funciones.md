@@ -54,14 +54,14 @@ exigen `authMiddleware` salvo `prepareDemo`.
 | `ajustarStock` | stock | Ajuste positivo o merma con motivo | admin, cajero | stock_movimientos, productos, alertas, auditoria | POST /stock/ajuste |
 | `crearRemito` | remitos | Cargar remito (CSV/foto/manual/PDF) con match difuso | admin, cajero | remitos, remito_items, proveedores | POST /remitos |
 | `getRemito` | remitos | Detalle de remito con líneas y confianza de match | cualquier staff | remitos, remito_items | GET /remitos/:id |
-| `listRemitos` | remitos | Últimos 30 remitos del puesto | admin, cajero | remitos | — |
+| `listRemitos` | remitos | Últimos 30 remitos del puesto | admin, cajero | remitos | GET /remitos |
 | `actualizarRemitoItem` | remitos | Corregir match/cantidad/confirmación de una línea | admin, cajero | remito_items | POST /remitos/items |
 | `confirmarRemito` | remitos | Ingresar stock de las líneas confirmadas (idempotente) | admin, cajero | remitos, remito_items, stock_movimientos, productos, alertas, auditoria | POST /remitos/:id/confirmar |
-| `parseRemitoVision` | — (xAI `grok-4.5`) | OCR de remito por foto (requiere `XAI_API_KEY`) | cualquier staff | — (no toca DB) | — |
+| `parseRemitoVision` | — (xAI `grok-4.5`) | OCR de remito por foto (requiere `XAI_API_KEY`) | admin, cajero | — (no toca DB) | POST /remitos/ocr |
 
-Cobertura: 31 de 35 con ruta `/api/v1`; quedan sólo en la web `prepareDemo`
-(demo DEV), `quienSoy` (detección de portal), `listRemitos` (listado) y
-`parseRemitoVision` (OCR). La ruta extra `GET /clientes/:id/cuenta` usa
+Cobertura: `listRemitos` se expone como `GET /remitos` y `parseRemitoVision`
+como `POST /remitos/ocr`. Quedan sólo en la web `prepareDemo` (demo DEV) y
+`quienSoy` (detección de portal). La ruta extra `GET /clientes/:id/cuenta` usa
 `cuentaClienteForStaff` directamente (no tiene equivalente web en `fn.ts`).
 
 ## `src/lib/portal-fn.ts` — 18 funciones (portal de clientes y admin)

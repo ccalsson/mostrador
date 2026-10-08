@@ -40,6 +40,7 @@ tags:
   - name: Productos
   - name: Stock
   - name: Remitos
+  - name: Proveedores
   - name: Usuarios
   - name: Alertas
   - name: Panel
@@ -639,6 +640,162 @@ paths:
         "403": { $ref: '#/components/responses/Forbidden' }
         "404": { $ref: '#/components/responses/NotFound' }
 
+  /remitos/ocr:
+    post:
+      tags: [Remitos]
+      summary: Leer remito por foto (OCR)
+      description: admin o cajero. Envía la foto a xAI (`grok-4.5`); requiere `XAI_API_KEY` en el servidor. mimeType jpeg/png/webp e imagen de 8 bytes a 8 MB.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [imageBase64, mimeType]
+              properties:
+                imageBase64: { type: string, description: Imagen en Base64 sin prefijo data URI. }
+                mimeType: { type: string, enum: [image/jpeg, image/png, image/webp] }
+      responses:
+        "200":
+          description: Lectura interpretada.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DataLecturaOcr' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "415": { $ref: '#/components/responses/UnsupportedMediaType' }
+        "422": { $ref: '#/components/responses/OcrLecturaInvalida' }
+        "502": { $ref: '#/components/responses/OcrProviderError' }
+        "503": { $ref: '#/components/responses/OcrUnavailable' }
+
+  /remitos/{id}/proveedor:
+    post:
+      tags: [Remitos]
+      summary: Asignar proveedor a remito
+      description: admin o cajero. Exige proveedor activo y copia su nombre al remito.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [proveedorId]
+              properties:
+                proveedorId: { type: string, maxLength: 80 }
+      responses:
+        "200":
+          description: Asignado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DataOk' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "415": { $ref: '#/components/responses/UnsupportedMediaType' }
+
+  /proveedores:
+    get:
+      tags: [Proveedores]
+      summary: Listar proveedores
+      description: admin o cajero. Activos primero, ordenados por nombre.
+      responses:
+        "200":
+          description: Proveedores del puesto.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DataProveedores' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Proveedores]
+      summary: Alta de proveedor
+      description: admin. El alta queda activa.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [nombre]
+              properties:
+                nombre: { type: string, maxLength: 120 }
+                cuit: { type: string, maxLength: 20 }
+                telefono: { type: string, maxLength: 40 }
+                email: { type: string, maxLength: 120 }
+                direccion: { type: string, maxLength: 200 }
+                observaciones: { type: string, maxLength: 300 }
+      responses:
+        "201":
+          description: Proveedor creado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DataProveedorCreado' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "415": { $ref: '#/components/responses/UnsupportedMediaType' }
+
+  /proveedores/{id}:
+    post:
+      tags: [Proveedores]
+      summary: Editar proveedor
+      description: admin. `activo` es obligatorio (baja lógica).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [nombre, activo]
+              properties:
+                nombre: { type: string, maxLength: 120 }
+                cuit: { type: string, maxLength: 20 }
+                telefono: { type: string, maxLength: 40 }
+                email: { type: string, maxLength: 120 }
+                direccion: { type: string, maxLength: 200 }
+                observaciones: { type: string, maxLength: 300 }
+                activo: { type: boolean }
+      responses:
+        "200":
+          description: Actualizado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DataOk' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "415": { $ref: '#/components/responses/UnsupportedMediaType' }
+
+  /proveedores/{id}/productos:
+    get:
+      tags: [Proveedores]
+      summary: Productos comprados al proveedor
+      description: admin. Nombres distintos de productos con líneas confirmadas en remitos del proveedor (máx. 40).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Nombres de productos.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DataProductosProveedor' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+
   /usuarios:
     get:
       tags: [Usuarios]
@@ -861,6 +1018,24 @@ components:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
           example: { error: unsupported_media_type, message: Enviá el cuerpo como application/json. }
+    OcrLecturaInvalida:
+      description: El proveedor de OCR respondió pero el contenido no se pudo interpretar como JSON (`ocr_lectura_invalida`).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { error: ocr_lectura_invalida, message: No pude interpretar el remito. Cargalo a mano. }
+    OcrProviderError:
+      description: Fallo la llamada al proveedor de OCR (`ocr_provider_error`).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { error: ocr_provider_error }
+    OcrUnavailable:
+      description: "`XAI_API_KEY` no configurada en el servidor (`ocr_unavailable`)."
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { error: ocr_unavailable, message: El lector de fotos no está disponible en este entorno. }
 
   schemas:
     Error:
@@ -869,7 +1044,7 @@ components:
       properties:
         error:
           type: string
-          description: Código estable (`invalid_request`, `unauthorized`, `forbidden`, `not_found`, `unsupported_media_type`).
+          description: Código estable (`invalid_request`, `unauthorized`, `forbidden`, `not_found`, `unsupported_media_type`, `ocr_unavailable`, `ocr_provider_error`, `ocr_lectura_invalida`).
         message:
           type: string
           description: Detalle legible; ausente en 401.
@@ -1056,6 +1231,29 @@ components:
         archivoNombre: { type: string, nullable: true }
         createdAt: { type: string, format: date-time }
         items: { type: array, items: { $ref: '#/components/schemas/RemitoItem' } }
+    LecturaOcr:
+      type: object
+      properties:
+        proveedor: { type: string, nullable: true }
+        lineas:
+          type: array
+          items:
+            type: object
+            properties:
+              descripcion: { type: string }
+              cantidad: { type: number }
+              precio: { type: number, nullable: true }
+    Proveedor:
+      type: object
+      properties:
+        id: { type: string }
+        nombre: { type: string }
+        cuit: { type: string, nullable: true }
+        telefono: { type: string, nullable: true }
+        email: { type: string, nullable: true }
+        direccion: { type: string, nullable: true }
+        observaciones: { type: string, nullable: true }
+        activo: { type: boolean }
     Usuario:
       type: object
       properties:
@@ -1216,6 +1414,28 @@ components:
       type: object
       properties:
         data: { $ref: '#/components/schemas/Remito' }
+    DataLecturaOcr:
+      type: object
+      properties:
+        data: { $ref: '#/components/schemas/LecturaOcr' }
+    DataProveedores:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/Proveedor' } }
+    DataProveedorCreado:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            id: { type: string }
+    DataProductosProveedor:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            productos: { type: array, items: { type: string } }
     DataUsuarios:
       type: object
       properties:
