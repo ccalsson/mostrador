@@ -8,6 +8,7 @@ import { audienciasDe, beneficioVigente, hashDocumento, pendienteDeAceptacion } 
 import { precioEfectivo } from "@/lib/torre/comercial";
 import { condicionOperativa } from "@/lib/torre/presencia";
 import { leerSesion } from "@/lib/mercado/servicio";
+import type { Rol } from "@/lib/types";
 
 export class CentralError extends Error {
   constructor(
@@ -21,7 +22,7 @@ export class CentralError extends Error {
 }
 
 type Actor =
-  | { kind: "mostrador"; torreTenantId: string; userId: string; email: string }
+  | { kind: "mostrador"; torreTenantId: string; userId: string; email: string; rol: Rol }
   | { kind: "mercado"; perfil: "comprador" | "cargador"; userId: string; email: string };
 
 function json(body: unknown, status = 200) {
@@ -48,7 +49,7 @@ async function resolver(request: Request): Promise<Actor> {
         limit 1
       `;
       if (!tenants[0]) throw new CentralError("Este puesto no está vinculado a un tenant de Torre.", 404, "tenant_not_linked");
-      return { kind: "mostrador", torreTenantId: tenants[0].id, userId: user.id, email: staff.email };
+      return { kind: "mostrador", torreTenantId: tenants[0].id, userId: user.id, email: staff.email, rol: staff.rol };
     }
   }
   try {
@@ -325,6 +326,7 @@ async function aceptarDocumento(actor: Actor, id: string, request: Request) {
   const ip = (request.headers.get("x-forwarded-for") || "").split(",")[0]?.trim() || "";
   const userAgent = (request.headers.get("user-agent") || "").slice(0, 300);
   if (actor.kind === "mostrador") {
+    if (actor.rol !== "admin") throw new CentralError("Solo el dueño del puesto puede aceptar contratos.", 403, "forbidden");
     const rows = await sql<{ id: string; tenant_id: string; status: string; snapshot_body: string; snapshot_hash: string; version_id: string }>`
       select id, tenant_id, status, snapshot_body, snapshot_hash, version_id
       from torre.saas_tenant_contracts where id = ${id} limit 1

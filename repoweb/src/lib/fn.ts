@@ -339,6 +339,7 @@ export const createCliente = createServerFn({ method: "POST" })
   .validator((input: { nombre: string; telefono?: string; cuentaCorriente?: boolean }) => input)
   .handler(async ({ context, data }) => {
     const staff = await ensureStaffForUser(context.userId);
+    assertRole(staff, ["admin"]);
     if (data.cuentaCorriente) {
       const condicion = await condicionOperativa(staff.tenantId);
       if (!condicion.cuentaCorriente) throw new Error("La cuenta corriente corresponde al plan Pro y no está activa.");

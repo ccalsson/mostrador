@@ -21,7 +21,8 @@ export async function exigirAccion(email: string, accion: TorreAccion) {
   const rows = await sql<{ role: string }>`
     select role from torre.saas_access where lower(email) = ${email} limit 1
   `;
-  const role = rows[0]?.role || "administracion";
+  const role = rows[0]?.role;
+  if (!role) throw new Error("No tenés acceso a Torre.");
   if (!rolPermite(role, accion)) throw new Error("No tenés permiso para esta acción.");
   return role;
 }
