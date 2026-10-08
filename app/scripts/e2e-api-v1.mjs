@@ -6,7 +6,8 @@
 //
 // Cubre autenticación Bearer, matriz de permisos por rol, aislamiento de
 // tenant, idempotencia (client_uuid), cobros y anulaciones, cuenta corriente,
-// remitos, proveedores, caja, auditoría, suscripción/contratos + legal del
+// remitos (incluido OCR por foto con 503 controlado sin XAI_API_KEY),
+// proveedores, caja, auditoría, suscripción/contratos + legal del
 // canal (torre), facturación ARCA (config/emisión sin credenciales reales),
 // mensajería del pedido, portal de clientes (registro, catálogo, pedidos
 // propios, comprobante y mensajes) y Mercado al Toque (avisos públicos,
@@ -2391,5 +2392,58 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
         .query("update productos set publicado_online = $1 where id = $2", [publicadoPrevio, productoId])
         .catch(() => {});
     }
+  });
+
+  it("24. remitos: OCR por foto con validaciones y 503 controlado sin XAI_API_KEY (M9h)", async () => {
+    // PNG 1x1 transparente, suficiente para pasar la validación de tamaño.
+    const png1x1 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
+    // Sin token no se puede usar el lector.
+    const sinToken = await api("POST", "/remitos/ocr", {
+      body: { imageBase64: png1x1, mimeType: "image/png" },
+    });
+    assert.equal(sinToken.status, 401, JSON.stringify(sinToken.data));
+
+    // El vendedor no opera remitos.
+    const vendedor = await api("POST", "/remitos/ocr", {
+      token: state.tokens.vendedor,
+      body: { imageBase64: png1x1, mimeType: "image/png" },
+    });
+    expectError(vendedor, 403, /permiso/i);
+
+    // mimeType fuera de la lista permitida.
+    const mimeInvalido = await api("POST", "/remitos/ocr", {
+      token: state.tokens.admin,
+      body: { imageBase64: png1x1, mimeType: "image/gif" },
+    });
+    expectError(mimeInvalido, 400, /mimeType/i);
+
+    // Base64 corrupto.
+    const base64Invalido = await api("POST", "/remitos/ocr", {
+      token: state.tokens.admin,
+      body: { imageBase64: "no-es-base64!!!", mimeType: "image/png" },
+    });
+    expectError(base64Invalido, 400, /Base64/i);
+
+    // Imagen demasiado chica (menos de 8 bytes decodificados).
+    const chica = await api("POST", "/remitos/ocr", {
+      token: state.tokens.admin,
+      body: { imageBase64: "aGk=", mimeType: "image/png" },
+    });
+    expectError(chica, 400, /tamaño/i);
+
+    if (process.env.XAI_API_KEY) {
+      // Con key configurada no se dispara una llamada de pago desde el test;
+      // el flujo completo contra xAI se valida manualmente.
+      return;
+    }
+
+    // Sin XAI_API_KEY el servicio falla cerrado con 503 controlado.
+    const sinKey = await api("POST", "/remitos/ocr", {
+      token: state.tokens.admin,
+      body: { imageBase64: png1x1, mimeType: "image/png" },
+    });
+    const body503 = expectError(sinKey, 503, /lector de fotos/i);
+    assert.equal(body503.error, "ocr_unavailable");
   });
 });

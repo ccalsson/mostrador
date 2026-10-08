@@ -59,10 +59,12 @@ import {
   updateProveedorForStaff,
 } from "@/lib/server/proveedores";
 import {
+  RemitoVisionError,
   actualizarRemitoItemForStaff,
   confirmarRemitoForStaff,
   crearRemitoForStaff,
   getRemitoForStaff,
+  leerRemitoFotoForStaff,
   listRemitosForStaff,
   type CrearRemitoInput,
 } from "@/lib/server/remitos";
@@ -593,6 +595,23 @@ const ROUTES: Entry[] = [
         confirmado: body.confirmado,
       });
       return json({ data: item });
+    },
+  },
+  {
+    method: "POST",
+    path: ["remitos", "ocr"],
+    handler: async ({ request, staff }) => {
+      const body = asRecord(await readJson(request));
+      try {
+        const lectura = await leerRemitoFotoForStaff(staff, {
+          imageBase64: asString(body.imageBase64, "imageBase64", 12_000_000),
+          mimeType: asString(body.mimeType, "mimeType", 60),
+        });
+        return json({ data: lectura });
+      } catch (error) {
+        if (error instanceof RemitoVisionError) throw new HttpError(error.status, error.code, error.message);
+        throw error;
+      }
     },
   },
   {

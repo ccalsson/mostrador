@@ -14,6 +14,90 @@ export type CrearRemitoInput = {
   lineas: { descripcion: string; cantidad: number; precio?: number }[];
 };
 
+export class RemitoVisionError extends Error {
+  readonly status: number;
+  readonly code: string;
+  constructor(status: number, code: string, message: string) {
+    super(message);
+    this.name = "RemitoVisionError";
+    this.status = status;
+    this.code = code;
+  }
+}
+
+const MIME_VISION = ["image/jpeg", "image/png", "image/webp"] as const;
+
+export async function leerRemitoFotoForStaff(
+  staff: Staff,
+  input: { imageBase64: string; mimeType: string },
+): Promise<{ proveedor: string | null; lineas: { descripcion: string; cantidad: number; precio: number | null }[] }> {
+  assertRole(staff, ["admin", "cajero"]);
+  if (!(MIME_VISION as readonly string[]).includes(input.mimeType)) {
+    throw new RemitoVisionError(400, "invalid_request", "mimeType debe ser image/jpeg, image/png o image/webp.");
+  }
+  if (input.imageBase64.length > 12_000_000 || !/^[A-Za-z0-9+/]*={0,2}$/.test(input.imageBase64)) {
+    throw new RemitoVisionError(400, "invalid_request", "imageBase64 no es una imagen Base64 válida.");
+  }
+  const bytes = Buffer.from(input.imageBase64, "base64");
+  if (bytes.length < 8 || bytes.length > 8_000_000) {
+    throw new RemitoVisionError(400, "invalid_request", "La imagen excede el tamaño permitido (máx. 8 MB).");
+  }
+  const apiKey = process.env.XAI_API_KEY;
+  if (!apiKey) {
+    throw new RemitoVisionError(503, "ocr_unavailable", "El lector de fotos no está disponible en este entorno.");
+  }
+  const res = await fetch("https://api.x.ai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: "grok-4.5",
+      max_tokens: 800,
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: 'Extraé las líneas de este remito mayorista de frutas y verduras. Devolvé SOLO JSON: {"proveedor": string|null, "lineas":[{"descripcion":string,"cantidad":number,"precio":number|null}]}. Cantidad en bultos/cajones/kg según el papel. Sin markdown.',
+            },
+            {
+              type: "image_url",
+              image_url: {
+                url: `data:${input.mimeType};base64,${input.imageBase64}`,
+              },
+            },
+          ],
+        },
+      ],
+    }),
+  });
+  if (!res.ok) {
+    throw new RemitoVisionError(502, "ocr_provider_error", `No se pudo leer la foto (${res.status}).`);
+  }
+  const body = (await res.json()) as { choices: { message: { content: string } }[] };
+  const text = body.choices[0]?.message.content ?? "";
+  const jsonText = text.replace(/```json|```/g, "").trim();
+  try {
+    const parsed = JSON.parse(jsonText) as {
+      proveedor?: string | null;
+      lineas: { descripcion: string; cantidad: number; precio?: number | null }[];
+    };
+    return {
+      proveedor: parsed.proveedor ?? null,
+      lineas: (parsed.lineas ?? []).map((linea) => ({
+        descripcion: linea.descripcion,
+        cantidad: linea.cantidad,
+        precio: linea.precio ?? null,
+      })),
+    };
+  } catch {
+    throw new RemitoVisionError(422, "ocr_lectura_invalida", "No pude interpretar el remito. Cargalo a mano.");
+  }
+}
+
 export async function crearRemitoForStaff(staff: Staff, input: CrearRemitoInput) {
   assertRole(staff, ["admin", "cajero"]);
   const sql = await getSql();

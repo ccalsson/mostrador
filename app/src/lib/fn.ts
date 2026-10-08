@@ -22,10 +22,12 @@ import {
 } from "@/lib/server/pedidos";
 import { ordenarProductosForStaff, quitarProductoForStaff, saveProductoForStaff } from "@/lib/server/productos";
 import {
+  RemitoVisionError,
   actualizarRemitoItemForStaff,
   confirmarRemitoForStaff,
   crearRemitoForStaff,
   getRemitoForStaff,
+  leerRemitoFotoForStaff,
   listRemitosForStaff,
 } from "@/lib/server/remitos";
 import { ajustarStockForStaff } from "@/lib/server/stock";
@@ -336,50 +338,14 @@ export const parseRemitoVision = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator((input: { imageBase64: string; mimeType: string }) => input)
   .handler(async ({ context, data }) => {
-    await ensureStaffForUser(context.userId);
-    const apiKey = process.env.XAI_API_KEY;
-    if (!apiKey) {
-      return { ok: false as const, error: "El lector de fotos no está disponible en este entorno." };
-    }
-    const res = await fetch("https://api.x.ai/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: "grok-4.5",
-        max_tokens: 800,
-        messages: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "text",
-                text: 'Extraé las líneas de este remito mayorista de frutas y verduras. Devolvé SOLO JSON: {"proveedor": string|null, "lineas":[{"descripcion":string,"cantidad":number,"precio":number|null}]}. Cantidad en bultos/cajones/kg según el papel. Sin markdown.',
-              },
-              {
-                type: "image_url",
-                image_url: {
-                  url: `data:${data.mimeType};base64,${data.imageBase64}`,
-                },
-              },
-            ],
-          },
-        ],
-      }),
-    });
-    if (!res.ok) return { ok: false as const, error: `No se pudo leer la foto (${res.status}).` };
-    const body = (await res.json()) as { choices: { message: { content: string } }[] };
-    const text = body.choices[0]?.message.content ?? "";
-    const jsonText = text.replace(/```json|```/g, "").trim();
+    const staff = await ensureStaffForUser(context.userId);
     try {
-      const parsed = JSON.parse(jsonText) as {
-        proveedor?: string | null;
-        lineas: { descripcion: string; cantidad: number; precio?: number | null }[];
-      };
-      return { ok: true as const, proveedor: parsed.proveedor ?? null, lineas: parsed.lineas ?? [] };
-    } catch {
-      return { ok: false as const, error: "No pude interpretar el remito. Cargalo a mano." };
+      const lectura = await leerRemitoFotoForStaff(staff, data);
+      return { ok: true as const, proveedor: lectura.proveedor, lineas: lectura.lineas };
+    } catch (error) {
+      if (error instanceof RemitoVisionError) {
+        return { ok: false as const, error: error.message };
+      }
+      throw error;
     }
   });
