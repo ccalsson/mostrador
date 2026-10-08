@@ -11,6 +11,16 @@ import {
 } from "@/lib/server/catalog-pedidos";
 import { createClienteForStaff, anotarPagoCuentaForStaff, cuentaClienteForStaff, listClientesForStaff, updateClienteForStaff } from "@/lib/server/clientes";
 import {
+  emitirFacturaForStaff,
+  emitirNotaCreditoForStaff,
+  getAfipConfigForStaff,
+  getFacturaForStaff,
+  guardarAfipConfigForStaff,
+  listarFacturacionForStaff,
+  probarAfipForStaff,
+  setArcaHabilitadaForStaff,
+} from "@/lib/server/facturacion";
+import {
   anularCobroForStaff,
   anularPedidoForStaff,
   cobrarPedidoForStaff,
@@ -742,6 +752,72 @@ const ROUTES: Entry[] = [
     method: "GET",
     path: ["cargadores", "ranking"],
     handler: async ({ staff }) => json({ data: await rankingCargadoresForStaff(staff) }),
+  },
+  {
+    method: "GET",
+    path: ["afip", "config"],
+    handler: async ({ staff }) => json({ data: await getAfipConfigForStaff(staff) }),
+  },
+  {
+    method: "POST",
+    path: ["afip", "config"],
+    handler: async ({ request, staff }) => {
+      const body = asRecord(await readJson(request));
+      const config = await guardarAfipConfigForStaff(staff, {
+        cuit: asString(body.cuit, "cuit", 20),
+        razonSocial: asString(body.razonSocial, "razonSocial", 200),
+        domicilio: asOptionalString(body.domicilio, 300) ?? "",
+        condicion: asString(body.condicion, "condicion", 30),
+        puntoVenta: asNumber(body.puntoVenta, "puntoVenta"),
+        inicioActividades: asOptionalString(body.inicioActividades, 20) ?? "",
+        iibb: asOptionalString(body.iibb, 40) ?? "",
+        alicuota: asNumber(body.alicuota, "alicuota"),
+        ambiente: asString(body.ambiente, "ambiente", 10),
+        certPem: asOptionalString(body.certPem, 20000),
+        keyPem: asOptionalString(body.keyPem, 20000),
+      });
+      return json({ data: config });
+    },
+  },
+  {
+    method: "POST",
+    path: ["afip", "probar"],
+    handler: async ({ staff }) => json({ data: await probarAfipForStaff(staff) }),
+  },
+  {
+    method: "POST",
+    path: ["afip", "habilitada"],
+    handler: async ({ request, staff }) => {
+      const body = asRecord(await readJson(request));
+      if (typeof body.habilitada !== "boolean") throw new HttpError(400, "invalid_request", "habilitada debe ser booleano.");
+      return json({ data: await setArcaHabilitadaForStaff(staff, body.habilitada) });
+    },
+  },
+  {
+    method: "GET",
+    path: ["afip", "facturacion"],
+    handler: async ({ staff }) => json({ data: await listarFacturacionForStaff(staff) }),
+  },
+  {
+    method: "POST",
+    path: ["afip", "facturas"],
+    handler: async ({ request, staff }) => {
+      const body = asRecord(await readJson(request));
+      return json({ data: await emitirFacturaForStaff(staff, asString(body.cobroId, "cobroId", 80)) });
+    },
+  },
+  {
+    method: "POST",
+    path: ["afip", "notas-credito"],
+    handler: async ({ request, staff }) => {
+      const body = asRecord(await readJson(request));
+      return json({ data: await emitirNotaCreditoForStaff(staff, asString(body.facturaId, "facturaId", 80)) });
+    },
+  },
+  {
+    method: "GET",
+    path: ["afip", "facturas", ":"],
+    handler: async ({ segments, staff }) => json({ data: await getFacturaForStaff(staff, segments[2]) }),
   },
 ];
 

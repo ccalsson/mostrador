@@ -6,7 +6,8 @@
 //
 // Cubre autenticación Bearer, matriz de permisos por rol, aislamiento de
 // tenant, idempotencia (client_uuid), cobros y anulaciones, cuenta corriente,
-// remitos, caja, auditoría y suscripción/contratos + legal del canal (torre).
+// remitos, proveedores, caja, auditoría, suscripción/contratos + legal del
+// canal (torre) y facturación ARCA (config/emisión sin credenciales reales).
 // Los datos que crea se limpian en `after` tomando el reloj de la base
 // (runStart) como referencia, para no tocar el seed demo. Las versiones
 // publicadas y las aceptaciones legales son inmutables por diseño (trigger
@@ -53,6 +54,7 @@ const state = {
   mercadoUsuarioIds: [],
   marcaNombre0: null,
   marcaConfig0: null,
+  afipConfigPrev: undefined,
 };
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -259,6 +261,26 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
 
         // (k) auditoría de operaciones de Mercado de la corrida.
         await pool.query("delete from auditoria where tenant_id = 'mercado' and created_at >= $1::timestamptz", [s]);
+
+        // (m) configuración ARCA: el test 20 pisa la fila con upsert; se
+        // restaura el estado previo (o se borra la fila si no existía).
+        if (state.afipConfigPrev !== undefined) {
+          if (state.afipConfigPrev) {
+            const p = state.afipConfigPrev;
+            await pool.query(
+              `update afip_config set cuit = $2, razon_social = $3, domicilio = $4, condicion = $5,
+                      punto_venta = $6, inicio_actividades = $7, iibb = $8, alicuota = $9,
+                      ambiente = $10, cert_pem = $11, key_pem = $12, habilitada = $13, updated_at = now()
+                where tenant_id = $1`,
+              [
+                t, p.cuit, p.razon_social, p.domicilio, p.condicion, p.punto_venta,
+                p.inicio_actividades, p.iibb, p.alicuota, p.ambiente, p.cert_pem, p.key_pem, p.habilitada,
+              ],
+            );
+          } else {
+            await pool.query("delete from afip_config where tenant_id = $1", [t]);
+          }
+        }
       }
 
       // (h) sesiones creadas por la suite.
@@ -1562,5 +1584,157 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
     const acciones = auditoria.data.data.map((a) => a.accion);
     assert.ok(acciones.includes("alta_proveedor"), "falta auditoría de alta de proveedor");
     assert.ok(acciones.includes("editar_proveedor"), "falta auditoría de edición de proveedor");
+  });
+
+  it("20. facturación ARCA: config sin secretos, validaciones y gates fail-closed", async () => {
+    // El módulo entero es de caja/admin: el vendedor no entra a nada.
+    const vConfig = await api("GET", "/afip/config", { token: state.tokens.vendedor });
+    expectError(vConfig, 403, /permiso/i);
+    const vFacturacion = await api("GET", "/afip/facturacion", { token: state.tokens.vendedor });
+    expectError(vFacturacion, 403, /permiso/i);
+    const vSave = await api("POST", "/afip/config", {
+      token: state.tokens.vendedor,
+      body: {
+        cuit: "30707057951",
+        razonSocial: "Frutas Roman E2E",
+        condicion: "ri",
+        puntoVenta: 1,
+        alicuota: 21,
+        ambiente: "homo",
+      },
+    });
+    expectError(vSave, 403, /permiso/i);
+    const vHab = await api("POST", "/afip/habilitada", {
+      token: state.tokens.vendedor,
+      body: { habilitada: true },
+    });
+    expectError(vHab, 403, /permiso/i);
+
+    // Snapshot para que el after() restaure la fila (o la borre si no existía).
+    const prev = await state.pool.query("select * from afip_config where tenant_id = $1", [TENANT]);
+    state.afipConfigPrev = prev.rows[0] ?? null;
+
+    const base = {
+      razonSocial: "Frutas Roman E2E",
+      domicilio: "Av. De Mayo 123",
+      condicion: "ri",
+      puntoVenta: 3,
+      inicioActividades: "2015-03-01",
+      iibb: "9123456",
+      alicuota: 21,
+      ambiente: "homo",
+    };
+
+    // Validaciones de negocio (30707057951 tiene dígito verificador válido).
+    const badCuit = await api("POST", "/afip/config", {
+      token: state.tokens.admin,
+      body: { ...base, cuit: "30707057952" },
+    });
+    expectError(badCuit, 400, /cuit/i);
+
+    const badCond = await api("POST", "/afip/config", {
+      token: state.tokens.admin,
+      body: { ...base, cuit: "30707057951", condicion: "consumidor_final" },
+    });
+    expectError(badCond, 400, /condici/i);
+
+    const badAlicuota = await api("POST", "/afip/config", {
+      token: state.tokens.admin,
+      body: { ...base, cuit: "30707057951", alicuota: 15 },
+    });
+    expectError(badAlicuota, 400, /al.cuota/i);
+
+    const badPv = await api("POST", "/afip/config", {
+      token: state.tokens.admin,
+      body: { ...base, cuit: "30707057951", puntoVenta: 99999 },
+    });
+    expectError(badPv, 400, /punto de venta/i);
+
+    // Guardado válido (sin PEMs en el body).
+    const saved = await api("POST", "/afip/config", {
+      token: state.tokens.admin,
+      body: { ...base, cuit: "30707057951" },
+    });
+    assert.equal(saved.status, 200, JSON.stringify(saved.data));
+    assert.equal(saved.data.data.cuit, "30707057951");
+    assert.equal(saved.data.data.puntoVenta, 3);
+    assert.equal(saved.data.data.alicuota, 21);
+
+    // Determinismo: sin cert/key y deshabilitado, sin importar el estado previo.
+    await state.pool.query(
+      "update afip_config set cert_pem = null, key_pem = null, habilitada = false where tenant_id = $1",
+      [TENANT],
+    );
+
+    // El cajero lee la config pero jamás los secretos.
+    const config = await api("GET", "/afip/config", { token: state.tokens.cajero });
+    assert.equal(config.status, 200, JSON.stringify(config.data));
+    assert.equal(config.data.data.certCargado, false);
+    assert.equal(config.data.data.keyCargada, false);
+    assert.equal(config.data.data.habilitada, false);
+    const serialized = JSON.stringify(config.data);
+    assert.ok(!serialized.includes("BEGIN"), "la respuesta no debe incluir PEM");
+    assert.ok(!("certPem" in config.data.data) && !("keyPem" in config.data.data), "sin campos PEM");
+
+    // Probar conexión sin certificado: gate local, sin llamar a ARCA.
+    const probar = await api("POST", "/afip/probar", { token: state.tokens.admin });
+    expectError(probar, 400, /certificado/i);
+
+    // Habilitar ARCA sin certificado: gate fail-closed.
+    const habilitar = await api("POST", "/afip/habilitada", {
+      token: state.tokens.admin,
+      body: { habilitada: true },
+    });
+    expectError(habilitar, 400, /certificado/i);
+
+    const habilitarMal = await api("POST", "/afip/habilitada", {
+      token: state.tokens.admin,
+      body: {},
+    });
+    expectError(habilitarMal, 400, /booleano/i);
+
+    // Con cert/key ficticios presentes, el gate "inhabilitado" se evalúa antes
+    // de tocar ARCA (sin credenciales reales en el e2e).
+    await state.pool.query(
+      `update afip_config
+       set cert_pem = $2, key_pem = $3, habilitada = false
+       where tenant_id = $1`,
+      [
+        TENANT,
+        "-----BEGIN CERTIFICATE-----\nficticio-e2e\n-----END CERTIFICATE-----",
+        "-----BEGIN RSA PRIVATE KEY-----\nficticio-e2e\n-----END RSA PRIVATE KEY-----",
+      ],
+    );
+
+    const emitir = await api("POST", "/afip/facturas", {
+      token: state.tokens.cajero,
+      body: { cobroId: "cob-no-existe" },
+    });
+    expectError(emitir, 400, /inhabilitado/i);
+
+    const nota = await api("POST", "/afip/notas-credito", {
+      token: state.tokens.admin,
+      body: { facturaId: "fac-no-existe" },
+    });
+    expectError(nota, 400, /autorizada/i);
+
+    const unaFactura = await api("GET", "/afip/facturas/fac-no-existe", {
+      token: state.tokens.admin,
+    });
+    expectError(unaFactura, 400, /comprobante/i);
+
+    // Listado: el cajero ve la config (cert cargado) y colecciones vacías.
+    const facturacion = await api("GET", "/afip/facturacion", { token: state.tokens.cajero });
+    assert.equal(facturacion.status, 200, JSON.stringify(facturacion.data));
+    assert.equal(facturacion.data.data.config.certCargado, true);
+    assert.equal(facturacion.data.data.config.habilitada, false);
+    assert.ok(Array.isArray(facturacion.data.data.pendientes));
+    assert.ok(Array.isArray(facturacion.data.data.emitidas));
+
+    // Auditoría del alta/edición de configuración.
+    const auditoria = await api("GET", "/auditoria", { token: state.tokens.admin });
+    assert.equal(auditoria.status, 200);
+    const acciones = auditoria.data.data.map((a) => a.accion);
+    assert.ok(acciones.includes("afip_config"), "falta auditoría de config ARCA");
   });
 });
