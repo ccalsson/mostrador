@@ -34,7 +34,14 @@ import {
   resumenSuscripcionForStaff,
 } from "@/lib/server/legal";
 import { canalMercadoForStaff, getMarcaForStaff, guardarCanalMercadoForStaff, guardarMarcaForStaff } from "@/lib/server/marca";
-import { conversacionesNegocioForStaff, enviarMensajePedidoForStaff, mensajesDelPedidoForStaff } from "@/lib/server/mensajes";
+import {
+  conversacionesNegocioForStaff,
+  enviarMensajePedidoForClient,
+  enviarMensajePedidoForStaff,
+  mensajesDelPedidoForClient,
+  mensajesDelPedidoForStaff,
+  misMensajesPendientesForClient,
+} from "@/lib/server/mensajes";
 import { dashboardResumenForStaff, listAlertasForStaff, listAuditoriaForStaff, marcarAlertaLeidaForStaff } from "@/lib/server/panel";
 import {
   getPedidoForStaff,
@@ -62,6 +69,21 @@ import {
 import { historialProductoForStaff, rankingCargadoresForStaff, resumenVentasProductosForStaff } from "@/lib/server/reportes";
 import { ajustarStockForStaff } from "@/lib/server/stock";
 import { createUsuarioForStaff, listUsuariosForStaff, toggleUsuarioForStaff } from "@/lib/server/usuarios";
+import {
+  catalogoClienteForClient,
+  fichaActivaPorUsuario,
+  guardarMiFichaForClient,
+  miFichaForClient,
+  misMovimientosForClient,
+  misPedidosForClient,
+  pedirComoClienteForClient,
+  recordarUsuarioForPublic,
+  recuperarClaveForPublic,
+  registrarClienteForPublic,
+  verComprobanteForClient,
+  type Ficha,
+  type PedirComoClienteInput,
+} from "@/lib/server/portal";
 import type { FormaPago, PedidoEstado, Rol, Staff } from "@/lib/types";
 
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8" };
@@ -190,6 +212,21 @@ function parsePedido(value: unknown): CrearPedidoInput {
   };
 }
 
+function parsePedidoPortal(value: unknown): PedirComoClienteInput {
+  const body = asRecord(value);
+  const items = body.items;
+  if (!Array.isArray(items) || items.length === 0 || items.length > 200) {
+    throw new HttpError(400, "invalid_request", "El pedido debe incluir entre 1 y 200 ítems.");
+  }
+  return {
+    items: items.map(parseLinea),
+    nota: asOptionalString(body.nota, 500),
+    formaPago: oneOf(body.formaPago, FORMAS_PAGO, "formaPago") as FormaPago,
+    comprobanteNombre: asOptionalString(body.comprobanteNombre, 200),
+    comprobanteData: typeof body.comprobanteData === "string" ? body.comprobanteData : undefined,
+  };
+}
+
 function parseProducto(value: unknown): SaveProductoInput {
   const body = asRecord(value);
   return {
@@ -231,18 +268,30 @@ function parseRemito(value: unknown): CrearRemitoInput {
 
 type Segment = string | ":";
 
-type Ctx = {
+type StaffCtx = {
   request: Request;
   url: URL;
   segments: string[];
   staff: Staff;
 };
 
-type Entry = {
-  method: "GET" | "POST";
-  path: Segment[];
-  handler: (ctx: Ctx) => Promise<Response> | Response;
+type ClientCtx = {
+  request: Request;
+  url: URL;
+  segments: string[];
+  client: { userId: string; ficha: Ficha };
 };
+
+type PublicCtx = {
+  request: Request;
+  url: URL;
+  segments: string[];
+};
+
+type Entry =
+  | { method: "GET" | "POST"; path: Segment[]; audience?: "staff"; handler: (ctx: StaffCtx) => Promise<Response> | Response }
+  | { method: "GET" | "POST"; path: Segment[]; audience: "client"; handler: (ctx: ClientCtx) => Promise<Response> | Response }
+  | { method: "GET" | "POST"; path: Segment[]; audience: "public"; handler: (ctx: PublicCtx) => Promise<Response> | Response };
 
 function match(method: string, segments: string[]): Entry | null {
   for (const entry of ROUTES) {
@@ -840,16 +889,149 @@ const ROUTES: Entry[] = [
     path: ["afip", "facturas", ":"],
     handler: async ({ segments, staff }) => json({ data: await getFacturaForStaff(staff, segments[2]) }),
   },
+  // ---- Portal de clientes: los tres endpoints públicos no exigen token; el
+  // resto exige una ficha de cliente activa (audience "client") y nunca admite
+  // cuentas del puesto.
+  {
+    method: "POST",
+    path: ["portal", "registro"],
+    audience: "public",
+    handler: async ({ request }) => {
+      const body = asRecord(await readJson(request));
+      const cliente = await registrarClienteForPublic({
+        nombre: asString(body.nombre, "nombre", 120),
+        email: asString(body.email, "email", 200),
+        password: asString(body.password, "password", 200),
+        telefono: asString(body.telefono, "telefono", 40),
+        cuit: asString(body.cuit, "cuit", 20),
+        direccion: asString(body.direccion, "direccion", 200),
+      });
+      return json({ data: cliente }, { status: 201 });
+    },
+  },
+  {
+    method: "POST",
+    path: ["portal", "recordar"],
+    audience: "public",
+    handler: async ({ request }) => {
+      const body = asRecord(await readJson(request));
+      return json({ data: await recordarUsuarioForPublic(asString(body.dato, "dato", 80)) });
+    },
+  },
+  {
+    method: "POST",
+    path: ["portal", "recuperar"],
+    audience: "public",
+    handler: async ({ request }) => {
+      const body = asRecord(await readJson(request));
+      return json({
+        data: await recuperarClaveForPublic({
+          email: asString(body.email, "email", 200),
+          cuit: asString(body.cuit, "cuit", 20),
+          password: asString(body.password, "password", 200),
+        }),
+      });
+    },
+  },
+  {
+    method: "GET",
+    path: ["portal", "catalogo"],
+    audience: "client",
+    handler: async ({ client }) => json({ data: await catalogoClienteForClient(client.ficha) }),
+  },
+  {
+    method: "GET",
+    path: ["portal", "ficha"],
+    audience: "client",
+    handler: async ({ client }) => json({ data: await miFichaForClient(client.ficha) }),
+  },
+  {
+    method: "POST",
+    path: ["portal", "ficha"],
+    audience: "client",
+    handler: async ({ request, client }) => {
+      const body = asRecord(await readJson(request));
+      return json({
+        data: await guardarMiFichaForClient(client.userId, client.ficha, {
+          nombre: asString(body.nombre, "nombre", 120),
+          telefono: asString(body.telefono, "telefono", 40),
+          cuit: asString(body.cuit, "cuit", 20),
+          direccion: asString(body.direccion, "direccion", 200),
+        }),
+      });
+    },
+  },
+  {
+    method: "GET",
+    path: ["portal", "movimientos"],
+    audience: "client",
+    handler: async ({ client }) => json({ data: await misMovimientosForClient(client.ficha) }),
+  },
+  {
+    method: "GET",
+    path: ["portal", "pedidos"],
+    audience: "client",
+    handler: async ({ client }) => json({ data: await misPedidosForClient(client.ficha) }),
+  },
+  {
+    method: "POST",
+    path: ["portal", "pedidos"],
+    audience: "client",
+    handler: async ({ request, client }) => {
+      const pedido = await pedirComoClienteForClient(client.ficha, parsePedidoPortal(await readJson(request)));
+      return json({ data: pedido }, { status: 201 });
+    },
+  },
+  {
+    method: "GET",
+    path: ["portal", "pedidos", ":", "comprobante"],
+    audience: "client",
+    handler: async ({ segments, client }) => json({ data: await verComprobanteForClient(client.ficha, segments[2]) }),
+  },
+  {
+    method: "GET",
+    path: ["portal", "pedidos", ":", "mensajes"],
+    audience: "client",
+    handler: async ({ url, segments, client }) =>
+      json({
+        data: await mensajesDelPedidoForClient(client.ficha, segments[2], parseSince(url.searchParams.get("antes"))),
+      }),
+  },
+  {
+    method: "POST",
+    path: ["portal", "pedidos", ":", "mensajes"],
+    audience: "client",
+    handler: async ({ request, segments, client }) => {
+      const body = asRecord(await readJson(request));
+      const cuerpo = typeof body.cuerpo === "string" ? body.cuerpo : "";
+      return json({ data: await enviarMensajePedidoForClient(client.ficha, segments[2], cuerpo) });
+    },
+  },
+  {
+    method: "GET",
+    path: ["portal", "mensajes-pendientes"],
+    audience: "client",
+    handler: async ({ client }) => json({ data: await misMensajesPendientesForClient(client.ficha) }),
+  },
 ];
 
 async function handle(method: "GET" | "POST", request: Request, splat: string | undefined) {
   try {
     assertSameSiteRequest();
-    const staff = await ensureStaffForUser(await requireUserId(bearerToken(request)));
     const segments = splitPath(splat);
     const entry = match(method, segments);
     if (!entry) return json({ error: "not_found" }, { status: 404 });
-    return await entry.handler({ request, url: new URL(request.url), segments, staff });
+    const base = { request, url: new URL(request.url), segments };
+    if (entry.audience === "public") {
+      return await entry.handler(base);
+    }
+    const userId = await requireUserId(bearerToken(request));
+    if (entry.audience === "client") {
+      const ficha = await fichaActivaPorUsuario(userId);
+      return await entry.handler({ ...base, client: { userId, ficha } });
+    }
+    const staff = await ensureStaffForUser(userId);
+    return await entry.handler({ ...base, staff });
   } catch (error) {
     return errorResponse(error);
   }

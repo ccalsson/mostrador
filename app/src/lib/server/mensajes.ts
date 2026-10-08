@@ -83,6 +83,81 @@ export async function enviarMensajePedidoForStaff(staff: Staff, pedidoId: string
   return { ok: true };
 }
 
+type FichaCliente = { id: string; tenantId: string };
+
+async function accesoCliente(ficha: FichaCliente, pedidoId: string) {
+  const sql = await getSql();
+  const pedidos = await sql<{ cliente_id: string | null; tenant_id: string }>`
+    select cliente_id, tenant_id from pedidos where id = ${pedidoId} limit 1
+  `;
+  const row = pedidos[0];
+  if (!row?.cliente_id) throw new Error("Este pedido no tiene conversación.");
+  if (row.tenant_id !== ficha.tenantId || row.cliente_id !== ficha.id) {
+    throw new Error("Ese pedido no es tuyo.");
+  }
+  return { tenantId: row.tenant_id, clienteId: row.cliente_id };
+}
+
+export async function mensajesDelPedidoForClient(ficha: FichaCliente, pedidoId: string, antes?: string) {
+  await accesoCliente(ficha, pedidoId);
+  const sql = await getSql();
+  await sql`
+    update pedido_mensajes set leido = true
+    where pedido_id = ${pedidoId} and emisor = 'negocio' and leido = false
+  `;
+  const rows = antes
+    ? await sql<{ id: string; emisor: string; cuerpo: string; created_at: string }>`
+        select id, emisor, cuerpo, created_at::text as created_at
+        from pedido_mensajes
+        where pedido_id = ${pedidoId} and created_at < ${antes}::timestamptz
+        order by created_at desc
+        limit ${PAGINA + 1}
+      `
+    : await sql<{ id: string; emisor: string; cuerpo: string; created_at: string }>`
+        select id, emisor, cuerpo, created_at::text as created_at
+        from pedido_mensajes
+        where pedido_id = ${pedidoId}
+        order by created_at desc
+        limit ${PAGINA + 1}
+      `;
+  const hayMas = rows.length > PAGINA;
+  const mensajes = rows.slice(0, PAGINA).map(mapMensaje).reverse();
+  return { mensajes, hayMas };
+}
+
+export async function enviarMensajePedidoForClient(ficha: FichaCliente, pedidoId: string, cuerpo: string) {
+  const texto = cuerpo.trim();
+  if (!texto) throw new Error("Escribí un mensaje.");
+  if (texto.length > 500) throw new Error("El mensaje es muy largo.");
+  const acceso = await accesoCliente(ficha, pedidoId);
+  const sql = await getSql();
+  await sql`
+    insert into pedido_mensajes (id, tenant_id, pedido_id, cliente_id, emisor, staff_id, cuerpo, leido)
+    values (
+      ${newId("msg")}, ${acceso.tenantId}, ${pedidoId}, ${acceso.clienteId},
+      'cliente', ${null}, ${texto}, ${false}
+    )
+  `;
+  try {
+    const { publicarMensaje } = await import("@/lib/server/mensajes-vivo");
+    publicarMensaje({ pedidoId, clienteId: acceso.clienteId, tenantId: acceso.tenantId });
+  } catch {
+    /* el mensaje ya está guardado; sin socket se ve en el próximo sondeo */
+  }
+  return { ok: true };
+}
+
+export async function misMensajesPendientesForClient(ficha: FichaCliente) {
+  const sql = await getSql();
+  const rows = await sql<{ pedido_id: string; n: unknown }>`
+    select pedido_id, count(*)::int as n
+    from pedido_mensajes
+    where cliente_id = ${ficha.id} and emisor = 'negocio' and leido = false
+    group by pedido_id
+  `;
+  return rows.map((r) => ({ pedidoId: r.pedido_id, n: num(r.n) }));
+}
+
 export async function conversacionesNegocioForStaff(staff: Staff) {
   assertRole(staff, ["admin"]);
   const sql = await getSql();

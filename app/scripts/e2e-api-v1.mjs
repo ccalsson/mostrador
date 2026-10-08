@@ -7,8 +7,9 @@
 // Cubre autenticación Bearer, matriz de permisos por rol, aislamiento de
 // tenant, idempotencia (client_uuid), cobros y anulaciones, cuenta corriente,
 // remitos, proveedores, caja, auditoría, suscripción/contratos + legal del
-// canal (torre), facturación ARCA (config/emisión sin credenciales reales) y
-// mensajería del pedido (solo lado negocio; el lado cliente es M9f).
+// canal (torre), facturación ARCA (config/emisión sin credenciales reales),
+// mensajería del pedido y portal de clientes (registro, catálogo, pedidos
+// propios, comprobante y mensajes).
 // Los datos que crea se limpian en `after` tomando el reloj de la base
 // (runStart) como referencia, para no tocar el seed demo. Las versiones
 // publicadas y las aceptaciones legales son inmutables por diseño (trigger
@@ -55,6 +56,7 @@ const state = {
   msgForeignTenantId: null,
   legalDraftIds: [],
   mercadoUsuarioIds: [],
+  portalUserIds: [],
   marcaNombre0: null,
   marcaConfig0: null,
   afipConfigPrev: undefined,
@@ -92,11 +94,11 @@ async function request(method, path, { token, body, headers } = {}) {
 
 const api = (method, path, opts) => request(method, `/api/v1${path}`, opts);
 
-async function signIn(email) {
+async function signIn(email, password = DEMO_PASSWORD) {
   // Better Auth exige `Origin` en POST con credenciales (CSRF); la propia
   // base del servidor siempre está en trustedOrigins.
   const res = await request("POST", "/api/auth/sign-in/email", {
-    body: { email, password: DEMO_PASSWORD },
+    body: { email, password },
     headers: { origin: BASE },
   });
   assert.equal(res.status, 200, `sign-in ${email} devolvió ${res.status}: ${JSON.stringify(res.data)}`);
@@ -311,6 +313,15 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
       if (state.msgClienteId) {
         await pool.query("delete from cuenta_movimientos where cliente_id = $1", [state.msgClienteId]);
         await pool.query("delete from clientes where id = $1 and tenant_id = $2", [state.msgClienteId, TENANT]);
+      }
+
+      // (o) usuarios del portal de clientes del test 22: ficha, credential y
+      // user. Sus pedidos/movimientos/mensajes/alertas ya se borraron con
+      // (c)/(e) y las sesiones con (h).
+      if (state.portalUserIds.length) {
+        await pool.query("delete from clientes where user_id = any($1::text[])", [state.portalUserIds]);
+        await pool.query('delete from account where "userId" = any($1::text[])', [state.portalUserIds]);
+        await pool.query('delete from "user" where id = any($1::text[])', [state.portalUserIds]);
       }
     } finally {
       await pool.end();
@@ -1876,5 +1887,294 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
       [foreignPedido, foreignTenant, `e2e-msgf-${Date.now()}`, state.msgClienteId],
     );
     expectError(await api("GET", `/pedidos/${foreignPedido}/mensajes`, { token: state.tokens.admin }), 400, /puesto/i);
+  });
+
+  it("22. portal de clientes: registro, recordar/recuperar, catálogo, pedidos y mensajes", async () => {
+    const stamp = Date.now();
+    const email = `portal.${stamp}@example.com`;
+    const cuit = `pc${stamp}`;
+    const telefono = `119999${String(stamp).slice(-5)}`;
+    const registroBody = {
+      nombre: "Cliente Portal 22",
+      email,
+      password: "clave-portal-22",
+      telefono,
+      cuit,
+      direccion: "Calle Falsa 123",
+    };
+
+    // Registro: alta pública con ficha activa (sin cuenta corriente).
+    const alta = await api("POST", "/portal/registro", { body: registroBody });
+    assert.equal(alta.status, 201, JSON.stringify(alta.data));
+    assert.match(alta.data.data.id, /^cli[-_]/);
+
+    // Validaciones: datos incompletos, contraseña corta, correo de staff.
+    expectError(
+      await api("POST", "/portal/registro", {
+        body: { ...registroBody, email: `otro.${stamp}@example.com`, telefono: "  " },
+      }),
+      400,
+      /telefono es obligatorio/i,
+    );
+    expectError(
+      await api("POST", "/portal/registro", { body: { ...registroBody, password: "123" } }),
+      400,
+      /contraseña/i,
+    );
+    expectError(
+      await api("POST", "/portal/registro", { body: { ...registroBody, email: "dueno@frutasroman.com" } }),
+      400,
+      /puesto/i,
+    );
+
+    // Recordar: el CUIT alcanza para recuperar el correo enmascarado.
+    const recordar = await api("POST", "/portal/recordar", { body: { dato: cuit } });
+    assert.equal(recordar.status, 200, JSON.stringify(recordar.data));
+    assert.match(recordar.data.data.email, /^\S{1}\*{3}@/);
+    expectError(await api("POST", "/portal/recordar", { body: { dato: "  " } }), 400, /dato es obligatorio/i);
+    expectError(await api("POST", "/portal/recordar", { body: { dato: `nada-${stamp}` } }), 400, /no encontramos/i);
+
+    // Recuperar: no aplica a cuentas del puesto y exige coincidencia CUIT.
+    expectError(
+      await api("POST", "/portal/recuperar", {
+        body: { email: "caja@frutasroman.com", cuit: "x", password: "clave-nueva-22" },
+      }),
+      400,
+      /puesto/i,
+    );
+    expectError(
+      await api("POST", "/portal/recuperar", {
+        body: { email, cuit: `co${stamp}`, password: "clave-nueva-22" },
+      }),
+      400,
+      /no coincide/i,
+    );
+    const recuperar = await api("POST", "/portal/recuperar", {
+      body: { email, cuit, password: "clave-nueva-22" },
+    });
+    assert.equal(recuperar.status, 200, JSON.stringify(recuperar.data));
+    assert.equal(recuperar.data.data.ok, true);
+
+    // Con la clave nueva entra y su ficha está activa sin cuenta corriente.
+    const tokenCliente = await signIn(email, "clave-nueva-22");
+    const ficha0 = await api("GET", "/portal/ficha", { token: tokenCliente });
+    assert.equal(ficha0.status, 200, JSON.stringify(ficha0.data));
+    assert.equal(ficha0.data.data.email, email);
+    assert.equal(ficha0.data.data.cuentaCorriente, false);
+    assert.equal(ficha0.data.data.saldo, 0);
+    state.portalUserIds.push(ficha0.data.data.userId);
+
+    // Fail-closed cruzado: token de staff en ruta de cliente (y viceversa).
+    const tokenAdmin = await signIn("dueno@frutasroman.com");
+    expectError(await api("GET", "/portal/ficha", { token: tokenAdmin }), 403, /ficha de cliente/i);
+    expectError(await api("GET", "/session", { token: tokenCliente }), 403, /cliente/i);
+
+    // Catálogo del tenant: un producto con precio y stock para 3 unidades
+    // (2 del pedido efectivo + 1 de la transferencia). `prod` se reusa en las
+    // validaciones de pedido para correr aislado del test 1.
+    const catalogo = await api("GET", "/portal/catalogo", { token: tokenCliente });
+    assert.equal(catalogo.status, 200, JSON.stringify(catalogo.data));
+    const prod = catalogo.data.data.find((p) => p.precio > 0 && p.stock >= 3);
+    assert.ok(prod, "el catálogo del portal no tiene productos con precio y stock");
+
+    // Edición de la ficha: validación y guardado.
+    expectError(
+      await api("POST", "/portal/ficha", {
+        token: tokenCliente,
+        body: { nombre: "  ", telefono: "1", cuit: "2", direccion: "3" },
+      }),
+      400,
+      /nombre es obligatorio/i,
+    );
+    const guardada = await api("POST", "/portal/ficha", {
+      token: tokenCliente,
+      body: { nombre: "Cliente Portal 22 Editado", telefono, cuit, direccion: "Otra 456" },
+    });
+    assert.equal(guardada.status, 200, JSON.stringify(guardada.data));
+    assert.equal(guardada.data.data.nombre, "Cliente Portal 22 Editado");
+
+    // Pedido: validaciones de ítems, forma de pago y gates del negocio.
+    expectError(
+      await api("POST", "/portal/pedidos", { token: tokenCliente, body: { items: [], formaPago: "efectivo" } }),
+      400,
+      /ítems/i,
+    );
+    expectError(
+      await api("POST", "/portal/pedidos", {
+        token: tokenCliente,
+        body: { items: [{ productoId: prod.id, cantidad: 0 }], formaPago: "efectivo" },
+      }),
+      400,
+      /ítem inválido/i,
+    );
+    expectError(
+      await api("POST", "/portal/pedidos", {
+        token: tokenCliente,
+        body: { items: [{ productoId: "prod-no-existe", cantidad: 1 }], formaPago: "efectivo" },
+      }),
+      400,
+      /ya no está/i,
+    );
+    expectError(
+      await api("POST", "/portal/pedidos", {
+        token: tokenCliente,
+        body: { items: [{ productoId: prod.id, cantidad: 1 }], formaPago: "canje" },
+      }),
+      400,
+      /formaPago inválido/i,
+    );
+    expectError(
+      await api("POST", "/portal/pedidos", {
+        token: tokenCliente,
+        body: { items: [{ productoId: prod.id, cantidad: 1 }], formaPago: "cuenta_corriente" },
+      }),
+      400,
+      /cuenta corriente/i,
+    );
+    expectError(
+      await api("POST", "/portal/pedidos", {
+        token: tokenCliente,
+        body: { items: [{ productoId: prod.id, cantidad: 1 }], formaPago: "transferencia" },
+      }),
+      400,
+      /comprobante/i,
+    );
+    expectError(
+      await api("POST", "/portal/pedidos", {
+        token: tokenCliente,
+        body: { items: [{ productoId: prod.id, cantidad: 9_999_999 }], formaPago: "efectivo" },
+      }),
+      400,
+      /stock/i,
+    );
+
+    // Pedido efectivo: queda 'enviado', con ítems snapshot y total calculado.
+    const pedidoEfectivo = await api("POST", "/portal/pedidos", {
+      token: tokenCliente,
+      body: {
+        items: [{ productoId: prod.id, cantidad: 2 }],
+        formaPago: "efectivo",
+        nota: "sin semillas",
+      },
+    });
+    assert.equal(pedidoEfectivo.status, 201, JSON.stringify(pedidoEfectivo.data));
+    const pedido1 = pedidoEfectivo.data.data;
+    assert.equal(pedido1.estado, "enviado");
+    assert.equal(pedido1.clienteNombre, "Cliente Portal 22 Editado");
+    assert.equal(pedido1.clienteId, ficha0.data.data.id);
+    assert.equal(pedido1.items.length, 1);
+    assert.equal(pedido1.items[0].productoId, prod.id);
+    approx(pedido1.total, prod.precio * 2);
+
+    // Transferencia: exige y guarda el comprobante.
+    const transferencia = await api("POST", "/portal/pedidos", {
+      token: tokenCliente,
+      body: {
+        items: [{ productoId: prod.id, cantidad: 1 }],
+        formaPago: "transferencia",
+        comprobanteNombre: "transfer.png",
+        comprobanteData: "data:image/png;base64,e2e",
+      },
+    });
+    assert.equal(transferencia.status, 201, JSON.stringify(transferencia.data));
+    const pedido2 = transferencia.data.data;
+    assert.equal(pedido2.formaPago, "transferencia");
+
+    // Mis pedidos: ambos aparecen; el comprobante solo en el de transferencia.
+    const misPedidos = await api("GET", "/portal/pedidos", { token: tokenCliente });
+    assert.equal(misPedidos.status, 200, JSON.stringify(misPedidos.data));
+    const ids = misPedidos.data.data.map((p) => p.id);
+    assert.ok(ids.includes(pedido1.id));
+    assert.ok(ids.includes(pedido2.id));
+
+    const comprobante = await api("GET", `/portal/pedidos/${pedido2.id}/comprobante`, { token: tokenCliente });
+    assert.equal(comprobante.status, 200, JSON.stringify(comprobante.data));
+    assert.equal(comprobante.data.data.nombre, "transfer.png");
+    expectError(
+      await api("GET", `/portal/pedidos/${pedido1.id}/comprobante`, { token: tokenCliente }),
+      400,
+      /comprobante/i,
+    );
+
+    // Mensajería: el negocio escribe y el cliente lo ve sin leer hasta leerlo.
+    const envioNegocio = await api("POST", `/pedidos/${pedido1.id}/mensajes`, {
+      token: tokenAdmin,
+      body: { cuerpo: "Tu pedido está en preparación." },
+    });
+    assert.equal(envioNegocio.status, 200, JSON.stringify(envioNegocio.data));
+
+    const pendientes = await api("GET", "/portal/mensajes-pendientes", { token: tokenCliente });
+    assert.equal(pendientes.status, 200, JSON.stringify(pendientes.data));
+    const pendiente = pendientes.data.data.find((m) => m.pedidoId === pedido1.id);
+    assert.ok(pendiente, "falta el mensaje pendiente del negocio");
+    assert.equal(pendiente.n, 1);
+
+    const lecturaCliente = await api("GET", `/portal/pedidos/${pedido1.id}/mensajes`, { token: tokenCliente });
+    assert.equal(lecturaCliente.status, 200, JSON.stringify(lecturaCliente.data));
+    assert.equal(lecturaCliente.data.data.mensajes.length, 1);
+    assert.equal(lecturaCliente.data.data.mensajes[0].emisor, "negocio");
+    assert.equal(lecturaCliente.data.data.hayMas, false);
+
+    const pendientes2 = await api("GET", "/portal/mensajes-pendientes", { token: tokenCliente });
+    assert.ok(
+      !pendientes2.data.data.some((m) => m.pedidoId === pedido1.id),
+      "el GET del cliente debió marcar el mensaje como leído",
+    );
+
+    // El cliente responde: validaciones y guardado visible del lado negocio.
+    expectError(
+      await api("POST", `/portal/pedidos/${pedido1.id}/mensajes`, { token: tokenCliente, body: { cuerpo: "  " } }),
+      400,
+      /mensaje/i,
+    );
+    expectError(
+      await api("POST", `/portal/pedidos/${pedido1.id}/mensajes`, {
+        token: tokenCliente,
+        body: { cuerpo: "x".repeat(501) },
+      }),
+      400,
+      /largo/i,
+    );
+    const envioCliente = await api("POST", `/portal/pedidos/${pedido1.id}/mensajes`, {
+      token: tokenCliente,
+      body: { cuerpo: "Perfecto, paso a las 10." },
+    });
+    assert.equal(envioCliente.status, 200, JSON.stringify(envioCliente.data));
+    assert.equal(envioCliente.data.data.ok, true);
+
+    const lecturaNegocio = await api("GET", `/pedidos/${pedido1.id}/mensajes`, { token: tokenAdmin });
+    assert.equal(lecturaNegocio.status, 200, JSON.stringify(lecturaNegocio.data));
+    assert.equal(lecturaNegocio.data.data.mensajes.length, 2);
+    assert.equal(lecturaNegocio.data.data.mensajes[1].emisor, "cliente");
+
+    // Aislamiento: un segundo cliente registrado no ve nada del primero.
+    const emailB = `portal.b.${stamp}@example.com`;
+    const altaB = await api("POST", "/portal/registro", {
+      body: {
+        nombre: "Cliente Portal B 22",
+        email: emailB,
+        password: "clave-portal-b22",
+        telefono: `118888${String(stamp).slice(-5)}`,
+        cuit: `pb${stamp}`,
+        direccion: "Calle B 22",
+      },
+    });
+    assert.equal(altaB.status, 201, JSON.stringify(altaB.data));
+    const tokenB = await signIn(emailB, "clave-portal-b22");
+    const fichaB = await api("GET", "/portal/ficha", { token: tokenB });
+    assert.equal(fichaB.status, 200, JSON.stringify(fichaB.data));
+    state.portalUserIds.push(fichaB.data.data.userId);
+
+    const pedidosB = await api("GET", "/portal/pedidos", { token: tokenB });
+    assert.equal(pedidosB.status, 200, JSON.stringify(pedidosB.data));
+    assert.ok(!pedidosB.data.data.some((p) => p.id === pedido1.id), "el cliente B ve el pedido de A");
+
+    expectError(await api("GET", `/portal/pedidos/${pedido1.id}/mensajes`, { token: tokenB }), 400, /tuyo/i);
+    expectError(await api("GET", `/portal/pedidos/${pedido2.id}/comprobante`, { token: tokenB }), 400, /tuyo/i);
+
+    // Sin cuenta corriente, no hay movimientos.
+    const movimientos = await api("GET", "/portal/movimientos", { token: tokenCliente });
+    assert.equal(movimientos.status, 200, JSON.stringify(movimientos.data));
+    assert.deepEqual(movimientos.data.data, []);
   });
 });
