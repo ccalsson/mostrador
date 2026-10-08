@@ -132,6 +132,20 @@ async function seedCore() {
     }
   }
 
+  const torreSub = await sql<{ ok: boolean }>`
+    select to_regclass('torre.saas_subscriptions') is not null as ok
+  `;
+  if (torreSub[0]?.ok) {
+    await sql`
+      insert into torre.saas_subscription_lines (
+        id, subscription_id, product_id, quantity, unit_price, currency, frequency, subtotal, starts_on, status
+      ) values (
+        'line_roman_pro', 'sub_roman', 'prod_pro', 1, 65, 'USD', 'monthly', 65, current_date, 'active'
+      )
+      on conflict (id) do nothing
+    `;
+  }
+
   await seedHistory();
 }
 
