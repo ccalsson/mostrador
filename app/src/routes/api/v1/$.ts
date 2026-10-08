@@ -34,6 +34,7 @@ import {
   resumenSuscripcionForStaff,
 } from "@/lib/server/legal";
 import { canalMercadoForStaff, getMarcaForStaff, guardarCanalMercadoForStaff, guardarMarcaForStaff } from "@/lib/server/marca";
+import { conversacionesNegocioForStaff, enviarMensajePedidoForStaff, mensajesDelPedidoForStaff } from "@/lib/server/mensajes";
 import { dashboardResumenForStaff, listAlertasForStaff, listAuditoriaForStaff, marcarAlertaLeidaForStaff } from "@/lib/server/panel";
 import {
   getPedidoForStaff,
@@ -375,6 +376,26 @@ const ROUTES: Entry[] = [
       const pedido = await anularPedidoForStaff(staff, { id: segments[1], motivo: asString(body.motivo, "motivo", 300) });
       return json({ data: pedido });
     },
+  },
+  {
+    method: "GET",
+    path: ["pedidos", ":", "mensajes"],
+    handler: async ({ url, segments, staff }) =>
+      json({ data: await mensajesDelPedidoForStaff(staff, segments[1], parseSince(url.searchParams.get("antes"))) }),
+  },
+  {
+    method: "POST",
+    path: ["pedidos", ":", "mensajes"],
+    handler: async ({ request, segments, staff }) => {
+      const body = asRecord(await readJson(request));
+      const cuerpo = typeof body.cuerpo === "string" ? body.cuerpo : "";
+      return json({ data: await enviarMensajePedidoForStaff(staff, segments[1], cuerpo) });
+    },
+  },
+  {
+    method: "GET",
+    path: ["mensajes", "conversaciones"],
+    handler: async ({ staff }) => json({ data: await conversacionesNegocioForStaff(staff) }),
   },
   {
     method: "GET",

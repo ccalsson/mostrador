@@ -7,7 +7,8 @@
 // Cubre autenticación Bearer, matriz de permisos por rol, aislamiento de
 // tenant, idempotencia (client_uuid), cobros y anulaciones, cuenta corriente,
 // remitos, proveedores, caja, auditoría, suscripción/contratos + legal del
-// canal (torre) y facturación ARCA (config/emisión sin credenciales reales).
+// canal (torre), facturación ARCA (config/emisión sin credenciales reales) y
+// mensajería del pedido (solo lado negocio; el lado cliente es M9f).
 // Los datos que crea se limpian en `after` tomando el reloj de la base
 // (runStart) como referencia, para no tocar el seed demo. Las versiones
 // publicadas y las aceptaciones legales son inmutables por diseño (trigger
@@ -50,6 +51,8 @@ const state = {
   e2eClienteId: null,
   e2eProveedorId: null,
   foreignTenantId: null,
+  msgClienteId: null,
+  msgForeignTenantId: null,
   legalDraftIds: [],
   mercadoUsuarioIds: [],
   marcaNombre0: null,
@@ -295,6 +298,19 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
           state.marcaConfig0,
           TENANT,
         ]);
+      }
+
+      // (n) mensajería del test 21: cliente de prueba y tenant ajeno propio.
+      // El pedido ajeno referencia al cliente del tenant principal (para poder
+      // llegar al chequeo de tenant), así que se borra antes que el cliente.
+      if (state.msgForeignTenantId) {
+        await pool.query("delete from pedidos where tenant_id = $1", [state.msgForeignTenantId]);
+        await pool.query("delete from clientes where tenant_id = $1", [state.msgForeignTenantId]);
+        await pool.query("delete from tenants where id = $1", [state.msgForeignTenantId]);
+      }
+      if (state.msgClienteId) {
+        await pool.query("delete from cuenta_movimientos where cliente_id = $1", [state.msgClienteId]);
+        await pool.query("delete from clientes where id = $1 and tenant_id = $2", [state.msgClienteId, TENANT]);
       }
     } finally {
       await pool.end();
@@ -1736,5 +1752,129 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
     assert.equal(auditoria.status, 200);
     const acciones = auditoria.data.data.map((a) => a.accion);
     assert.ok(acciones.includes("afip_config"), "falta auditoría de config ARCA");
+  });
+
+  it("21. mensajería del pedido: solo admin, marca de leídos y paginación", async () => {
+    const alta = await api("POST", "/clientes", {
+      token: state.tokens.admin,
+      body: { nombre: "Cliente Mensajes 21", telefono: "1100000021", cuentaCorriente: false },
+    });
+    assert.equal(alta.status, 201, JSON.stringify(alta.data));
+    state.msgClienteId = alta.data.data.id;
+
+    const pedido = await api("POST", "/pedidos", {
+      token: state.tokens.vendedor,
+      body: {
+        clientUuid: `e2e-${randomUUID()}`,
+        clienteId: state.msgClienteId,
+        clienteNombre: "Cliente Mensajes 21",
+        items: [{ productoId: state.banana.id, cantidad: 2 }],
+      },
+    });
+    assert.equal(pedido.status, 201, JSON.stringify(pedido.data));
+    const pedidoId = pedido.data.data.id;
+    const base = `/pedidos/${pedidoId}/mensajes`;
+
+    // Matriz de permisos: lectura/envío de mensajes y conversaciones son admin.
+    expectError(await api("GET", base, { token: state.tokens.cajero }), 403, /permiso/i);
+    expectError(await api("POST", base, { token: state.tokens.cajero, body: { cuerpo: "Hola" } }), 403, /permiso/i);
+    expectError(await api("GET", "/mensajes/conversaciones", { token: state.tokens.vendedor }), 403, /permiso/i);
+
+    // Pedido de mostrador (sin cliente) no tiene conversación.
+    const mostrador = await api("POST", "/pedidos", {
+      token: state.tokens.vendedor,
+      body: {
+        clientUuid: `e2e-${randomUUID()}`,
+        clienteNombre: "Mostrador",
+        items: [{ productoId: state.banana.id, cantidad: 1 }],
+      },
+    });
+    assert.equal(mostrador.status, 201, JSON.stringify(mostrador.data));
+    expectError(
+      await api("GET", `/pedidos/${mostrador.data.data.id}/mensajes`, { token: state.tokens.admin }),
+      400,
+      /conversaci/i,
+    );
+
+    // Validaciones de cuerpo antes de cualquier acceso.
+    expectError(await api("POST", base, { token: state.tokens.admin, body: { cuerpo: "   " } }), 400, /mensaje/i);
+    expectError(
+      await api("POST", base, { token: state.tokens.admin, body: { cuerpo: "x".repeat(501) } }),
+      400,
+      /largo/i,
+    );
+
+    // El negocio envía y lee: queda un mensaje propio, sin "hay más".
+    const envio = await api("POST", base, {
+      token: state.tokens.admin,
+      body: { cuerpo: "Hola, ¿a qué hora pasás?" },
+    });
+    assert.equal(envio.status, 200, JSON.stringify(envio.data));
+    assert.equal(envio.data.data.ok, true);
+
+    const lectura1 = await api("GET", base, { token: state.tokens.admin });
+    assert.equal(lectura1.status, 200, JSON.stringify(lectura1.data));
+    assert.equal(lectura1.data.data.mensajes.length, 1);
+    assert.equal(lectura1.data.data.mensajes[0].emisor, "negocio");
+    assert.equal(lectura1.data.data.hayMas, false);
+
+    // Llega un mensaje del cliente: la conversación lo muestra sin leer y
+    // leerlo (GET) lo marca como leído del lado negocio.
+    await state.pool.query(
+      `insert into pedido_mensajes (id, tenant_id, pedido_id, cliente_id, emisor, cuerpo, leido)
+       values ($1, $2, $3, $4, 'cliente', 'De 9 a 12 porfa', false)`,
+      [`msg-${randomUUID()}`, TENANT, pedidoId, state.msgClienteId],
+    );
+
+    const conv1 = await api("GET", "/mensajes/conversaciones", { token: state.tokens.admin });
+    assert.equal(conv1.status, 200, JSON.stringify(conv1.data));
+    const conv = conv1.data.data.find((c) => c.pedidoId === pedidoId);
+    assert.ok(conv, "falta la conversación del pedido 21");
+    assert.equal(conv.sinLeer, 1);
+    assert.equal(conv.ultimoDe, "cliente");
+
+    const lectura2 = await api("GET", base, { token: state.tokens.admin });
+    assert.equal(lectura2.data.data.mensajes.length, 2);
+    assert.equal(lectura2.data.data.mensajes[1].emisor, "cliente");
+
+    const conv2 = await api("GET", "/mensajes/conversaciones", { token: state.tokens.admin });
+    assert.equal(conv2.data.data.find((c) => c.pedidoId === pedidoId).sinLeer, 0);
+
+    // Paginación: 31 mensajes más (33 en total) ⇒ primera página de 30 con
+    // "hay más"; la segunda parte desde el más viejo de la primera.
+    for (let i = 0; i < 31; i++) {
+      await state.pool.query(
+        `insert into pedido_mensajes (id, tenant_id, pedido_id, cliente_id, emisor, cuerpo, leido, created_at)
+         values ($1, $2, $3, $4, 'cliente', $5, true, now() - (($6 || ' minutes')::interval))`,
+        [`msg-${randomUUID()}`, TENANT, pedidoId, state.msgClienteId, `Histórico ${i + 1}`, String(40 - i)],
+      );
+    }
+
+    const pag1 = await api("GET", base, { token: state.tokens.admin });
+    assert.equal(pag1.status, 200, JSON.stringify(pag1.data));
+    assert.equal(pag1.data.data.mensajes.length, 30);
+    assert.equal(pag1.data.data.hayMas, true);
+
+    const masViejo = pag1.data.data.mensajes[0].createdAt;
+    const pag2 = await api("GET", `${base}?antes=${encodeURIComponent(masViejo)}`, {
+      token: state.tokens.admin,
+    });
+    assert.equal(pag2.status, 200, JSON.stringify(pag2.data));
+    assert.ok(pag2.data.data.mensajes.length >= 1, "la segunda página no trajo mensajes");
+    for (const m of pag2.data.data.mensajes) {
+      assert.ok(m.createdAt < masViejo, `mensaje fuera de página: ${m.createdAt} !< ${masViejo}`);
+    }
+
+    // Aislamiento: un pedido con cliente de OTRO tenant no es de este puesto.
+    const foreignTenant = `e2e-msg-tenant-${Date.now()}`;
+    state.msgForeignTenantId = foreignTenant;
+    const foreignPedido = `ped-${randomUUID()}`;
+    await state.pool.query("insert into tenants (id, nombre) values ($1, $2)", [foreignTenant, "E2E Msg Ajeno"]);
+    await state.pool.query(
+      `insert into pedidos (id, tenant_id, client_uuid, cliente_nombre, estado, cliente_id)
+       values ($1, $2, $3, 'Ajeno Msg', 'enviado', $4)`,
+      [foreignPedido, foreignTenant, `e2e-msgf-${Date.now()}`, state.msgClienteId],
+    );
+    expectError(await api("GET", `/pedidos/${foreignPedido}/mensajes`, { token: state.tokens.admin }), 400, /puesto/i);
   });
 });
