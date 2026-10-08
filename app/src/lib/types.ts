@@ -65,6 +65,7 @@ export type Cliente = {
   email?: string | null;
   cuit?: string | null;
   direccion?: string | null;
+  condicionIva?: string | null;
   activo?: boolean;
   userId?: string | null;
   saldo?: number;

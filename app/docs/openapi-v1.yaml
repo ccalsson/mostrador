@@ -922,6 +922,13 @@ components:
         nombre: { type: string }
         telefono: { type: string, nullable: true }
         cuentaCorriente: { type: boolean }
+        email: { type: string, nullable: true }
+        cuit: { type: string, nullable: true }
+        direccion: { type: string, nullable: true }
+        condicionIva: { type: string, example: consumidor_final }
+        activo: { type: boolean }
+        userId: { type: string, nullable: true, description: Usuario del portal vinculado. }
+        saldo: { type: number, description: Suma de movimientos de cuenta corriente (0 sin CC). }
     ClienteCreado:
       type: object
       properties:

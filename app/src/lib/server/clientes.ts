@@ -12,18 +12,35 @@ export async function listClientesForStaff(staff: Staff): Promise<Cliente[]> {
     id: string;
     nombre: string;
     telefono: string | null;
+    email: string | null;
+    cuit: string | null;
+    direccion: string | null;
     cuenta_corriente: boolean;
+    condicion_iva: string | null;
+    activo: boolean;
+    user_id: string | null;
+    saldo: unknown;
   }>`
-    select id, nombre, telefono, cuenta_corriente from clientes
-    where tenant_id = ${staff.tenantId}
-    order by lower(nombre)
+    select c.id, c.nombre, c.telefono, c.email, c.cuit, c.direccion, c.cuenta_corriente,
+           c.condicion_iva, c.activo, c.user_id,
+           coalesce((select sum(monto) from cuenta_movimientos m where m.cliente_id = c.id), 0) as saldo
+    from clientes c
+    where c.tenant_id = ${staff.tenantId}
+    order by lower(c.nombre)
   `;
   return rows.map(
     (r): Cliente => ({
       id: r.id,
       nombre: r.nombre,
       telefono: r.telefono,
+      email: r.email,
+      cuit: r.cuit,
+      direccion: r.direccion,
       cuentaCorriente: r.cuenta_corriente,
+      condicionIva: r.condicion_iva || "consumidor_final",
+      activo: r.activo,
+      userId: r.user_id,
+      saldo: num(r.saldo),
     }),
   );
 }

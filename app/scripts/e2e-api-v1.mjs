@@ -1408,6 +1408,21 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
     assert.equal(fila.rows[0].condicion_iva, "ri");
     assert.equal(fila.rows[0].activo, true);
 
+    // Listado: ficha completa en paridad con repoweb (F3) — incluye saldo,
+    // condicionIva, activo y email, además de los campos base.
+    const listadoClientes = await api("GET", "/clientes", { token: state.tokens.admin });
+    assert.equal(listadoClientes.status, 200, JSON.stringify(listadoClientes.data));
+    const ficha = listadoClientes.data.data.find((c) => c.id === state.e2eClienteId);
+    assert.ok(ficha, "el cliente editado debe figurar en el listado");
+    assert.equal(ficha.nombre, "Cliente E2E CC Editado");
+    assert.equal(ficha.cuit, "20123456789");
+    assert.equal(ficha.direccion, "Calle E2E 123");
+    assert.equal(ficha.condicionIva, "ri");
+    assert.equal(ficha.activo, true);
+    assert.equal(typeof ficha.saldo, "number");
+    const listadoCajero = await api("GET", "/clientes", { token: state.tokens.cajero });
+    assert.equal(listadoCajero.status, 200, "el listado lo lee cualquier staff");
+
     // Pago de cuenta corriente: solo admin, monto positivo, cliente existente.
     const pagoNegado = await api("POST", `/clientes/${state.e2eClienteId}/pagos`, {
       token: state.tokens.cajero,
