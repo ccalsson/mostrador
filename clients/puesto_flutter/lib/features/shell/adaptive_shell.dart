@@ -212,7 +212,17 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
             child: TituloSeccion(destinoActual.etiqueta),
           ),
-          Expanded(child: _pantalla()),
+          // Columna de contenido: en ventanas anchas las filas estiradas al
+          // ancho total quedan ilegibles, así que el contenido se centra con
+          // un tope; en pantallas angostas ocupa el ancho disponible.
+          Expanded(
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 1080),
+                child: _pantalla(),
+              ),
+            ),
+          ),
         ],
       ),
     );
