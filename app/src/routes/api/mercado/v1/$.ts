@@ -1,5 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { MercadoError, authenticate, clearExpiredGoogleStates, createOAuthSession, createOrders, createRoute, emailFromExternal, findGoogleCredential, getBuyerOrder, getMe, listBuyerOrders, listCouriers, listPublicRanking, listRoutes, listStandProducts, listStands, newGoogleState, rateRoute, registerBuyer, registerCourier, restablecer, setCourierAvailability, signIn, signOut, solicitarRecuperacion, updateStop, uploadIdentity, changeRoute } from "@/lib/server/mercado";
+import {
+  aceptarDocumentoLegal,
+  documentoLegalContenido,
+  listarDocumentosLegales,
+} from "@/lib/server/legal";
 import { getSql } from "@/lib/db";
 import type { MercadoPerfil } from "@/lib/server/mercado";
 
@@ -271,6 +276,34 @@ async function handle(method: "GET" | "POST", request: Request, splat?: string) 
     }
     if (method === "POST" && route === "cargador/disponibilidad") {
       return json(await setCourierAvailability(actor, await bodyOf(request)));
+    }
+    if (method === "GET" && route === "legal/documentos") {
+      return json(await listarDocumentosLegales(actor));
+    }
+    if (method === "GET" && segments.length === 3 && segments[0] === "legal" && segments[1] === "documentos") {
+      const raw = url.searchParams.get("version");
+      const version = raw == null || raw === "" ? undefined : Number(raw);
+      if (version !== undefined && (!Number.isInteger(version) || version <= 0)) {
+        throw new RouteError(400, "cuerpo_invalido", "version debe ser un entero positivo.");
+      }
+      return json(await documentoLegalContenido(actor, segments[2]!, version));
+    }
+    if (method === "POST" && segments.length === 4 && segments[0] === "legal" && segments[1] === "documentos" && segments[3] === "aceptar") {
+      const body = await bodyOf(request);
+      const version = typeof body.version === "number" ? body.version : Number.NaN;
+      const hash = typeof body.hash === "string" ? body.hash.trim() : "";
+      if (!Number.isInteger(version) || version <= 0 || !hash) {
+        throw new RouteError(400, "cuerpo_invalido", "version y hash son obligatorios.");
+      }
+      return json(
+        await aceptarDocumentoLegal(
+          actor,
+          segments[2]!,
+          { version, hash },
+          request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "",
+          request.headers.get("user-agent") ?? "",
+        ),
+      );
     }
     return json({ error: "not_found", message: "Ruta inexistente." }, { status: 404 });
   } catch (error) {

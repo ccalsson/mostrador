@@ -16,6 +16,13 @@ import {
   cobrarPedidoForStaff,
   getTicketForStaff,
 } from "@/lib/server/cobros";
+import {
+  LegalError,
+  aceptarContratoForStaff,
+  contratoDocumentoForStaff,
+  historialContratoForStaff,
+  resumenSuscripcionForStaff,
+} from "@/lib/server/legal";
 import { dashboardResumenForStaff, listAlertasForStaff, listAuditoriaForStaff, marcarAlertaLeidaForStaff } from "@/lib/server/panel";
 import {
   getPedidoForStaff,
@@ -64,6 +71,9 @@ function json(body: unknown, init: ResponseInit = {}) {
 
 function errorResponse(error: unknown) {
   if (error instanceof HttpError) return json({ error: error.code, message: error.message }, { status: error.status });
+  if (error instanceof LegalError) {
+    return json({ error: error.code, message: error.message }, { status: error.status });
+  }
   if (error instanceof UnauthorizedError) return json({ error: "unauthorized" }, { status: 401 });
   const status = typeof error === "object" && error && "status" in error ? Number(error.status) : 400;
   const message = error instanceof Error ? error.message : "Solicitud inválida.";
@@ -537,6 +547,48 @@ const ROUTES: Entry[] = [
     method: "GET",
     path: ["auditoria"],
     handler: async ({ staff }) => json({ data: await listAuditoriaForStaff(staff) }),
+  },
+  {
+    method: "GET",
+    path: ["suscripcion"],
+    handler: async ({ staff }) => json({ data: await resumenSuscripcionForStaff(staff) }),
+  },
+  {
+    method: "GET",
+    path: ["suscripcion", "contrato"],
+    handler: async ({ url, staff }) => {
+      const raw = url.searchParams.get("version");
+      const version = raw == null || raw === "" ? undefined : Number(raw);
+      if (version !== undefined && (!Number.isInteger(version) || version <= 0)) {
+        throw new HttpError(400, "cuerpo_invalido", "version debe ser un entero positivo.");
+      }
+      return json({ data: await contratoDocumentoForStaff(staff, version) });
+    },
+  },
+  {
+    method: "GET",
+    path: ["suscripcion", "contrato", "historial"],
+    handler: async ({ staff }) => json({ data: await historialContratoForStaff(staff) }),
+  },
+  {
+    method: "POST",
+    path: ["suscripcion", "contrato", "aceptar"],
+    handler: async ({ request, staff }) => {
+      const body = asRecord(await readJson(request));
+      const documentoId = typeof body.documentoId === "string" ? body.documentoId.trim() : "";
+      const hash = typeof body.hash === "string" ? body.hash.trim() : "";
+      const version = typeof body.version === "number" ? body.version : Number.NaN;
+      if (!documentoId || !hash || !Number.isInteger(version) || version <= 0) {
+        throw new HttpError(400, "cuerpo_invalido", "documentoId, version y hash son obligatorios.");
+      }
+      const resultado = await aceptarContratoForStaff(
+        staff,
+        { documentoId, version, hash },
+        request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "",
+        request.headers.get("user-agent") ?? "",
+      );
+      return json({ data: resultado });
+    },
   },
 ];
 

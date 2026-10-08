@@ -1,14 +1,28 @@
 # Suscripción y Legal — propuesta de API v1 (para el agente de Torre)
 
-> **ESTADO: PROPUESTA — NO IMPLEMENTADA.** Este documento define el contrato
-> que las apps (`clients/puesto_flutter` y `clients/mercado_flutter`)
-> consumirán para el dominio comercial/contractual. Fue escrito por el agente
-> de las apps tras auditar el backend (2026-10-07): **no existe ninguna tabla
-> ni endpoint de suscripciones, planes, add-ons, contratos, documentos
-> legales o aceptaciones** (verificado en migraciones 0001–0010, docs
-> api-v1/mercado-v1 y probes en vivo → 404). El agente de Torre decide si lo
-> implementa, lo ajusta o lo rechaza. Las apps NO duplican esta lógica: solo
-> consultan, muestran y envían aceptaciones.
+> **ESTADO: IMPLEMENTADA (2026-10-08).** El backend canónico (`app/`) expone
+> el contrato de este documento sobre el schema `torre` (fuente de verdad
+> comercial/contractual, sin mover físicamente el schema):
+>
+> - **Parte A** (Bearer staff, solo rol `admin`): `GET /api/v1/suscripcion`,
+>   `GET /api/v1/suscripcion/contrato?version=`,
+>   `GET /api/v1/suscripcion/contrato/historial`,
+>   `POST /api/v1/suscripcion/contrato/aceptar` (con `Idempotency-Key`;
+>   dedupe por (tenant, versión) vía índice único parcial).
+> - **Parte B** (Bearer mercado, perfil del token): `GET /api/mercado/v1/legal/documentos`
+>   (404 `sin_documentos` si nada publicado → empty-state de la app),
+>   `GET /api/mercado/v1/legal/documentos/{id}?version=`,
+>   `POST /api/mercado/v1/legal/documentos/{id}/aceptar` (dedupe por
+>   (usuario, versión); `perfil_invalido` si el documento es de otro perfil).
+>
+> Implementación: `app/src/lib/server/legal.ts`, rutas en
+> `app/src/routes/api/v1/$.ts` y `app/src/routes/api/mercado/v1/$.ts`,
+> migraciones `0012_torre_legal.sql`, `0013_torre_integridad.sql` (versiones
+> publicadas/retired y aceptaciones inmutables por trigger) y
+> `0014_torre_acceptances_unicas.sql`. Las apps NO duplican esta lógica:
+> solo consultan, muestran y envían aceptaciones. Este documento sigue siendo
+> la referencia del contrato consumido por `clients/puesto_flutter` y
+> `clients/mercado_flutter`.
 
 ## Principios
 
@@ -239,11 +253,17 @@ informan (`miAceptacion`).
 
 ## Migraciones que Torre necesita crear (borrador referencial, no vinculante)
 
+> ACTUALIZACIÓN 2026-10-08: el modelo ya existe en el schema `torre` del
+> backend canónico (`app/migrations/0012`–`0014`); planes, suscripciones y
+> líneas vienen de `0008_torre.sql`/`0011_torre_control.sql` + seed. Lo que
+> sigue es el modelo de referencia original.
+
 Sugerencia de modelo mínimo (Torre decide nombres/normalización final):
 `planes`, `suscripciones (tenant_id, plan_id, estado, fechas)`,
 `suscripcion_addons (tenant_id, addon_codigo, activo, fechas)`,
 `documentos (id, tipo, perfil/ambito, titulo)`,
 `documento_versiones (documento_id, version, hash, contenido/ref, vigencias)`,
 `aceptaciones (actor tipo+id, documento_id, version, hash, fecha,
-idempotency_key única)` + disparo de auditoría en cada aceptación. Ninguna de
-estas tablas existe hoy; este repo no las crea.
+idempotency_key única)` + disparo de auditoría en cada aceptación. Estas
+tablas ya existen en `torre` (migraciones 0012–0014 de `app/`); la nota
+queda como modelo de referencia.

@@ -52,7 +52,7 @@ function assertPerfil(actor: MercadoActor, perfil: MercadoPerfil, message: strin
   if (actor.perfil !== perfil) fail(403, "forbidden", message);
 }
 
-async function auditMercado(
+export async function auditMercado(
   sql: Sql,
   actor: MercadoActor,
   accion: string,

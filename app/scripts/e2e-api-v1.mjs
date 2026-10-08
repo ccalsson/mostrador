@@ -6,11 +6,15 @@
 //
 // Cubre autenticación Bearer, matriz de permisos por rol, aislamiento de
 // tenant, idempotencia (client_uuid), cobros y anulaciones, cuenta corriente,
-// remitos, caja y auditoría. Los datos que crea se limpian en `after` tomando
-// el reloj de la base (runStart) como referencia, para no tocar el seed demo.
+// remitos, caja, auditoría y suscripción/contratos + legal del canal (torre).
+// Los datos que crea se limpian en `after` tomando el reloj de la base
+// (runStart) como referencia, para no tocar el seed demo. Las versiones
+// publicadas y las aceptaciones legales son inmutables por diseño (trigger
+// 0013): la suite publica una única vez los documentos seed de torre y las
+// aceptaciones quedan en DEV (filas chicas, dedupe por índices únicos).
 
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { after, before, describe, it } from "node:test";
 import pg from "pg";
 import { hashPassword } from "better-auth/crypto";
@@ -44,6 +48,8 @@ const state = {
   e2eProductoId: null,
   e2eClienteId: null,
   foreignTenantId: null,
+  legalDraftIds: [],
+  mercadoUsuarioIds: [],
 };
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -215,6 +221,36 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
           await pool.query("delete from productos where tenant_id = $1", [state.foreignTenantId]);
           await pool.query("delete from tenants where id = $1", [state.foreignTenantId]);
         }
+
+        // (i) borradores legales creados para el caso "versión obsoleta"
+        // (los borradores sí se pueden borrar; los publicados son inmutables).
+        if (state.legalDraftIds.length) {
+          await pool.query(
+            "delete from torre.saas_legal_versions where id = any($1::text[]) and status = 'draft'",
+            [state.legalDraftIds],
+          );
+        }
+
+        // (j) usuarios y sesiones de Mercado creados por la corrida. Las
+        // aceptaciones legales quedan: son inmutables por trigger y quedan
+        // atadas a usuarios que ya no existen (sin efecto funcional).
+        if (state.mercadoUsuarioIds.length) {
+          await pool.query("delete from mercado_sesiones where usuario_id = any($1::text[])", [
+            state.mercadoUsuarioIds,
+          ]);
+          await pool.query("delete from mercado_credenciales where usuario_id = any($1::text[])", [
+            state.mercadoUsuarioIds,
+          ]);
+          await pool.query("delete from mercado_compradores where id = any($1::text[])", [
+            state.mercadoUsuarioIds,
+          ]);
+          await pool.query("delete from mercado_cargadores where id = any($1::text[])", [
+            state.mercadoUsuarioIds,
+          ]);
+        }
+
+        // (k) auditoría de operaciones de Mercado de la corrida.
+        await pool.query("delete from auditoria where tenant_id = 'mercado' and created_at >= $1::timestamptz", [s]);
       }
 
       // (h) sesiones creadas por la suite.
@@ -733,5 +769,343 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
     const reabierta = await api("GET", "/caja", { token: state.tokens.cajero });
     assert.equal(reabierta.status, 200);
     assert.notEqual(reabierta.data.data.id, caja.id, "tras cerrar debe haber una caja nueva");
+  });
+
+  it("16. suscripción/contratos (Parte A, admin) y legal del canal (Parte B, perfiles)", async () => {
+    // Setup idempotente: los documentos seed de torre arrancan en 'draft' sin
+    // versiones. Publicar una versión es aditivo e inmutable (trigger 0013),
+    // así que la suite lo hace una sola vez y lo deja publicado en DEV.
+    const canonico = (texto) => texto.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+    const hashDe = (texto) => createHash("sha256").update(canonico(texto), "utf8").digest("hex");
+    const publicarSiFalta = async (docId, cuerpo) => {
+      const { rows } = await state.pool.query(
+        "select id from torre.saas_legal_versions where document_id = $1 and status = 'published' limit 1",
+        [docId],
+      );
+      if (rows[0]) return;
+      await state.pool.query(
+        `insert into torre.saas_legal_versions (id, document_id, version_label, body, content_hash, status, published_at)
+         values ($1, $2, 'v1', $3, $4, 'published', now())`,
+        [`ver-${randomUUID()}`, docId, cuerpo, hashDe(cuerpo)],
+      );
+    };
+    await publicarSiFalta("doc_saas", "Contrato marco de prestación del servicio Mostrador (documento e2e DEV).");
+    await publicarSiFalta("doc_cargador", "Términos y reglas del rol cargador (documento e2e DEV).");
+    await publicarSiFalta("doc_comprador", "Términos de uso del comprador (documento e2e DEV).");
+    await publicarSiFalta("doc_privacidad", "Política de privacidad del canal (documento e2e DEV).");
+
+    // Borrador de un documento, para probar 409 version_obsoleta. La numeración
+    // de versión es row_number sobre TODAS las versiones (igual que el backend).
+    const crearBorrador = async (docId) => {
+      const cuerpo = `Borrador e2e obsoleto ${randomUUID()}`;
+      const id = `ver-${randomUUID()}`;
+      await state.pool.query(
+        `insert into torre.saas_legal_versions (id, document_id, version_label, body, content_hash, status)
+         values ($1, $2, $3, $4, $5, 'draft')`,
+        [id, docId, `e2e-borrador-${randomUUID()}`, cuerpo, hashDe(cuerpo)],
+      );
+      state.legalDraftIds.push(id);
+      const { rows } = await state.pool.query(
+        `select version from (
+           select row_number() over (order by created_at, id)::int as version
+           from torre.saas_legal_versions where document_id = $1
+         ) v order by version desc limit 1`,
+        [docId],
+      );
+      return rows[0].version;
+    };
+
+    const HEX64 = /^[0-9a-f]{64}$/;
+
+    // ---- Parte A: /api/v1/suscripcion (solo dueño) ----
+    const resumen = await api("GET", "/suscripcion", { token: state.tokens.admin });
+    assert.equal(resumen.status, 200, JSON.stringify(resumen.data));
+    const a1 = resumen.data.data;
+    assert.ok(a1.suscripcion.plan.codigo.length > 0);
+    assert.ok(["activa", "vencida", "cancelada", "prueba"].includes(a1.suscripcion.estado));
+    assert.match(a1.suscripcion.inicio, /^\d{4}-\d{2}-\d{2}$/);
+    assert.equal(typeof a1.mercadoAlToqueContratado, "boolean");
+    assert.equal(typeof a1.sucursalesContratadas, "number");
+    assert.ok(a1.sucursalesContratadas >= 1);
+    assert.ok(Array.isArray(a1.addons));
+    assert.equal(a1.precioVigente.moneda, "ARS");
+    assert.equal(typeof a1.precioVigente.monto, "number");
+    assert.ok(a1.precioVigente.monto > 0);
+    assert.equal(a1.precioVigente.periodo, "mensual");
+    assert.equal(typeof a1.pendiente.hayPendiente, "boolean");
+    assert.ok(a1.contratoVigente, "doc_saas publicado debería dar contrato vigente");
+    assert.equal(a1.contratoVigente.documentoId, "doc_saas");
+    assert.equal(a1.contratoVigente.estado, "vigente");
+    assert.ok(Number.isInteger(a1.contratoVigente.version) && a1.contratoVigente.version >= 1);
+    assert.match(a1.contratoVigente.hash, HEX64);
+
+    for (const rol of ["vendedor", "cajero"]) {
+      const prohibido = await api("GET", "/suscripcion", { token: state.tokens[rol] });
+      expectError(prohibido, 403, null);
+      assert.equal(prohibido.data.error, "rol_no_permitido");
+
+      const aceptarProhibido = await api("POST", "/suscripcion/contrato/aceptar", {
+        token: state.tokens[rol],
+        body: { documentoId: "doc_saas", version: 1, hash: "x".repeat(64) },
+      });
+      expectError(aceptarProhibido, 403, null);
+      assert.equal(aceptarProhibido.data.error, "rol_no_permitido");
+    }
+
+    const contrato = await api("GET", "/suscripcion/contrato", { token: state.tokens.admin });
+    assert.equal(contrato.status, 200);
+    const a2 = contrato.data.data;
+    assert.equal(a2.documentoId, "doc_saas");
+    assert.equal(a2.version, a1.contratoVigente.version);
+    assert.equal(a2.hash, a1.contratoVigente.hash);
+    assert.equal(a2.estado, "vigente");
+    assert.equal(a2.contenido.formato, "texto");
+    assert.ok(a2.contenido.valor.length > 0);
+    assert.ok(Array.isArray(a2.anexos));
+
+    const versionInexistente = await api("GET", "/suscripcion/contrato?version=999999", {
+      token: state.tokens.admin,
+    });
+    expectError(versionInexistente, 404, null);
+    assert.equal(versionInexistente.data.error, "version_no_encontrada");
+
+    const versionNoEntera = await api("GET", "/suscripcion/contrato?version=abc", {
+      token: state.tokens.admin,
+    });
+    expectError(versionNoEntera, 400, null);
+    assert.equal(versionNoEntera.data.error, "cuerpo_invalido");
+
+    const aceptarP1 = await api("POST", "/suscripcion/contrato/aceptar", {
+      token: state.tokens.admin,
+      headers: { "idempotency-key": randomUUID() },
+      body: {
+        documentoId: a2.documentoId,
+        version: a2.version,
+        hash: a2.hash,
+      },
+    });
+    assert.equal(aceptarP1.status, 200, JSON.stringify(aceptarP1.data));
+    const a4 = aceptarP1.data.data;
+    assert.ok(a4.aceptacionId);
+    assert.equal(a4.documentoId, "doc_saas");
+    assert.equal(a4.version, a2.version);
+    assert.ok(a4.fecha);
+    assert.equal(a4.contratoVigente.aceptadoPorMi, true);
+
+    const aceptarReintento = await api("POST", "/suscripcion/contrato/aceptar", {
+      token: state.tokens.admin,
+      headers: { "idempotency-key": randomUUID() },
+      body: { documentoId: a2.documentoId, version: a2.version, hash: a2.hash },
+    });
+    assert.equal(aceptarReintento.status, 200);
+    assert.equal(
+      aceptarReintento.data.data.aceptacionId,
+      a4.aceptacionId,
+      "aceptar dos veces la misma versión no debe duplicar",
+    );
+
+    const hashErroneo = await api("POST", "/suscripcion/contrato/aceptar", {
+      token: state.tokens.admin,
+      headers: { "idempotency-key": randomUUID() },
+      body: { documentoId: a2.documentoId, version: a2.version, hash: "0".repeat(64) },
+    });
+    expectError(hashErroneo, 409, null);
+    assert.equal(hashErroneo.data.error, "hash_mismatch");
+
+    const versionBorrador = await crearBorrador("doc_saas");
+    const obsoleta = await api("POST", "/suscripcion/contrato/aceptar", {
+      token: state.tokens.admin,
+      headers: { "idempotency-key": randomUUID() },
+      body: { documentoId: a2.documentoId, version: versionBorrador, hash: "0".repeat(64) },
+    });
+    expectError(obsoleta, 409, null);
+    assert.equal(obsoleta.data.error, "version_obsoleta");
+
+    const versionFueraDeRango = await api("POST", "/suscripcion/contrato/aceptar", {
+      token: state.tokens.admin,
+      headers: { "idempotency-key": randomUUID() },
+      body: { documentoId: a2.documentoId, version: 999999, hash: "0".repeat(64) },
+    });
+    expectError(versionFueraDeRango, 404, null);
+    assert.equal(versionFueraDeRango.data.error, "version_no_encontrada");
+
+    const cuerpoInvalido = await api("POST", "/suscripcion/contrato/aceptar", {
+      token: state.tokens.admin,
+      headers: { "idempotency-key": randomUUID() },
+      body: { documentoId: a2.documentoId, version: 0, hash: a2.hash },
+    });
+    expectError(cuerpoInvalido, 400, null);
+    assert.equal(cuerpoInvalido.data.error, "cuerpo_invalido");
+
+    const resumenLuego = await api("GET", "/suscripcion", { token: state.tokens.admin });
+    assert.equal(resumenLuego.status, 200);
+    assert.equal(resumenLuego.data.data.contratoVigente.aceptadoPorMi, true);
+    assert.ok(resumenLuego.data.data.contratoVigente.fechaAceptacion);
+
+    const historial = await api("GET", "/suscripcion/contrato/historial", { token: state.tokens.admin });
+    assert.equal(historial.status, 200);
+    const entradas = historial.data.data.entradas;
+    assert.ok(Array.isArray(entradas));
+    const vigente = entradas.find((e) => e.version === a2.version);
+    assert.ok(vigente, "la versión vigente no está en el historial");
+    assert.equal(vigente.documentoId, "doc_saas");
+    assert.equal(vigente.estado, "vigente");
+    assert.ok(vigente.aceptacion, "la aceptación del admin no figura en el historial");
+    assert.ok(vigente.aceptacion.fecha);
+    assert.ok(typeof vigente.aceptacion.aceptadoPor === "string" && vigente.aceptacion.aceptadoPor.length > 0);
+
+    // ---- Parte B: /api/mercado/v1/legal (perfil del token) ----
+    const mercado = (method, path, opts) => request(method, `/api/mercado/v1${path}`, opts);
+
+    const anon = await mercado("GET", "/legal/documentos");
+    expectError(anon, 401, null);
+    assert.equal(anon.data.error, "unauthorized");
+
+    const marca = Date.now();
+    const regCargador = await mercado("POST", "/auth/registro-cargador", {
+      body: {
+        nombre: "E2E Cargador Legal",
+        email: `e2e-cargador-${marca}@e2e.example.com`,
+        password: "e2e-clave-123",
+        telefono: "1000",
+      },
+    });
+    assert.equal(regCargador.status, 201, JSON.stringify(regCargador.data));
+    const tokenCargador = regCargador.data.token;
+    assert.ok(tokenCargador);
+    assert.equal(regCargador.data.usuario.perfil, "cargador");
+    state.mercadoUsuarioIds.push(regCargador.data.usuario.id);
+
+    const regComprador = await mercado("POST", "/auth/registro", {
+      body: {
+        nombre: "E2E Comprador Legal",
+        email: `e2e-comprador-${marca}@e2e.example.com`,
+        password: "e2e-clave-123",
+        telefono: "2000",
+        pais: "AR",
+        tipoDocumento: "DNI",
+        numeroDocumento: "30111222",
+      },
+    });
+    assert.equal(regComprador.status, 201, JSON.stringify(regComprador.data));
+    const tokenComprador = regComprador.data.token;
+    assert.ok(tokenComprador);
+    assert.equal(regComprador.data.usuario.perfil, "comprador");
+    state.mercadoUsuarioIds.push(regComprador.data.usuario.id);
+
+    const docsCargador = await mercado("GET", "/legal/documentos", { token: tokenCargador });
+    assert.equal(docsCargador.status, 200, JSON.stringify(docsCargador.data));
+    const listaCargador = docsCargador.data.documentos;
+    const idsCargador = listaCargador.map((d) => d.documentoId);
+    assert.ok(idsCargador.includes("doc_cargador"), "el cargador no ve sus términos");
+    assert.ok(idsCargador.includes("doc_privacidad"), "el cargador no ve privacidad");
+    assert.ok(!idsCargador.includes("doc_comprador"), "el cargador percibe documentos del comprador");
+    assert.ok(!idsCargador.includes("doc_saas"), "el canal no debe exponer el contrato B2B");
+    for (const doc of listaCargador) {
+      assert.ok(doc.titulo.length > 0);
+      assert.ok(Number.isInteger(doc.versionVigente) && doc.versionVigente >= 1);
+      assert.match(doc.hash, HEX64);
+      assert.ok(["pendiente", "aceptado"].includes(doc.estado));
+    }
+
+    const docsComprador = await mercado("GET", "/legal/documentos", { token: tokenComprador });
+    assert.equal(docsComprador.status, 200);
+    const idsComprador = docsComprador.data.documentos.map((d) => d.documentoId);
+    assert.ok(idsComprador.includes("doc_comprador"));
+    assert.ok(idsComprador.includes("doc_privacidad"));
+    assert.ok(!idsComprador.includes("doc_cargador"), "el comprador percibe documentos del cargador");
+
+    const docCargador = listaCargador.find((d) => d.documentoId === "doc_cargador");
+    assert.equal(docCargador.estado, "pendiente");
+    assert.equal(docCargador.tipo, "terminos");
+    const docPrivacidad = listaCargador.find((d) => d.documentoId === "doc_privacidad");
+    assert.equal(docPrivacidad.tipo, "privacidad");
+
+    const contenidoCargador = await mercado("GET", `/legal/documentos/doc_cargador`, { token: tokenCargador });
+    assert.equal(contenidoCargador.status, 200);
+    const b2 = contenidoCargador.data;
+    assert.equal(b2.documentoId, "doc_cargador");
+    assert.equal(b2.version, docCargador.versionVigente);
+    assert.equal(b2.hash, docCargador.hash);
+    assert.equal(b2.contenido.formato, "texto");
+    assert.ok(b2.contenido.valor.length > 0);
+    assert.equal(b2.miAceptacion, null, "usuario nuevo no debería tener aceptación");
+
+    const cruzado = await mercado("GET", "/legal/documentos/doc_cargador", { token: tokenComprador });
+    expectError(cruzado, 403, null);
+    assert.equal(cruzado.data.error, "perfil_invalido");
+
+    const b2bEnCanal = await mercado("GET", "/legal/documentos/doc_saas", { token: tokenCargador });
+    expectError(b2bEnCanal, 403, null);
+    assert.equal(b2bEnCanal.data.error, "perfil_invalido");
+
+    const docInexistente = await mercado("GET", "/legal/documentos/no-existe", { token: tokenCargador });
+    expectError(docInexistente, 404, null);
+    assert.equal(docInexistente.data.error, "documento_no_encontrado");
+
+    const aceptarB1 = await mercado("POST", "/legal/documentos/doc_cargador/aceptar", {
+      token: tokenCargador,
+      headers: { "idempotency-key": randomUUID() },
+      body: { version: b2.version, hash: b2.hash },
+    });
+    assert.equal(aceptarB1.status, 200, JSON.stringify(aceptarB1.data));
+    assert.equal(aceptarB1.data.documentoId, "doc_cargador");
+    assert.equal(aceptarB1.data.version, b2.version);
+    assert.equal(aceptarB1.data.estado, "aceptado");
+    assert.ok(aceptarB1.data.fecha);
+
+    const aceptarB2 = await mercado("POST", "/legal/documentos/doc_cargador/aceptar", {
+      token: tokenCargador,
+      headers: { "idempotency-key": randomUUID() },
+      body: { version: b2.version, hash: b2.hash },
+    });
+    assert.equal(aceptarB2.status, 200);
+    assert.equal(
+      aceptarB2.data.fecha,
+      aceptarB1.data.fecha,
+      "aceptar dos veces la misma versión no debe duplicar",
+    );
+
+    const hashErroneoB = await mercado("POST", "/legal/documentos/doc_cargador/aceptar", {
+      token: tokenCargador,
+      headers: { "idempotency-key": randomUUID() },
+      body: { version: b2.version, hash: "0".repeat(64) },
+    });
+    expectError(hashErroneoB, 409, null);
+    assert.equal(hashErroneoB.data.error, "hash_mismatch");
+
+    const versionBorradorB = await crearBorrador("doc_privacidad");
+    const obsoletaB = await mercado("POST", "/legal/documentos/doc_privacidad/aceptar", {
+      token: tokenCargador,
+      headers: { "idempotency-key": randomUUID() },
+      body: { version: versionBorradorB, hash: "0".repeat(64) },
+    });
+    expectError(obsoletaB, 409, null);
+    assert.equal(obsoletaB.data.error, "version_obsoleta");
+
+    const cuerpoInvalidoB = await mercado("POST", "/legal/documentos/doc_cargador/aceptar", {
+      token: tokenCargador,
+      headers: { "idempotency-key": randomUUID() },
+      body: { version: 0, hash: b2.hash },
+    });
+    expectError(cuerpoInvalidoB, 400, null);
+    assert.equal(cuerpoInvalidoB.data.error, "cuerpo_invalido");
+
+    const docsLuego = await mercado("GET", "/legal/documentos", { token: tokenCargador });
+    assert.equal(docsLuego.status, 200);
+    const docCargadorLuego = docsLuego.data.documentos.find((d) => d.documentoId === "doc_cargador");
+    assert.equal(docCargadorLuego.estado, "aceptado");
+    assert.equal(docCargadorLuego.versionAceptada, b2.version);
+    assert.ok(docCargadorLuego.fechaAceptacion);
+
+    const contenidoLuego = await mercado("GET", "/legal/documentos/doc_cargador", { token: tokenCargador });
+    assert.equal(contenidoLuego.status, 200);
+    assert.equal(contenidoLuego.data.miAceptacion.version, b2.version);
+    assert.ok(contenidoLuego.data.miAceptacion.fecha);
+
+    const docsCompradorIntactos = await mercado("GET", "/legal/documentos", { token: tokenComprador });
+    assert.equal(docsCompradorIntactos.status, 200);
+    const docCompradorAjeno = docsCompradorIntactos.data.documentos.find((d) => d.documentoId === "doc_comprador");
+    assert.equal(docCompradorAjeno.estado, "pendiente", "la aceptación de un usuario no debe afectar a otro");
   });
 });
