@@ -23,6 +23,7 @@ import {
   historialContratoForStaff,
   resumenSuscripcionForStaff,
 } from "@/lib/server/legal";
+import { canalMercadoForStaff, getMarcaForStaff, guardarCanalMercadoForStaff, guardarMarcaForStaff } from "@/lib/server/marca";
 import { dashboardResumenForStaff, listAlertasForStaff, listAuditoriaForStaff, marcarAlertaLeidaForStaff } from "@/lib/server/panel";
 import {
   getPedidoForStaff,
@@ -40,6 +41,7 @@ import {
   listRemitosForStaff,
   type CrearRemitoInput,
 } from "@/lib/server/remitos";
+import { historialProductoForStaff, rankingCargadoresForStaff, resumenVentasProductosForStaff } from "@/lib/server/reportes";
 import { ajustarStockForStaff } from "@/lib/server/stock";
 import { createUsuarioForStaff, listUsuariosForStaff, toggleUsuarioForStaff } from "@/lib/server/usuarios";
 import type { FormaPago, PedidoEstado, Rol, Staff } from "@/lib/types";
@@ -589,6 +591,56 @@ const ROUTES: Entry[] = [
       );
       return json({ data: resultado });
     },
+  },
+  {
+    method: "GET",
+    path: ["marca"],
+    handler: async ({ staff }) => json({ data: await getMarcaForStaff(staff) }),
+  },
+  {
+    method: "POST",
+    path: ["marca"],
+    handler: async ({ request, staff }) => {
+      const body = asRecord(await readJson(request));
+      const fondo = typeof body.fondo === "string" ? body.fondo : null;
+      const marca = await guardarMarcaForStaff(staff, {
+        nombre: asString(body.nombre, "nombre", 200),
+        bajada: asOptionalString(body.bajada, 80) ?? "",
+        membrete: asOptionalString(body.membrete, 240) ?? "",
+        pieTicket: asOptionalString(body.pieTicket, 240) ?? "",
+        fondo,
+      });
+      return json({ data: marca });
+    },
+  },
+  {
+    method: "GET",
+    path: ["canal-mercado"],
+    handler: async ({ staff }) => json({ data: await canalMercadoForStaff(staff) }),
+  },
+  {
+    method: "POST",
+    path: ["canal-mercado"],
+    handler: async ({ request, staff }) => {
+      const body = asRecord(await readJson(request));
+      if (typeof body.activo !== "boolean") throw new HttpError(400, "invalid_request", "activo debe ser booleano.");
+      return json({ data: await guardarCanalMercadoForStaff(staff, body.activo) });
+    },
+  },
+  {
+    method: "GET",
+    path: ["reportes", "productos"],
+    handler: async ({ staff }) => json({ data: await resumenVentasProductosForStaff(staff) }),
+  },
+  {
+    method: "GET",
+    path: ["reportes", "productos", ":", "historial"],
+    handler: async ({ segments, staff }) => json({ data: await historialProductoForStaff(staff, segments[2]) }),
+  },
+  {
+    method: "GET",
+    path: ["cargadores", "ranking"],
+    handler: async ({ staff }) => json({ data: await rankingCargadoresForStaff(staff) }),
   },
 ];
 

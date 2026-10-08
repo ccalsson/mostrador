@@ -50,6 +50,8 @@ const state = {
   foreignTenantId: null,
   legalDraftIds: [],
   mercadoUsuarioIds: [],
+  marcaNombre0: null,
+  marcaConfig0: null,
 };
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -256,6 +258,15 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
       // (h) sesiones creadas por la suite.
       if (state.tokenList.length) {
         await pool.query('delete from "session" where token = any($1::text[])', [state.tokenList]);
+      }
+
+      // (l) restaurar la marca del tenant si el test 17 la modificó.
+      if (state.marcaNombre0 !== null) {
+        await pool.query("update tenants set nombre = $1, config = $2::jsonb where id = $3", [
+          state.marcaNombre0,
+          state.marcaConfig0,
+          TENANT,
+        ]);
       }
     } finally {
       await pool.end();
@@ -1107,5 +1118,160 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
     assert.equal(docsCompradorIntactos.status, 200);
     const docCompradorAjeno = docsCompradorIntactos.data.documentos.find((d) => d.documentoId === "doc_comprador");
     assert.equal(docCompradorAjeno.estado, "pendiente", "la aceptación de un usuario no debe afectar a otro");
+  });
+
+  it("17. marca del tenant, canal mercado, reportes por producto y ranking de cargadores", async () => {
+    const admin = state.tokens.admin;
+    const cajero = state.tokens.cajero;
+    const vendedor = state.tokens.vendedor;
+
+    // Snapshot para restaurar en after(): nombre y config originales.
+    const snap = await state.pool.query("select nombre, config::text as config from tenants where id = $1", [TENANT]);
+    state.marcaNombre0 = snap.rows[0].nombre;
+    state.marcaConfig0 = snap.rows[0].config;
+
+    // GET /marca: cualquier staff autenticado lee la marca de su tenant.
+    const c0 = await api("GET", "/marca", { token: cajero });
+    assert.equal(c0.status, 200);
+    assert.equal(c0.data.data.id, TENANT);
+    assert.ok(c0.data.data.nombre.length > 0);
+    assert.ok(c0.data.data.pieTicket.length > 0);
+
+    // POST /marca: solo admin; validaciones de longitud.
+    const prohibido = await api("POST", "/marca", {
+      token: cajero,
+      body: { nombre: "No debería", bajada: "", membrete: "", pieTicket: "", fondo: null },
+    });
+    expectError(prohibido, 403, /permiso/i);
+
+    const largo = await api("POST", "/marca", {
+      token: admin,
+      body: { nombre: "x".repeat(81), bajada: "", membrete: "", pieTicket: "", fondo: null },
+    });
+    expectError(largo, 400, /largo/i);
+
+    const guardada = await api("POST", "/marca", {
+      token: admin,
+      body: {
+        nombre: c0.data.data.nombre,
+        bajada: "Mostrador E2E",
+        membrete: "Membrete E2E",
+        pieTicket: c0.data.data.pieTicket,
+        fondo: null,
+      },
+    });
+    assert.equal(guardada.status, 200, JSON.stringify(guardada.data));
+    assert.equal(guardada.data.data.bajada, "Mostrador E2E");
+    assert.equal(guardada.data.data.membrete, "Membrete E2E");
+
+    const deNuevo = await api("GET", "/marca", { token: admin });
+    assert.equal(deNuevo.status, 200);
+    assert.equal(deNuevo.data.data.bajada, "Mostrador E2E");
+
+    // Canal mercado: lectura para cualquier staff; escritura solo admin.
+    const canal0 = await api("GET", "/canal-mercado", { token: vendedor });
+    assert.equal(canal0.status, 200);
+    assert.equal(typeof canal0.data.data.activo, "boolean");
+    assert.equal(typeof canal0.data.data.presencia, "boolean");
+
+    const canalProhibido = await api("POST", "/canal-mercado", { token: cajero, body: { activo: false } });
+    expectError(canalProhibido, 403, /permiso/i);
+
+    const canalCuerpo = await api("POST", "/canal-mercado", { token: admin, body: { activo: "si" } });
+    expectError(canalCuerpo, 400, /booleano/i);
+
+    const desactivar = await api("POST", "/canal-mercado", { token: admin, body: { activo: false } });
+    assert.equal(desactivar.status, 200);
+    assert.equal(desactivar.data.data.activo, false);
+
+    if (canal0.data.data.tier) {
+      const activar = await api("POST", "/canal-mercado", { token: admin, body: { activo: true } });
+      assert.equal(activar.status, 200, JSON.stringify(activar.data));
+      assert.equal(activar.data.data.activo, true);
+      const revertir = await api("POST", "/canal-mercado", {
+        token: admin,
+        body: { activo: canal0.data.data.activo },
+      });
+      assert.equal(revertir.status, 200);
+    } else {
+      const activar = await api("POST", "/canal-mercado", { token: admin, body: { activo: true } });
+      expectError(activar, 400, /Presencia o Pro/i);
+    }
+
+    // Reportes por producto: solo admin.
+    const repCajero = await api("GET", "/reportes/productos", { token: cajero });
+    expectError(repCajero, 403, /permiso/i);
+    const repVendedor = await api("GET", "/reportes/productos", { token: vendedor });
+    expectError(repVendedor, 403, /permiso/i);
+
+    // Pedido cobrado dentro de la corrida para verificar el contenido del reporte.
+    // Los pedidos de los tests 6-9 quedaron anulados, así que el reporte no los cuenta.
+    const pedBanana = await api("POST", "/pedidos", {
+      token: vendedor,
+      body: {
+        clientUuid: `e2e-${randomUUID()}`,
+        clienteNombre: "Mostrador",
+        items: [{ productoId: state.banana.id, cantidad: 1 }],
+      },
+    });
+    assert.equal(pedBanana.status, 201);
+    const cobroBanana = await api("POST", `/pedidos/${pedBanana.data.data.id}/cobrar`, {
+      token: cajero,
+      body: { clientUuid: `e2e-${randomUUID()}`, formaPago: "efectivo" },
+    });
+    assert.equal(cobroBanana.status, 200, JSON.stringify(cobroBanana.data));
+
+    const resumen = await api("GET", "/reportes/productos", { token: admin });
+    assert.equal(resumen.status, 200);
+    assert.ok(Array.isArray(resumen.data.data.semana));
+    assert.ok(Array.isArray(resumen.data.data.mes));
+    assert.ok(resumen.data.data.semana.length <= 8);
+    for (const fila of [...resumen.data.data.semana, ...resumen.data.data.mes]) {
+      assert.ok(fila.productoId && fila.nombre);
+      assert.equal(typeof fila.cantidad, "number");
+      assert.equal(typeof fila.total, "number");
+    }
+    const filaBanana = resumen.data.data.semana.find((f) => f.productoId === state.banana.id);
+    assert.ok(filaBanana, "la banana cobrada en esta corrida debería figurar en el resumen semanal");
+    assert.ok(filaBanana.cantidad >= 1);
+    assert.ok(filaBanana.total >= state.banana.precio - 0.001);
+
+    const hist = await api("GET", `/reportes/productos/${state.banana.id}/historial`, { token: admin });
+    assert.equal(hist.status, 200);
+    assert.equal(hist.data.data.dias.length, 7);
+    const hoy = hist.data.data.dias[6];
+    assert.match(hoy.dia, /^\d{4}-\d{2}-\d{2}$/);
+    assert.ok(hoy.cantidad >= 1, `la banana cobrada en esta corrida debe figurar hoy (cantidad=${hoy.cantidad})`);
+    assert.ok(hoy.total >= state.banana.precio - 0.001);
+
+    const histAjeno = await api("GET", "/reportes/productos/prod-no-existe/historial", { token: admin });
+    assert.equal(histAjeno.status, 200);
+    assert.equal(histAjeno.data.data.dias.length, 7);
+    for (const dia of histAjeno.data.data.dias) approx(dia.cantidad, 0);
+
+    const histCajero = await api("GET", `/reportes/productos/${state.banana.id}/historial`, { token: cajero });
+    expectError(histCajero, 403, /permiso/i);
+
+    // Ranking de cargadores: solo admin; nivel derivado de mercado_niveles.
+    const rankCajero = await api("GET", "/cargadores/ranking", { token: cajero });
+    expectError(rankCajero, 403, /permiso/i);
+    const rank = await api("GET", "/cargadores/ranking", { token: admin });
+    assert.equal(rank.status, 200);
+    assert.ok(Array.isArray(rank.data.data.ranking));
+    for (const [i, fila] of rank.data.data.ranking.entries()) {
+      assert.equal(fila.puesto, i + 1);
+      assert.ok(fila.nombre.length > 0);
+      assert.ok(fila.nivel.length > 0);
+      assert.equal(typeof fila.puntos, "number");
+      assert.equal(typeof fila.score, "number");
+      assert.equal(typeof fila.recorridosCompletados, "number");
+    }
+
+    // Auditoría de las acciones sensibles del test.
+    const aud = await api("GET", "/auditoria", { token: admin });
+    assert.equal(aud.status, 200);
+    const acciones = aud.data.data.map((a) => a.accion);
+    assert.ok(acciones.includes("marca"), "falta auditoría de marca");
+    assert.ok(acciones.includes("canal_mercado"), "falta auditoría de canal_mercado");
   });
 });

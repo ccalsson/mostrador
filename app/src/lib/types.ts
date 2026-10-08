@@ -34,6 +34,15 @@ export type Tenant = {
   pieTicket: string;
 };
 
+export type Marca = {
+  id: string;
+  nombre: string;
+  bajada: string;
+  membrete: string;
+  pieTicket: string;
+  fondo: string | null;
+};
+
 export type Producto = {
   id: string;
   nombre: string;
