@@ -47,6 +47,7 @@ const state = {
   morronStock0: null,
   e2eProductoId: null,
   e2eClienteId: null,
+  e2eProveedorId: null,
   foreignTenantId: null,
   legalDraftIds: [],
   mercadoUsuarioIds: [],
@@ -215,6 +216,11 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
         if (state.e2eClienteId) {
           await pool.query("delete from cuenta_movimientos where cliente_id = $1", [state.e2eClienteId]);
           await pool.query("delete from clientes where id = $1 and tenant_id = $2", [state.e2eClienteId, t]);
+        }
+
+        // (h) proveedor de prueba (los remitos de la corrida ya se borraron en (c)).
+        if (state.e2eProveedorId) {
+          await pool.query("delete from proveedores where id = $1 and tenant_id = $2", [state.e2eProveedorId, t]);
         }
 
         // (g) tenant ajeno de la prueba de aislamiento.
@@ -1391,5 +1397,170 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
     const acciones = auditoria.data.data.map((a) => a.accion);
     assert.ok(acciones.includes("editar_cliente"), "falta auditoría de edición de cliente");
     assert.ok(acciones.includes("pago_cuenta"), "falta auditoría de pago de cuenta");
+  });
+
+  it("19. proveedores: CRUD, productos vinculados y asignación a remito", async () => {
+    // Listado: admin/cajero sí, vendedor no.
+    const listadoNegado = await api("GET", "/proveedores", { token: state.tokens.vendedor });
+    expectError(listadoNegado, 403, /permiso/i);
+
+    const listado0 = await api("GET", "/proveedores", { token: state.tokens.cajero });
+    assert.equal(listado0.status, 200);
+    assert.ok(Array.isArray(listado0.data.data));
+
+    // Alta: solo admin, con nombre obligatorio.
+    const altaNegada = await api("POST", "/proveedores", {
+      token: state.tokens.cajero,
+      body: { nombre: "Proveedor E2E 19" },
+    });
+    expectError(altaNegada, 403, /permiso/i);
+
+    const altaVacia = await api("POST", "/proveedores", {
+      token: state.tokens.admin,
+      body: { nombre: "" },
+    });
+    expectError(altaVacia, 400, /obligatorio/i);
+
+    const alta = await api("POST", "/proveedores", {
+      token: state.tokens.admin,
+      body: {
+        nombre: "Proveedor E2E 19",
+        cuit: "30999888777",
+        telefono: "1155554444",
+        email: "proveedor-e2e@example.com",
+        direccion: "Av. E2E 456",
+        observaciones: "Alta de prueba",
+      },
+    });
+    assert.equal(alta.status, 201, JSON.stringify(alta.data));
+    state.e2eProveedorId = alta.data.data.id;
+    assert.ok(state.e2eProveedorId);
+
+    const listado = await api("GET", "/proveedores", { token: state.tokens.cajero });
+    assert.equal(listado.status, 200);
+    const creado = listado.data.data.find((p) => p.id === state.e2eProveedorId);
+    assert.ok(creado, "el proveedor creado debe figurar en el listado");
+    assert.equal(creado.nombre, "Proveedor E2E 19");
+    assert.equal(creado.activo, true);
+
+    // Edición: solo admin, activo booleano obligatorio, verifica existencia.
+    const editarNegado = await api("POST", `/proveedores/${state.e2eProveedorId}`, {
+      token: state.tokens.cajero,
+      body: { nombre: "X", activo: true },
+    });
+    expectError(editarNegado, 403, /permiso/i);
+
+    const sinActivo = await api("POST", `/proveedores/${state.e2eProveedorId}`, {
+      token: state.tokens.admin,
+      body: { nombre: "Proveedor E2E 19" },
+    });
+    expectError(sinActivo, 400, /booleano/i);
+
+    const inexistente = await api("POST", "/proveedores/prv-no-existe", {
+      token: state.tokens.admin,
+      body: { nombre: "Nadie", activo: true },
+    });
+    expectError(inexistente, 400, /no encontrado/i);
+
+    const editar = await api("POST", `/proveedores/${state.e2eProveedorId}`, {
+      token: state.tokens.admin,
+      body: {
+        nombre: "Proveedor E2E 19 Editado",
+        cuit: "30999888777",
+        telefono: "1166665555",
+        activo: true,
+      },
+    });
+    assert.equal(editar.status, 200, JSON.stringify(editar.data));
+    assert.equal(editar.data.data.ok, true);
+
+    const fila = await state.pool.query(
+      "select nombre, telefono, cuit, activo from proveedores where id = $1 and tenant_id = $2",
+      [state.e2eProveedorId, TENANT],
+    );
+    assert.equal(fila.rows[0].nombre, "Proveedor E2E 19 Editado");
+    assert.equal(fila.rows[0].telefono, "1166665555");
+    assert.equal(fila.rows[0].cuit, "30999888777");
+    assert.equal(fila.rows[0].activo, true);
+
+    // Productos vinculados: solo admin.
+    const productosNegado = await api("GET", `/proveedores/${state.e2eProveedorId}/productos`, {
+      token: state.tokens.cajero,
+    });
+    expectError(productosNegado, 403, /permiso/i);
+
+    const productos0 = await api("GET", `/proveedores/${state.e2eProveedorId}/productos`, {
+      token: state.tokens.admin,
+    });
+    assert.equal(productos0.status, 200);
+    assert.deepEqual(productos0.data.data.productos, []);
+
+    // Asignación a remito: admin/cajero; proveedor activo; remito existente.
+    const remitoNuevo = await api("POST", "/remitos", {
+      token: state.tokens.cajero,
+      body: {
+        fuente: "manual",
+        lineas: [{ descripcion: state.banana.nombre, cantidad: 2 }],
+      },
+    });
+    assert.equal(remitoNuevo.status, 201, JSON.stringify(remitoNuevo.data));
+
+    const asignar = await api("POST", `/remitos/${remitoNuevo.data.data.id}/proveedor`, {
+      token: state.tokens.cajero,
+      body: { proveedorId: state.e2eProveedorId },
+    });
+    assert.equal(asignar.status, 200, JSON.stringify(asignar.data));
+    assert.equal(asignar.data.data.ok, true);
+
+    const remito = await api("GET", `/remitos/${remitoNuevo.data.data.id}`, { token: state.tokens.cajero });
+    assert.equal(remito.status, 200);
+    assert.equal(remito.data.data.proveedor_id, state.e2eProveedorId);
+    assert.equal(remito.data.data.proveedor, "Proveedor E2E 19 Editado");
+
+    // Con proveedor inactivo se rechaza y el remito queda como estaba.
+    const baja = await api("POST", `/proveedores/${state.e2eProveedorId}`, {
+      token: state.tokens.admin,
+      body: { nombre: "Proveedor E2E 19 Editado", activo: false },
+    });
+    assert.equal(baja.status, 200, JSON.stringify(baja.data));
+
+    const asignarInactivo = await api("POST", `/remitos/${remitoNuevo.data.data.id}/proveedor`, {
+      token: state.tokens.admin,
+      body: { proveedorId: state.e2eProveedorId },
+    });
+    expectError(asignarInactivo, 400, /activo/i);
+
+    const remitoTrasRechazo = await api("GET", `/remitos/${remitoNuevo.data.data.id}`, {
+      token: state.tokens.cajero,
+    });
+    assert.equal(remitoTrasRechazo.data.data.proveedor_id, state.e2eProveedorId, "rechazo no debe tocar el remito");
+
+    const reactivar = await api("POST", `/proveedores/${state.e2eProveedorId}`, {
+      token: state.tokens.admin,
+      body: { nombre: "Proveedor E2E 19 Editado", activo: true },
+    });
+    assert.equal(reactivar.status, 200, JSON.stringify(reactivar.data));
+
+    const remitoInexistente = await api("POST", "/remitos/rem-no-existe/proveedor", {
+      token: state.tokens.admin,
+      body: { proveedorId: state.e2eProveedorId },
+    });
+    expectError(remitoInexistente, 400, /no encontrado/i);
+
+    // Productos vinculados tras la asignación (la línea matcheó la banana).
+    const productos = await api("GET", `/proveedores/${state.e2eProveedorId}/productos`, {
+      token: state.tokens.admin,
+    });
+    assert.equal(productos.status, 200);
+    assert.ok(
+      productos.data.data.productos.includes(state.banana.nombre),
+      "debe listar la banana del remito asignado",
+    );
+
+    const auditoria = await api("GET", "/auditoria", { token: state.tokens.admin });
+    assert.equal(auditoria.status, 200);
+    const acciones = auditoria.data.data.map((a) => a.accion);
+    assert.ok(acciones.includes("alta_proveedor"), "falta auditoría de alta de proveedor");
+    assert.ok(acciones.includes("editar_proveedor"), "falta auditoría de edición de proveedor");
   });
 });

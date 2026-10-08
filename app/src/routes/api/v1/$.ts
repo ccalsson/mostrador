@@ -34,6 +34,13 @@ import {
 } from "@/lib/server/pedidos";
 import { ordenarProductosForStaff, quitarProductoForStaff, saveProductoForStaff, type SaveProductoInput } from "@/lib/server/productos";
 import {
+  asignarProveedorRemitoForStaff,
+  createProveedorForStaff,
+  listProveedoresForStaff,
+  productosDelProveedorForStaff,
+  updateProveedorForStaff,
+} from "@/lib/server/proveedores";
+import {
   actualizarRemitoItemForStaff,
   confirmarRemitoForStaff,
   crearRemitoForStaff,
@@ -512,6 +519,65 @@ const ROUTES: Entry[] = [
     method: "POST",
     path: ["remitos", ":", "confirmar"],
     handler: async ({ segments, staff }) => json({ data: await confirmarRemitoForStaff(staff, segments[1]) }),
+  },
+  {
+    method: "GET",
+    path: ["proveedores"],
+    handler: async ({ staff }) => json({ data: await listProveedoresForStaff(staff) }),
+  },
+  {
+    method: "POST",
+    path: ["proveedores"],
+    handler: async ({ request, staff }) => {
+      const body = asRecord(await readJson(request));
+      const proveedor = await createProveedorForStaff(staff, {
+        nombre: asString(body.nombre, "nombre", 120),
+        cuit: asOptionalString(body.cuit, 20),
+        telefono: asOptionalString(body.telefono, 40),
+        email: asOptionalString(body.email, 120),
+        direccion: asOptionalString(body.direccion, 200),
+        observaciones: asOptionalString(body.observaciones, 300),
+      });
+      return json({ data: proveedor }, { status: 201 });
+    },
+  },
+  {
+    method: "POST",
+    path: ["proveedores", ":"],
+    handler: async ({ request, segments, staff }) => {
+      const body = asRecord(await readJson(request));
+      if (typeof body.activo !== "boolean") throw new HttpError(400, "invalid_request", "activo debe ser booleano.");
+      return json({
+        data: await updateProveedorForStaff(staff, segments[1], {
+          nombre: asString(body.nombre, "nombre", 120),
+          cuit: asOptionalString(body.cuit, 20),
+          telefono: asOptionalString(body.telefono, 40),
+          email: asOptionalString(body.email, 120),
+          direccion: asOptionalString(body.direccion, 200),
+          observaciones: asOptionalString(body.observaciones, 300),
+          activo: body.activo,
+        }),
+      });
+    },
+  },
+  {
+    method: "GET",
+    path: ["proveedores", ":", "productos"],
+    handler: async ({ segments, staff }) => json({ data: await productosDelProveedorForStaff(staff, segments[1]) }),
+  },
+  {
+    method: "POST",
+    path: ["remitos", ":", "proveedor"],
+    handler: async ({ request, segments, staff }) => {
+      const body = asRecord(await readJson(request));
+      return json({
+        data: await asignarProveedorRemitoForStaff(
+          staff,
+          segments[1],
+          asString(body.proveedorId, "proveedorId", 80),
+        ),
+      });
+    },
   },
   {
     method: "GET",
