@@ -171,6 +171,19 @@ async function main() {
   const puestos = await mercadoApi("/puestos", { token: buyerToken });
   const puesto = (puestos.json?.puestos ?? []).find((p) => p.id === tenant.id);
   assert(puestos.status === 200 && Boolean(puesto), "A. puestos lista el tenant", JSON.stringify(puestos.json));
+  assert(
+    ["presencia", "pro"].includes(puesto.tier),
+    "A. puesto expone tier de Torre",
+    String(puesto.tier),
+  );
+  const bajadaDb = (
+    await sqlRows(`select config->>'bajada' as bajada from tenants where id = $1`, [tenant.id])
+  )[0];
+  assert(
+    (puesto.bajada ?? null) === (bajadaDb?.bajada ?? null),
+    "A. bajada coincide con config.bajada",
+    `${puesto.bajada} vs ${bajadaDb?.bajada}`,
+  );
 
   // ---------- B. PRODUCTOS PUBLICADOS ----------
   const catalogo = await mercadoApi(`/puestos/${tenant.id}/productos`, { token: buyerToken });
@@ -350,6 +363,11 @@ async function main() {
     (c) => c.id === courierAuth.usuario.id,
   );
   assert(Boolean(enLista), "G. cargador visible y disponible", JSON.stringify(listaCargadores.json).slice(0, 300));
+  assert(
+    enLista.nombre === "Cargador" && enLista.nombre !== "Cargador E2E",
+    "G. nombre anonimizado (primer nombre)",
+    String(enLista.nombre),
+  );
 
   const recorrido = await mercadoApi("/recorridos", {
     method: "POST",
@@ -385,6 +403,11 @@ async function main() {
   )[0];
   assert(Boolean(picked?.t), "G. pedidos.picked_up_at escrito", String(picked?.t));
 
+  const puntosAntes = (
+    await sqlRows(`select puntos::int as p from mercado_cargadores where id = $1`, [
+      courierAuth.usuario.id,
+    ])
+  )[0]?.p;
   const entregar = await mercadoApi(`/recorridos/${rec.id}/entregar`, {
     method: "POST",
     token: courierToken,
@@ -401,11 +424,41 @@ async function main() {
   );
   const punto = (
     await sqlRows(
-      `select puntos::int as p from mercado_punto_movimientos where recorrido_id = $1 and motivo = 'recorrido_entregado'`,
+      `select puntos::int as p, count(*)::int as n
+       from mercado_punto_movimientos
+       where recorrido_id = $1 and motivo = 'recorrido_entregado'
+       group by puntos`,
       [rec.id],
     )
   )[0];
-  assert(punto?.p === 1, "G. punto por recorrido entregado", String(punto?.p));
+  assert(punto?.p === 10, "G. regla recorrido_entregado otorga +10", String(punto?.p));
+  assert(punto?.n === 1, "G. movimiento único por recorrido y motivo", String(punto?.n));
+  const puntosDespues = (
+    await sqlRows(`select puntos::int as p from mercado_cargadores where id = $1`, [
+      courierAuth.usuario.id,
+    ])
+  )[0]?.p;
+  assert(
+    puntosDespues === puntosAntes + 10,
+    "G. puntos del cargador +10",
+    `${puntosAntes} -> ${puntosDespues}`,
+  );
+  const listaNivel = await mercadoApi("/cargadores", { token: buyerToken });
+  const nivelVisto = (listaNivel.json?.cargadores ?? []).find(
+    (c) => c.id === courierAuth.usuario.id,
+  )?.nivel;
+  const nivelEsperado = (
+    await sqlRows(
+      `select nombre from mercado_niveles where puntos_minimos <= $1
+       order by puntos_minimos desc limit 1`,
+      [puntosDespues],
+    )
+  )[0]?.nombre;
+  assert(
+    nivelVisto === (nivelEsperado ?? "Inicial"),
+    "G. nivel derivado según puntos sembrados",
+    `${nivelVisto} vs ${nivelEsperado}`,
+  );
 
   // ---------- H. CALIFICACIÓN Y ESTADO COMPRADOR FINAL ----------
   const calificar = await mercadoApi(`/recorridos/${rec.id}/calificar`, {
@@ -418,6 +471,24 @@ async function main() {
     "H. recorrido calificado",
     JSON.stringify(calificar.json).slice(0, 200),
   );
+  const califPunto = (
+    await sqlRows(
+      `select puntos::int as p from mercado_punto_movimientos
+       where recorrido_id = $1 and motivo = 'buena_calificacion'`,
+      [rec.id],
+    )
+  )[0];
+  assert(califPunto?.p === 5, "H. buena calificación (5★) otorga +5", String(califPunto?.p));
+  const puntosPostCalif = (
+    await sqlRows(`select puntos::int as p from mercado_cargadores where id = $1`, [
+      courierAuth.usuario.id,
+    ])
+  )[0]?.p;
+  assert(
+    puntosPostCalif === puntosDespues + 5,
+    "H. puntos acumulan +5 tras calificar",
+    `${puntosDespues} -> ${puntosPostCalif}`,
+  );
 
   const final = await mercadoApi(`/pedidos/${pedido.id}`, { token: buyerToken });
   const fp = final.json?.pedido;
@@ -425,6 +496,125 @@ async function main() {
   const listado = await mercadoApi("/pedidos", { token: buyerToken });
   const enListado = (listado.json?.pedidos ?? []).find((p) => p.id === pedido.id);
   assert(enListado?.estado === "entregado", "H. listado comprador incluye el pedido");
+
+  // ---------- J. RECHAZO DEL CARGADOR (penalización y re-asignación) ----------
+  const catalogoJ = await mercadoApi(`/puestos/${tenant.id}/productos`, { token: buyerToken });
+  const conStock = (catalogoJ.json?.productos ?? []).filter((p) => Number(p.disponible) >= 1);
+  if (conStock.length === 0) {
+    console.log("[SKIP] J. sin stock publicado para probar el rechazo");
+  } else {
+    const itemJ = conStock[0];
+    const checkoutJ = await mercadoApi("/pedidos", {
+      method: "POST",
+      token: buyerToken,
+      key: `e2e-j-${Date.now()}`,
+      body: {
+        medioPago: "efectivo",
+        nota: "e2e rechazo",
+        items: [{ tenantId: tenant.id, productoId: itemJ.id, cantidad: 1 }],
+      },
+    });
+    assert(
+      checkoutJ.status === 201,
+      "J. checkout del segundo pedido",
+      JSON.stringify(checkoutJ.json).slice(0, 300),
+    );
+    const pedidoJ = checkoutJ.json?.pedidos?.[0];
+    const prepJ = await v1Api(`/pedidos/${pedidoJ.id}/estado`, {
+      method: "POST",
+      token: staffToken,
+      body: { estado: "en_preparacion" },
+    });
+    assert(prepJ.status === 200, "J. staff en_preparacion", JSON.stringify(prepJ.json).slice(0, 200));
+    const listoJ = await v1Api(`/pedidos/${pedidoJ.id}/estado`, {
+      method: "POST",
+      token: staffToken,
+      body: { estado: "listo" },
+    });
+    assert(listoJ.status === 200, "J. staff listo", JSON.stringify(listoJ.json).slice(0, 200));
+    const puntosPreRechazo = (
+      await sqlRows(`select puntos::int as p from mercado_cargadores where id = $1`, [
+        courierAuth.usuario.id,
+      ])
+    )[0]?.p;
+    const recJ = await mercadoApi("/recorridos", {
+      method: "POST",
+      token: buyerToken,
+      key: `e2e-recj-${Date.now()}`,
+      body: { cargadorId: courierAuth.usuario.id, pedidoIds: [pedidoJ.id] },
+    });
+    assert(
+      recJ.status === 201,
+      "J. recorrido creado para rechazo",
+      JSON.stringify(recJ.json).slice(0, 300),
+    );
+    const recjId = recJ.json?.recorrido?.id;
+    const rechazo = await mercadoApi(`/recorridos/${recjId}/rechazar`, {
+      method: "POST",
+      token: courierToken,
+      key: `e2e-rech-${Date.now()}`,
+    });
+    assert(
+      rechazo.status === 200 && rechazo.json?.recorrido?.estado === "rechazado",
+      "J. recorrido rechazado",
+      JSON.stringify(rechazo.json).slice(0, 300),
+    );
+    const paradasJ = (
+      await sqlRows(
+        `select count(*)::int as n from mercado_recorrido_pedidos where recorrido_id = $1`,
+        [recjId],
+      )
+    )[0]?.n;
+    assert(paradasJ === 0, "J. paradas liberadas al rechazar", String(paradasJ));
+    const movCancel = (
+      await sqlRows(
+        `select puntos::int as p from mercado_punto_movimientos
+         where recorrido_id = $1 and motivo = 'cancelacion'`,
+        [recjId],
+      )
+    )[0];
+    assert(movCancel?.p === -20, "J. regla cancelacion penaliza -20", String(movCancel?.p));
+    const puntosPostRechazo = (
+      await sqlRows(`select puntos::int as p from mercado_cargadores where id = $1`, [
+        courierAuth.usuario.id,
+      ])
+    )[0]?.p;
+    assert(
+      puntosPostRechazo === puntosPreRechazo - 20,
+      "J. puntos del cargador -20",
+      `${puntosPreRechazo} -> ${puntosPostRechazo}`,
+    );
+    const reasignar = await mercadoApi("/recorridos", {
+      method: "POST",
+      token: buyerToken,
+      key: `e2e-recj2-${Date.now()}`,
+      body: { cargadorId: courierAuth.usuario.id, pedidoIds: [pedidoJ.id] },
+    });
+    assert(
+      reasignar.status === 201,
+      "J. pedido liberado: el comprador puede reasignar",
+      JSON.stringify(reasignar.json).slice(0, 300),
+    );
+    const recj2Id = reasignar.json?.recorrido?.id;
+    const rechazo2 = await mercadoApi(`/recorridos/${recj2Id}/rechazar`, {
+      method: "POST",
+      token: courierToken,
+      key: `e2e-rech2-${Date.now()}`,
+    });
+    assert(
+      rechazo2.status === 200,
+      "J. segundo recorrido también rechazable",
+      JSON.stringify(rechazo2.json).slice(0, 200),
+    );
+    const movCancel2 = (
+      await sqlRows(
+        `select count(*)::int as n from mercado_punto_movimientos
+         where cargador_id = $1 and motivo = 'cancelacion'`,
+        [courierAuth.usuario.id],
+      )
+    )[0]?.n;
+    assert(movCancel2 >= 2, "J. cada rechazo registra su penalización", String(movCancel2));
+  }
 
   console.log(
     `\n[resumen] corrida completa — pedido ${pedido.id}, recorrido ${rec.id}, fallos: ${failures}`,
