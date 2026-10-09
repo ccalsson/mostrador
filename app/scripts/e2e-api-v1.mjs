@@ -12,7 +12,8 @@
 // mensajería del pedido, portal de clientes (registro, catálogo, pedidos
 // propios, comprobante y mensajes) y Mercado al Toque (avisos públicos,
 // cancelación de pedido con restitución de reserva y condición comercial
-// congelada en pedidos.condicion).
+// congelada en pedidos.condicion), más acceso cruzado denegado (staff y
+// compradores de un tenant/usuario contra recursos ajenos).
 // Los datos que crea se limpian en `after` tomando el reloj de la base
 // (runStart) como referencia, para no tocar el seed demo. Las versiones
 // publicadas y las aceptaciones legales son inmutables por diseño (trigger
@@ -2556,5 +2557,175 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
     });
     const body503 = expectError(sinKey, 503, /lector de fotos/i);
     assert.equal(body503.error, "ocr_unavailable");
+  });
+
+  it("25. acceso cruzado: staff y compradores no alcanzan recursos ajenos (F9)", async () => {
+    const mercado = (method, path, opts) => request(method, `/api/mercado/v1${path}`, opts);
+    const stamp = Date.now();
+    const marca = `f9x-${stamp}`;
+
+    // Fixtures de OTRO tenant: cliente, remito e ítem ajenos.
+    const foreignTenant = `e2e-xtenant-${stamp}`;
+    const foreignCliente = `cli-${randomUUID()}`;
+    const foreignRemito = `rem-${randomUUID()}`;
+    const foreignItem = `rit-${randomUUID()}`;
+    await state.pool.query("insert into tenants (id, nombre) values ($1, $2)", [foreignTenant, "E2E X-Tenant"]);
+    await state.pool.query("insert into clientes (id, tenant_id, nombre) values ($1, $2, $3)", [
+      foreignCliente,
+      foreignTenant,
+      "Cliente Ajeno",
+    ]);
+    await state.pool.query(
+      "insert into remitos (id, tenant_id, proveedor, fuente, estado) values ($1, $2, $3, $4, $5)",
+      [foreignRemito, foreignTenant, "Prov Ajeno", "manual", "pendiente"],
+    );
+    await state.pool.query(
+      "insert into remito_items (id, remito_id, descripcion_original, cantidad, confirmado) values ($1, $2, $3, $4, $5)",
+      [foreignItem, foreignRemito, "Bulto ajeno", 3, false],
+    );
+
+    // El canal Mercado puede quedar apagado por el test 17: se enciende y se
+    // restaura la config previa al terminar (mismo patrón que el test 23).
+    const canalSnap = await state.pool.query("select config::text as config from tenants where id = $1", [TENANT]);
+    const configCanalPrevio = canalSnap.rows[0].config;
+    const configCanal = JSON.parse(configCanalPrevio ?? "{}");
+    configCanal.mercadoAlToque = "true";
+    await state.pool.query("update tenants set config = $1::jsonb where id = $2", [
+      JSON.stringify(configCanal),
+      TENANT,
+    ]);
+
+    const prod = await state.pool.query(
+      "select id, stock, publicado_online from productos where tenant_id = $1 and activo = true order by stock desc limit 1",
+      [TENANT],
+    );
+    assert.ok(prod.rows[0], "el tenant no tiene productos activos para la prueba");
+    const productoId = prod.rows[0].id;
+    const publicadoPrevio = prod.rows[0].publicado_online;
+    await state.pool.query("update productos set publicado_online = true where id = $1", [productoId]);
+
+    const png1x1 =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const altaComprador = async (sufijo, nombre, telefono, dni) => {
+      const reg = await mercado("POST", "/auth/registro", {
+        body: {
+          nombre,
+          email: `e2e-${marca}-${sufijo}@e2e.example.com`,
+          password: "e2e-clave-123",
+          telefono,
+          pais: "AR",
+          tipoDocumento: "DNI",
+          numeroDocumento: dni,
+        },
+      });
+      assert.equal(reg.status, 201, JSON.stringify(reg.data));
+      state.mercadoUsuarioIds.push(reg.data.usuario.id);
+      const doc = await mercado("POST", "/identidad", {
+        token: reg.data.token,
+        body: {
+          pais: "AR",
+          tipoDocumento: "DNI",
+          numeroDocumento: dni,
+          documentoBase64: png1x1,
+          selfieBase64: png1x1,
+        },
+      });
+      assert.equal(doc.status, 200, JSON.stringify(doc.data));
+      return reg.data.token;
+    };
+
+    let pedidoA = null;
+    try {
+      // STAFF x TENANT: el cliente ajeno no se expone ni se opera.
+      const clientes = await api("GET", "/clientes", { token: state.tokens.admin });
+      assert.equal(clientes.status, 200, JSON.stringify(clientes.data));
+      assert.ok(clientes.data.data.every((c) => c.id !== foreignCliente), "el listado de clientes filtró tenant");
+
+      // La cuenta del cliente ajeno responde 200 vacío (las queries filtran
+      // por tenant, igual que repoweb): lo importante es que no filtra datos.
+      const cuentaAjena = await api("GET", `/clientes/${foreignCliente}/cuenta`, { token: state.tokens.admin });
+      assert.equal(cuentaAjena.status, 200, JSON.stringify(cuentaAjena.data));
+      assert.equal(cuentaAjena.data.data.saldo, 0);
+      assert.deepEqual(cuentaAjena.data.data.movimientos, [], "la cuenta ajena no expone movimientos");
+      const editAjeno = await api("POST", `/clientes/${foreignCliente}`, {
+        token: state.tokens.admin,
+        body: { nombre: "Hackeado", cuentaCorriente: false, activo: true, condicionIva: "consumidor_final" },
+      });
+      expectError(editAjeno, 400, /no encontrado/i);
+      const pagoAjeno = await api("POST", `/clientes/${foreignCliente}/pagos`, {
+        token: state.tokens.admin,
+        body: { monto: 100 },
+      });
+      expectError(pagoAjeno, 400, /no encontrado/i);
+      const clienteIntacto = await state.pool.query("select nombre from clientes where id = $1", [foreignCliente]);
+      assert.equal(clienteIntacto.rows[0].nombre, "Cliente Ajeno", "el cliente ajeno quedó intacto");
+
+      // STAFF x TENANT: el remito ajeno no se lee, se edita ni se confirma.
+      expectError(await api("GET", `/remitos/${foreignRemito}`, { token: state.tokens.admin }), 404, /no encontrado/i);
+
+      const itemAjeno = await api("POST", "/remitos/items", {
+        token: state.tokens.admin,
+        body: { id: foreignItem, productoId: state.banana.id, cantidad: 99, confirmado: true },
+      });
+      expectError(itemAjeno, 400, /no encontrado/i);
+      const itemIntacto = await state.pool.query(
+        "select producto_id, cantidad::int as cantidad, confirmado from remito_items where id = $1",
+        [foreignItem],
+      );
+      assert.deepEqual(
+        { producto_id: itemIntacto.rows[0].producto_id, cantidad: itemIntacto.rows[0].cantidad, confirmado: itemIntacto.rows[0].confirmado },
+        { producto_id: null, cantidad: 3, confirmado: false },
+        "el ítem del remito ajeno quedó intacto",
+      );
+
+      expectError(
+        await api("POST", `/remitos/${foreignRemito}/confirmar`, { token: state.tokens.admin }),
+        400,
+        /no encontrado/i,
+      );
+      const remitoIntacto = await state.pool.query("select estado from remitos where id = $1", [foreignRemito]);
+      assert.equal(remitoIntacto.rows[0].estado, "pendiente", "el remito ajeno quedó intacto");
+
+      // MERCADO x COMPRADOR: B no lee el pedido de A ni lo ve en su listado.
+      const dniA = String(stamp).slice(-8);
+      const dniB = `9${String(stamp).slice(-7)}`;
+      const tokenA = await altaComprador("a", "E2E F9x Comprador A", "3100", dniA);
+      const tokenB = await altaComprador("b", "E2E F9x Comprador B", "3101", dniB);
+
+      const creado = await mercado("POST", "/pedidos", {
+        token: tokenA,
+        headers: { "idempotency-key": `${marca}-pedido` },
+        body: { medioPago: "transferencia", items: [{ tenantId: TENANT, productoId, cantidad: 1 }] },
+      });
+      assert.equal(creado.status, 201, JSON.stringify(creado.data));
+      pedidoA = creado.data.pedidos[0];
+
+      const detallePropio = await mercado("GET", `/pedidos/${pedidoA.id}`, { token: tokenA });
+      assert.equal(detallePropio.status, 200, "A sí lee su propio pedido");
+
+      const detalleAjeno = await mercado("GET", `/pedidos/${pedidoA.id}`, { token: tokenB });
+      expectError(detalleAjeno, 404, /no encontrado/i);
+
+      const listaB = await mercado("GET", "/pedidos", { token: tokenB });
+      assert.equal(listaB.status, 200, JSON.stringify(listaB.data));
+      assert.ok(
+        (listaB.data.pedidos ?? []).every((p) => p.id !== pedidoA.id),
+        "el listado de B no incluye el pedido de A",
+      );
+
+      // Limpieza del pedido de A: se cancela y restituye la reserva.
+      const cancelA = await mercado("POST", `/pedidos/${pedidoA.id}/cancelar`, { token: tokenA });
+      assert.equal(cancelA.status, 200, JSON.stringify(cancelA.data));
+      pedidoA = null;
+    } finally {
+      await state.pool.query("update tenants set config = $1::jsonb where id = $2", [configCanalPrevio, TENANT]);
+      await state.pool.query("delete from remito_items where id = $1", [foreignItem]);
+      await state.pool.query("delete from remitos where id = $1", [foreignRemito]);
+      await state.pool.query("delete from clientes where id = $1", [foreignCliente]);
+      await state.pool.query("delete from tenants where id = $1", [foreignTenant]);
+      await state.pool
+        .query("update productos set publicado_online = $1 where id = $2", [publicadoPrevio, productoId])
+        .catch(() => {});
+    }
   });
 });
