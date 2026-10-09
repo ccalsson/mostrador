@@ -143,6 +143,30 @@ its orders for reassignment.
 Repeating a completed rating returns `409 already_rated`; a database-level
 uniqueness conflict returns `409 conflict`.
 
+### Points, levels, and score
+
+Courier gamification is configuration-driven (migration 0017 seeds both
+tables). `mercado_punto_reglas`:
+
+| regla | puntos | cuándo se otorga |
+| --- | --- | --- |
+| `recorrido_entregado` | +10 | el recorrido entrega su última parada |
+| `buena_calificacion` | +5 | el comprador califica con 4 o 5 estrellas |
+| `cancelacion` | −20 | el cargador rechaza un recorrido asignado |
+
+Each award inserts one `mercado_punto_movimientos` row; the unique index on
+`(cargador_id, recorrido_id, motivo)` keeps awards idempotent per route and
+motive. `mercado_niveles` seeds Inicial 0, Bronce 50, Plata 150, Oro 400,
+Elite 800; `GET /cargadores` and `GET /ranking` derive the level from total
+points (nothing is persisted on the courier row). Rejecting a route deletes
+its stops, so the buyer can immediately reassign those orders.
+
+Known divergence from the legacy web client: the legacy score formula
+weights average rating, completed routes, on-time deliveries, and
+cancellations; this API keeps `score` as the simple average of ratings.
+The legacy `entrega_a_tiempo` award relies on a per-rule time limit that
+this schema does not store.
+
 ## Flutter app
 
 The independent Android application is in `clients/mercado_flutter`. From

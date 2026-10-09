@@ -993,6 +993,22 @@ export async function listRoutes(actor: MercadoActor) {
   return { recorridos };
 }
 
+async function sumarPuntosMotivo(tx: Sql, cargadorId: string, motivo: string, referencia: string) {
+  const reglas = await tx<{ puntos: number }>`
+    select puntos from mercado_punto_reglas where regla = ${motivo} limit 1
+  `;
+  const puntos = reglas[0]?.puntos;
+  if (puntos == null) return;
+  const inserted = await tx<{ id: string }>`
+    insert into mercado_punto_movimientos (id, cargador_id, recorrido_id, puntos, motivo)
+    values (${newId("mpm")}, ${cargadorId}, ${referencia}, ${puntos}, ${motivo})
+    on conflict (cargador_id, recorrido_id, motivo) do nothing
+    returning id
+  `;
+  if (!inserted[0]) return;
+  await tx`update mercado_cargadores set puntos = puntos + ${puntos} where id = ${cargadorId}`;
+}
+
 async function assertCourierRoute(tx: Sql, actor: MercadoActor, routeId: string) {
   assertPerfil(actor, "cargador", "Solo el cargador puede operar recorridos.");
   const rows = await tx<{ id: string; estado: string }>`
@@ -1025,6 +1041,7 @@ export async function changeRoute(
     } else {
       await tx`update mercado_recorridos set estado = 'rechazado' where id = ${routeId}`;
       await tx`delete from mercado_recorrido_pedidos where recorrido_id = ${routeId}`;
+      await sumarPuntosMotivo(tx, actor.id, "cancelacion", routeId);
     }
     await auditMercado(
       tx,
@@ -1096,11 +1113,7 @@ export async function updateStop(
       `;
       if (num(remaining[0]?.n) === 0) {
         await tx`update mercado_recorridos set estado = 'entregado', delivered_at = now() where id = ${routeId}`;
-        await tx`
-          insert into mercado_punto_movimientos (id, cargador_id, recorrido_id, puntos, motivo)
-          values (${newId("mpm")}, ${actor.id}, ${routeId}, ${1}, ${"recorrido_entregado"})
-        `;
-        await tx`update mercado_cargadores set puntos = puntos + 1 where id = ${actor.id}`;
+        await sumarPuntosMotivo(tx, actor.id, "recorrido_entregado", routeId);
       }
       await auditMercado(tx, actor, "mercado_parada_entregada", stop.tenant_id, { id: routeId, pedidoId });
     }
@@ -1150,6 +1163,7 @@ export async function rateRoute(
       ), 0)
       where c.id = ${route.cargador_id}
     `;
+    if (stars >= 4) await sumarPuntosMotivo(tx, route.cargador_id, "buena_calificacion", routeId);
     await auditMercado(tx, actor, "mercado_recorrido_calificado", "mercado", {
       id: routeId,
       estrellas: stars,
