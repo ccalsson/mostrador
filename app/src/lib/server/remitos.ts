@@ -217,11 +217,14 @@ export async function actualizarRemitoItemForStaff(
 ) {
   assertRole(staff, ["admin", "cajero"]);
   const sql = await getSql();
-  await sql`
+  const rows = await sql<{ id: string }>`
     update remito_items
     set producto_id = ${input.productoId}, cantidad = ${input.cantidad}, confirmado = ${input.confirmado}
     where id = ${input.id}
+      and remito_id in (select id from remitos where tenant_id = ${staff.tenantId})
+    returning id
   `;
+  if (!rows[0]) throw new Error("Remito no encontrado.");
   return { ok: true as const };
 }
 
