@@ -28,6 +28,7 @@ type ProductoRow = {
   stock_minimo: unknown;
   alias: unknown;
   activo: boolean;
+  publicado_online?: unknown;
   orden?: unknown;
 };
 
@@ -35,7 +36,7 @@ type ProductoRow = {
 export async function listProductosForStaff(staff: Staff): Promise<Producto[]> {
   const sql = await getSql();
   const rows = await sql<ProductoRow>`
-    select id, nombre, unidad, unidad_label, precio, stock, stock_minimo, alias, activo, orden
+    select id, nombre, unidad, unidad_label, precio, stock, stock_minimo, alias, activo, publicado_online, orden
     from productos
     where tenant_id = ${staff.tenantId}
     order by orden nulls last, lower(nombre)
@@ -62,13 +63,13 @@ export async function syncCatalogoForStaff(
   if (since && version && version <= since) return { version, productos: [] };
   const rows = since
     ? await sql<ProductoRow>`
-        select id, nombre, unidad, unidad_label, precio, stock, stock_minimo, alias, activo, orden
+        select id, nombre, unidad, unidad_label, precio, stock, stock_minimo, alias, activo, publicado_online, orden
         from productos
         where tenant_id = ${staff.tenantId} and updated_at >= ${since}::timestamptz
         order by orden nulls last, lower(nombre)
       `
     : await sql<ProductoRow>`
-        select id, nombre, unidad, unidad_label, precio, stock, stock_minimo, alias, activo, orden
+        select id, nombre, unidad, unidad_label, precio, stock, stock_minimo, alias, activo, publicado_online, orden
         from productos
         where tenant_id = ${staff.tenantId}
         order by orden nulls last, lower(nombre)
@@ -86,7 +87,7 @@ export async function crearPedidoForStaff(staff: Staff, input: CrearPedidoInput)
   if (input.items.length === 0) throw new Error("El pedido no tiene productos.");
   const sql = await getSql();
   const rows = await sql<ProductoRow>`
-    select id, nombre, unidad, unidad_label, precio, stock, stock_minimo, alias, activo, orden
+    select id, nombre, unidad, unidad_label, precio, stock, stock_minimo, alias, activo, publicado_online, orden
     from productos
     where tenant_id = ${staff.tenantId}
   `;

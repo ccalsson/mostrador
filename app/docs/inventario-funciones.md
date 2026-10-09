@@ -27,7 +27,7 @@ exigen `authMiddleware` salvo `prepareDemo`.
 | `getSessionStaff` | bootstrap + context | Identidad del staff y tenant para la sesión | cualquier staff | staff, tenants | GET /session |
 | `quienSoy` | bootstrap | Distinguir staff de cliente al entrar | autenticado | staff, clientes | — |
 | `listProductos` | catalog-pedidos | Catálogo completo del tablero | cualquier staff | productos | GET /catalogo |
-| `saveProducto` | productos | Alta/edición de producto (precio, alias, stock inicial) | admin | productos, stock_movimientos, alertas, auditoria | POST /productos |
+| `saveProducto` | productos | Alta/edición de producto (precio, alias, stock inicial, `publicadoOnline` con validación de tier Torre) | admin | productos, stock_movimientos, alertas, auditoria | POST /productos |
 | `quitarProducto` | productos | Baja lógica de producto | admin | productos, auditoria | POST /productos/:id/baja |
 | `ordenarProductos` | productos | Reordenar el tablero de productos | admin | productos | POST /productos/orden |
 | `listClientes` | clientes | Listado de clientes del puesto | cualquier staff | clientes | GET /clientes |

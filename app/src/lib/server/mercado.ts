@@ -4,8 +4,8 @@ import type { Sql } from "@/lib/db";
 import { newId } from "@/lib/ids";
 import { num } from "@/lib/money";
 import { reservarLineas, soltarReserva } from "@/lib/server/stock";
-import { textoCondicion } from "@/lib/torre/condiciones";
-import { avisosDe, comisionDePuesto, puedeAparecer } from "@/lib/torre/presencia";
+import { textoCondicion, tierContratado } from "@/lib/torre/condiciones";
+import { avisosDe, comisionDePuesto, lineasPorPuesto, puedeAparecer } from "@/lib/torre/presencia";
 
 export type MercadoPerfil = "comprador" | "cargador";
 export type MercadoActor = {
@@ -391,18 +391,20 @@ export async function uploadIdentity(actor: MercadoActor, input: Record<string, 
 
 export async function listStands() {
   const sql = await getSql();
+  const mapa = await lineasPorPuesto();
   const rows = await sql<{ id: string; nombre: string; config: unknown }>`
     select id, nombre, config from tenants
-    where config->>'mercadoAlToque' = 'true'
+    where coalesce(config, '{}'::jsonb)->>'mercadoAlToque' = 'true'
     order by lower(nombre)
   `;
   return {
-    puestos: rows.map((row) => {
-      const config =
-        typeof row.config === "string"
-          ? (JSON.parse(row.config) as Record<string, unknown>)
-          : ((row.config ?? {}) as Record<string, unknown>);
-      return { id: row.id, nombre: row.nombre, bajada: typeof config.mercadoBajada === "string" ? config.mercadoBajada : "" };
+    puestos: rows.flatMap((row) => {
+      const tier = tierContratado(mapa.get(row.id) ?? []);
+      if (!tier) return [];
+      const config = (typeof row.config === "string" ? JSON.parse(row.config) : row.config ?? {}) as {
+        bajada?: string;
+      };
+      return [{ id: row.id, nombre: row.nombre, bajada: config.bajada ?? null, tier }];
     }),
   };
 }
@@ -410,9 +412,12 @@ export async function listStands() {
 export async function listStandProducts(tenantId: string) {
   const sql = await getSql();
   const tenants = await sql<{ id: string }>`
-    select id from tenants where id = ${tenantId} and config->>'mercadoAlToque' = 'true'
+    select id from tenants
+    where id = ${tenantId} and coalesce(config, '{}'::jsonb)->>'mercadoAlToque' = 'true'
   `;
   if (!tenants[0]) fail(404, "not_found", "El puesto no tiene Mercado al Toque habilitado.");
+  const presencia = await puedeAparecer(tenantId, { mercadoAlToque: true });
+  if (!presencia.visible) fail(404, "not_found", "Ese puesto no está publicado en Mercado al Toque.");
   const rows = await sql<{
     id: string;
     nombre: string;
@@ -769,6 +774,11 @@ export async function cancelBuyerOrder(actor: MercadoActor, pedidoId: string) {
   return { ok: true };
 }
 
+function nombreVisible(nombre: string) {
+  const parte = nombre.trim().split(/\s+/)[0] ?? "";
+  return parte || "Cargador";
+}
+
 export async function listCouriers() {
   const sql = await getSql();
   const rows = await sql<{
@@ -794,7 +804,7 @@ export async function listCouriers() {
   return {
     cargadores: rows.map((row) => ({
       id: row.id,
-      nombre: row.nombre,
+      nombre: nombreVisible(row.nombre),
       nivel: row.nivel ?? "Inicial",
       puntos: row.puntos,
       score: num(row.score),

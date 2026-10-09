@@ -472,6 +472,51 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
     assert.ok(nuevo, "el producto nuevo no aparece en la sincronización incremental");
     approx(nuevo.stock, 3);
 
+    // publicadoOnline: con tier Presencia/Pro en Torre el roundtrip persiste;
+    // sin tier el guardado debe fallar (fail-closed).
+    const tierRows = await state.pool.query(
+      `select p.config->>'tier' as tier
+       from torre.saas_subscription_lines l
+       join torre.saas_subscriptions s on s.id = l.subscription_id
+       join torre.saas_tenants t on t.id = s.tenant_id
+       join torre.saas_products p on p.id = l.product_id
+       where t.operational_tenant_ref = $1 and p.config->>'family' = 'mercado'
+         and l.status = 'active' and s.status in ('active', 'past_due')`,
+      [TENANT],
+    );
+    const tieneTier = tierRows.rows.some((r) => r.tier === "pro" || r.tier === "presencia");
+    const pubBody = {
+      id: state.e2eProductoId,
+      nombre: "Producto E2E",
+      unidad: "bulto",
+      unidadLabel: "bulto",
+      precio: 1234.5,
+      stockMinimo: 0,
+      alias: [],
+      publicadoOnline: true,
+    };
+    const pubSave = await api("POST", "/productos", { token: state.tokens.admin, body: pubBody });
+    if (tieneTier) {
+      assert.equal(pubSave.status, 201, JSON.stringify(pubSave.data));
+      const pubCatalogo = await api("GET", "/catalogo", { token: state.tokens.admin });
+      const pubProd = pubCatalogo.data.data.find((p) => p.id === state.e2eProductoId);
+      assert.equal(pubProd.publicadoOnline, true, "publicadoOnline no llega al catálogo");
+      const pubDb = await state.pool.query("select publicado_online from productos where id = $1", [
+        state.e2eProductoId,
+      ]);
+      assert.equal(pubDb.rows[0].publicado_online, true, "publicado_online no persistió en DB");
+      const pubOff = await api("POST", "/productos", {
+        token: state.tokens.admin,
+        body: { ...pubBody, publicadoOnline: false },
+      });
+      assert.equal(pubOff.status, 201, JSON.stringify(pubOff.data));
+    } else {
+      expectError(pubSave, 400, /Mercado/i);
+      const pubCatalogo = await api("GET", "/catalogo", { token: state.tokens.admin });
+      const pubProd = pubCatalogo.data.data.find((p) => p.id === state.e2eProductoId);
+      assert.equal(pubProd.publicadoOnline, false, "sin tier no debería publicarse");
+    }
+
     const baja = await api("POST", `/productos/${state.e2eProductoId}/baja`, { token: state.tokens.admin });
     assert.equal(baja.status, 200);
     assert.equal(baja.data.data.ok, true);

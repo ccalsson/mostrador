@@ -40,7 +40,7 @@ with the build-time `API_BASE_URL` define.
 `pais` is `AR` with `tipoDocumento: "DNI"`, or `PY` with
 `tipoDocumento: "CI_PY"`.
 
-### Register a Changarín
+### Register a Cargador
 
 `POST /auth/registro-cargador` accepts `nombre`, `email`, `password`, and
 `telefono`. It returns `201` with `token` and `usuario`.
@@ -77,16 +77,22 @@ claim that the identity has been manually verified.
 
 All endpoints below require a session.
 
-- `GET /puestos` returns enabled stands.
+- `GET /puestos` returns stands with an active `presencia` or `pro` contract
+  line in Torre. Each stand exposes `id`, `nombre`, `bajada` (from
+  `tenants.config.bajada`, null when unset) and its contract `tier`.
 - `GET /puestos/{tenantId}/productos` returns active, online-published products
-  and current available stock.
-- `GET /cargadores` returns the public courier list and ranking details.
-- `GET /ranking` is public.
+  and current available stock; responds `404` when the stand has no active
+  Mercado contract line.
+- `GET /cargadores` returns the public courier list and ranking details with
+  anonymized names (first name only).
+- `GET /ranking` is public and uses the same anonymized names.
 
 To publish a stand, set `tenants.config.mercadoAlToque` to boolean `true`.
 Products are listed only when `activo = true` and `publicado_online = true`.
-These flags default to disabled. Prices, product identity, and stock are read
-from the existing Mostrador catalog.
+These flags default to disabled; `publicado_online` can only be enabled from
+the staff API when the stand holds a `presencia`/`pro` contract line in Torre.
+Prices, product identity, and stock are read from the existing Mostrador
+catalog.
 
 `POST /pedidos` requires a buyer with submitted identity documentation and an
 `Idempotency-Key` header (8–200 characters; letters, digits, `_`, `:`, `.`, and
@@ -123,14 +129,14 @@ be assigned for pickup.
 - `GET /recorridos`: the current user's routes.
 - `POST /recorridos` (buyer): `{ "cargadorId", "pedidoIds" }` and an
   `Idempotency-Key`; all listed orders must belong to the buyer and be ready.
-- `POST /recorridos/{id}/aceptar` or `/rechazar` (Changarín): requires an
+- `POST /recorridos/{id}/aceptar` or `/rechazar` (Cargador): requires an
   `Idempotency-Key`.
-- `POST /recorridos/{id}/retirar` or `/entregar` (Changarín): body
+- `POST /recorridos/{id}/retirar` or `/entregar` (Cargador): body
   `{ "pedidoId" }` and an `Idempotency-Key` for the action.
 - `POST /recorridos/{id}/calificar` (buyer): `{ "estrellas": 1..5,
   "comentario": "..." }`.
 
-Only the assigned Changarín can accept, reject, pick up, or deliver a route.
+Only the assigned Cargador can accept, reject, pick up, or deliver a route.
 Each stop must be picked up before it is delivered. A rejected route releases
 its orders for reassignment.
 

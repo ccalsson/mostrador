@@ -74,6 +74,7 @@ export function mapProducto(r: {
   stock_minimo: unknown;
   alias: unknown;
   activo: boolean;
+  publicado_online?: unknown;
   orden?: unknown;
 }): Producto {
   const alias = parseAlias(r.alias);
@@ -89,6 +90,7 @@ export function mapProducto(r: {
     stockMinimo,
     alias,
     activo: r.activo,
+    publicadoOnline: Boolean(r.publicado_online),
     stockBajo: stock <= stockMinimo,
     orden: r.orden == null ? null : num(r.orden),
   };

@@ -53,6 +53,7 @@ export type Producto = {
   stockMinimo: number;
   alias: string[];
   activo: boolean;
+  publicadoOnline?: boolean;
   stockBajo: boolean;
   orden: number | null;
 };

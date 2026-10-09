@@ -242,6 +242,7 @@ function parseProducto(value: unknown): SaveProductoInput {
       ? body.alias.filter((a): a is string => typeof a === "string").map((a) => a.trim()).filter(Boolean)
       : [],
     activo: body.activo === undefined ? true : body.activo === true,
+    publicadoOnline: body.publicadoOnline === undefined ? undefined : body.publicadoOnline === true,
     stockInicial: body.stockInicial == null ? undefined : asNumber(body.stockInicial, "stockInicial"),
   };
 }

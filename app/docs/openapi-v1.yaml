@@ -431,6 +431,7 @@ paths:
                 stockMinimo: { type: number }
                 alias: { type: array, items: { type: string } }
                 activo: { type: boolean, default: true }
+                publicadoOnline: { type: boolean, description: Solo con tier Presencia/Pro en Torre; sin tier el guardado falla. }
                 stockInicial: { type: number }
       responses:
         "201":
@@ -1085,6 +1086,7 @@ components:
         stockMinimo: { type: number }
         alias: { type: array, items: { type: string } }
         activo: { type: boolean }
+        publicadoOnline: { type: boolean, description: Publicado en Mercado al Toque (requiere tier Presencia/Pro en Torre). }
         stockBajo: { type: boolean }
         orden: { type: integer, nullable: true }
     CatalogoResponse:

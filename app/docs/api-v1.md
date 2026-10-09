@@ -49,7 +49,7 @@ enviar un cuerpo válido.
 | `GET` | `/api/v1/clientes` | cualquier staff | Lista de clientes. |
 | `POST` | `/api/v1/clientes` | cualquier staff | Alta rápida `{ nombre, telefono?, cuentaCorriente? }`. |
 | `GET` | `/api/v1/clientes/:id/cuenta` | admin | Saldo y últimos movimientos de cuenta corriente. |
-| `POST` | `/api/v1/productos` | admin | Alta/edición de producto (con stock inicial opcional). |
+| `POST` | `/api/v1/productos` | admin | Alta/edición de producto (con stock inicial opcional; `publicadoOnline` exige tier Presencia/Pro en Torre). |
 | `POST` | `/api/v1/productos/:id/baja` | admin | Baja lógica. |
 | `POST` | `/api/v1/productos/orden` | admin | Reordena con una lista de ids. |
 | `POST` | `/api/v1/stock/ajuste` | admin, cajero | Ajuste o merma `{ productoId, cantidad, tipo, motivo }`. |
