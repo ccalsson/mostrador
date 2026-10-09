@@ -1529,11 +1529,14 @@ export const actualizarRemitoItem = createServerFn({ method: "POST" })
     const staff = await ensureStaffForUser(context.userId);
     assertRole(staff, ["admin", "cajero"]);
     const sql = await getSql();
-    await sql`
+    const rows = await sql<{ id: string }>`
       update remito_items
       set producto_id = ${data.productoId}, cantidad = ${data.cantidad}, confirmado = ${data.confirmado}
       where id = ${data.id}
+        and remito_id in (select id from remitos where tenant_id = ${staff.tenantId})
+      returning id
     `;
+    if (!rows[0]) throw new Error("Remito no encontrado.");
     return { ok: true };
   });
 
