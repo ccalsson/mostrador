@@ -11,7 +11,24 @@ import 'package:puesto_flutter/models/cobro.dart';
 import 'package:puesto_flutter/models/pedido.dart';
 import 'package:puesto_flutter/models/ticket.dart';
 import 'package:puesto_flutter/services/caja_service.dart';
+import 'package:puesto_flutter/services/anulaciones_service.dart';
 import 'package:puesto_flutter/services/pedidos_service.dart';
+
+class _AnulacionesFake implements AnulacionesService {
+  ApiException? error;
+  final List<({String id, String motivo})> cobros = [];
+
+  @override
+  Future<void> cobro(String id, {required String motivo}) async {
+    cobros.add((id: id, motivo: motivo));
+    final fallo = error;
+    if (fallo != null) throw fallo;
+  }
+
+  @override
+  Future<void> pedido(String id, {required String motivo}) async =>
+      throw UnimplementedError();
+}
 
 class _CajaFake implements CajaService {
   _CajaFake(this.estadoPara);
@@ -44,7 +61,8 @@ class _CajaFake implements CajaService {
     this.notas.add(notas);
     final fallo = cierreError;
     if (fallo != null) throw fallo;
-    return resultadoCierre ?? const CierreCajaResultado(diferencia: 0, esperado: 0);
+    return resultadoCierre ??
+        const CierreCajaResultado(diferencia: 0, esperado: 0);
   }
 }
 
@@ -57,8 +75,7 @@ class _CajaPendiente implements CajaService {
     required String id,
     required double real,
     String? notas,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
 }
 
 /// Para el selector de vista: la lista de pedidos queda vacía; los demás
@@ -76,15 +93,13 @@ class _PedidosVacioFake implements PedidosService {
     required String clientUuid,
     required FormaPago formaPago,
     double? montoRecibido,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
 
   @override
   Future<Pedido> actualizarItems(
     String id,
     List<({String productoId, double cantidad})> items,
-  ) async =>
-      throw UnimplementedError();
+  ) async => throw UnimplementedError();
 
   @override
   Future<void> entregar(String id) async => throw UnimplementedError();
@@ -95,8 +110,7 @@ class _PedidosVacioFake implements PedidosService {
     required List<({String productoId, int cantidad})> items,
     String clienteNombre = 'Mostrador',
     String? nota,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
 
   @override
   Future<Ticket> ticket(String cobroId) async => throw UnimplementedError();
@@ -119,15 +133,15 @@ CajaEstado _estado({
   double esperado = 79200,
   List<TotalFormaPago>? totales,
   List<UltimoCobro>? ultimos,
-}) =>
-    CajaEstado(
-      id: id,
-      abiertoAt: '2026-10-01 22:27:06.909015+00',
-      esperado: esperado,
-      totales: totales ??
-          const [TotalFormaPago(formaPagoApi: 'efectivo', total: 79200, n: 11)],
-      ultimos: ultimos ?? [_cobro('cob_1')],
-    );
+}) => CajaEstado(
+  id: id,
+  abiertoAt: '2026-10-01 22:27:06.909015+00',
+  esperado: esperado,
+  totales:
+      totales ??
+      const [TotalFormaPago(formaPagoApi: 'efectivo', total: 79200, n: 11)],
+  ultimos: ultimos ?? [_cobro('cob_1')],
+);
 
 /// `pumpAndSettle` no sirve mientras hay spinners; se sondea el frame.
 Future<void> _esperar(
@@ -142,11 +156,21 @@ Future<void> _esperar(
   fail('No apareció en pantalla: $finder');
 }
 
-Future<void> _montarEstado(WidgetTester tester, CajaService fake) async {
-  await tester.pumpWidget(ProviderScope(
-    overrides: [cajaServiceProvider.overrideWithValue(fake)],
-    child: const MaterialApp(home: Scaffold(body: CajaEstadoPane())),
-  ));
+Future<void> _montarEstado(
+  WidgetTester tester,
+  CajaService fake, {
+  _AnulacionesFake? anulaciones,
+}) async {
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: [
+        cajaServiceProvider.overrideWithValue(fake),
+        if (anulaciones != null)
+          anulacionesServiceProvider.overrideWithValue(anulaciones),
+      ],
+      child: const MaterialApp(home: Scaffold(body: CajaEstadoPane())),
+    ),
+  );
   await tester.pump();
 }
 
@@ -158,11 +182,14 @@ void main() {
     expect(find.byKey(const Key('caja_estado_contenido')), findsNothing);
   });
 
-  testWidgets('estado cargado: muestra los valores reales del backend',
-      (tester) async {
-    final fake = _CajaFake((_) async => _estado(
-          ultimos: [_cobro('cob_1'), _cobro('cob_2', monto: 500, numero: null)],
-        ));
+  testWidgets('estado cargado: muestra los valores reales del backend', (
+    tester,
+  ) async {
+    final fake = _CajaFake(
+      (_) async => _estado(
+        ultimos: [_cobro('cob_1'), _cobro('cob_2', monto: 500, numero: null)],
+      ),
+    );
     await _montarEstado(tester, fake);
     await _esperar(tester, find.byKey(const Key('caja_estado_contenido')));
 
@@ -225,10 +252,15 @@ void main() {
     await _esperar(tester, find.byKey(const Key('caja_estado_sin_totales')));
 
     expect(find.byKey(const Key('caja_estado_contenido')), findsOneWidget);
-    expect(find.byKey(const Key('caja_estado_sin_movimientos')), findsOneWidget);
+    expect(
+      find.byKey(const Key('caja_estado_sin_movimientos')),
+      findsOneWidget,
+    );
   });
 
-  testWidgets('error: mensaje del backend y reintento explícito', (tester) async {
+  testWidgets('error: mensaje del backend y reintento explícito', (
+    tester,
+  ) async {
     final fake = _CajaFake((llamada) async {
       if (llamada == 1) {
         throw ForbiddenException('No tenés permiso para esta acción.');
@@ -247,8 +279,9 @@ void main() {
     expect(find.byKey(const Key('caja_estado_reintentar')), findsNothing);
   });
 
-  testWidgets('refrescar: vuelve a consultar el backend y actualiza',
-      (tester) async {
+  testWidgets('refrescar: vuelve a consultar el backend y actualiza', (
+    tester,
+  ) async {
     final fake = _CajaFake(
       (llamada) async => _estado(esperado: llamada == 1 ? 100 : 222),
     );
@@ -261,21 +294,27 @@ void main() {
     expect(fake.llamadas, 2);
   });
 
-  testWidgets('selector de vista: Pedidos por defecto, ida y vuelta',
-      (tester) async {
+  testWidgets('selector de vista: Pedidos por defecto, ida y vuelta', (
+    tester,
+  ) async {
     final caja = _CajaFake((_) async => _estado());
-    await tester.pumpWidget(ProviderScope(
-      overrides: [
-        pedidosServiceProvider.overrideWithValue(_PedidosVacioFake()),
-        cajaServiceProvider.overrideWithValue(caja),
-      ],
-      child: const MaterialApp(home: Scaffold(body: CajaPane())),
-    ));
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          pedidosServiceProvider.overrideWithValue(_PedidosVacioFake()),
+          cajaServiceProvider.overrideWithValue(caja),
+        ],
+        child: const MaterialApp(home: Scaffold(body: CajaPane())),
+      ),
+    );
     await _esperar(tester, find.byKey(const Key('caja_filtro')));
 
     expect(find.byKey(const Key('caja_estado_contenido')), findsNothing);
-    expect(caja.llamadas, 0,
-        reason: 'la vista de pedidos no consulta el estado de caja');
+    expect(
+      caja.llamadas,
+      0,
+      reason: 'la vista de pedidos no consulta el estado de caja',
+    );
 
     await tester.tap(find.text('Estado de caja'));
     await _esperar(tester, find.byKey(const Key('caja_estado_contenido')));
@@ -294,78 +333,96 @@ void main() {
       WidgetTester tester, {
       required CierreCajaResultado resultado,
     }) async {
-      final fake = _CajaFake((llamada) async => llamada == 1
-          ? _estado(esperado: 5000)
-          : _estado(id: 'cje_nuevo', esperado: 0));
+      final fake = _CajaFake(
+        (llamada) async => llamada == 1
+            ? _estado(esperado: 5000)
+            : _estado(id: 'cje_nuevo', esperado: 0),
+      );
       fake.resultadoCierre = resultado;
       await _montarEstado(tester, fake);
       await _esperar(tester, find.byKey(const Key('caja_estado_contenido')));
       return fake;
     }
 
-    testWidgets('diferencia cero: prefilled del backend, resultado y turno nuevo',
-        (tester) async {
-      final fake = await montarConCierre(
-        tester,
-        resultado: const CierreCajaResultado(diferencia: 0, esperado: 5000),
-      );
+    testWidgets(
+      'diferencia cero: prefilled del backend, resultado y turno nuevo',
+      (tester) async {
+        final fake = await montarConCierre(
+          tester,
+          resultado: const CierreCajaResultado(diferencia: 0, esperado: 5000),
+        );
 
-      await tester.tap(find.byKey(const Key('caja_cerrar')));
-      await tester.pump();
+        await tester.tap(find.byKey(const Key('caja_cerrar')));
+        await tester.pump();
 
-      expect(find.byKey(const Key('cierre_dialogo')), findsOneWidget);
-      expect(
-        tester.widget<Text>(find.byKey(const Key('cierre_esperado'))).data,
-        'Esperado en caja: \$5000,00',
-      );
-      expect(
-        tester
-            .widget<TextField>(find.byKey(const Key('cierre_contado')))
-            .controller!
-            .text,
-        '5000.00',
-        reason: 'el total contado se prellena con el esperado del backend',
-      );
+        expect(find.byKey(const Key('cierre_dialogo')), findsOneWidget);
+        expect(
+          tester.widget<Text>(find.byKey(const Key('cierre_esperado'))).data,
+          'Esperado en caja: \$5000,00',
+        );
+        expect(
+          tester
+              .widget<TextField>(find.byKey(const Key('cierre_contado')))
+              .controller!
+              .text,
+          '5000.00',
+          reason: 'el total contado se prellena con el esperado del backend',
+        );
 
-      await tester.tap(find.byKey(const Key('cierre_confirmar')));
-      await _esperar(tester, find.byKey(const Key('cierre_resultado')));
+        await tester.tap(find.byKey(const Key('cierre_confirmar')));
+        await _esperar(tester, find.byKey(const Key('cierre_resultado')));
 
-      expect(find.text('Diferencia: \$0,00'), findsOneWidget);
-      expect(find.byKey(const Key('cierre_resultado_alerta')), findsNothing);
-      expect(fake.cierreIds.single, 'cje_396ce29d87ac47a7');
-      expect(fake.contados.single, 5000);
-      expect(fake.notas.single, isEmpty,
-          reason: 'sin notas el texto va vacío; el servicio lo omite');
+        expect(find.text('Diferencia: \$0,00'), findsOneWidget);
+        expect(find.byKey(const Key('cierre_resultado_alerta')), findsNothing);
+        expect(fake.cierreIds.single, 'cje_396ce29d87ac47a7');
+        expect(fake.contados.single, 5000);
+        expect(
+          fake.notas.single,
+          isEmpty,
+          reason: 'sin notas el texto va vacío; el servicio lo omite',
+        );
 
-      await tester.tap(find.byKey(const Key('cierre_listo')));
-      await _esperar(tester, find.text('Esperado en caja: \$0,00'));
-      await tester.pump(const Duration(milliseconds: 200));
-      await tester.pump(const Duration(milliseconds: 200));
+        await tester.tap(find.byKey(const Key('cierre_listo')));
+        await _esperar(tester, find.text('Esperado en caja: \$0,00'));
+        await tester.pump(const Duration(milliseconds: 200));
+        await tester.pump(const Duration(milliseconds: 200));
 
-      expect(find.byKey(const Key('cierre_dialogo')), findsNothing);
-      expect(fake.llamadas, 2,
-          reason: 'la vista relee el estado y muestra el turno nuevo');
-      expect(fake.cierres, 1);
-    });
+        expect(find.byKey(const Key('cierre_dialogo')), findsNothing);
+        expect(
+          fake.llamadas,
+          2,
+          reason: 'la vista relee el estado y muestra el turno nuevo',
+        );
+        expect(fake.cierres, 1);
+      },
+    );
 
-    testWidgets('diferencia distinta de cero: destacada y con aviso de alerta',
-        (tester) async {
-      final fake = await montarConCierre(
-        tester,
-        resultado: const CierreCajaResultado(diferencia: -1000, esperado: 5000),
-      );
+    testWidgets(
+      'diferencia distinta de cero: destacada y con aviso de alerta',
+      (tester) async {
+        final fake = await montarConCierre(
+          tester,
+          resultado: const CierreCajaResultado(
+            diferencia: -1000,
+            esperado: 5000,
+          ),
+        );
 
-      await tester.tap(find.byKey(const Key('caja_cerrar')));
-      await tester.pump();
-      await tester.enterText(find.byKey(const Key('cierre_contado')), '4000');
-      await tester.tap(find.byKey(const Key('cierre_confirmar')));
-      await _esperar(tester, find.byKey(const Key('cierre_resultado')));
+        await tester.tap(find.byKey(const Key('caja_cerrar')));
+        await tester.pump();
+        await tester.enterText(find.byKey(const Key('cierre_contado')), '4000');
+        await tester.tap(find.byKey(const Key('cierre_confirmar')));
+        await _esperar(tester, find.byKey(const Key('cierre_resultado')));
 
-      expect(find.text('Contado: \$4000,00'), findsOneWidget);
-      expect(find.text('Diferencia: \$-1000,00'), findsOneWidget);
-      expect(find.byKey(const Key('cierre_resultado_alerta')), findsOneWidget);
-      expect(fake.contados.single, 4000);
-    });
+        expect(find.text('Contado: \$4000,00'), findsOneWidget);
+        expect(find.text('Diferencia: \$-1000,00'), findsOneWidget);
+        expect(
+          find.byKey(const Key('cierre_resultado_alerta')),
+          findsOneWidget,
+        );
+        expect(fake.contados.single, 4000);
+      },
+    );
 
     testWidgets('contado inválido: confirmar deshabilitado', (tester) async {
       await montarConCierre(
@@ -388,32 +445,94 @@ void main() {
       expect(find.text('Importe inválido'), findsOneWidget);
     });
 
-    testWidgets('error del backend: mensaje en el diálogo y reintento exitoso',
-        (tester) async {
-      final fake = await montarConCierre(
-        tester,
-        resultado: const CierreCajaResultado(diferencia: 0, esperado: 5000),
-      );
-      fake.cierreError = ValidationException('No hay una caja abierta.');
+    testWidgets(
+      'error del backend: mensaje en el diálogo y reintento exitoso',
+      (tester) async {
+        final fake = await montarConCierre(
+          tester,
+          resultado: const CierreCajaResultado(diferencia: 0, esperado: 5000),
+        );
+        fake.cierreError = ValidationException('No hay una caja abierta.');
 
-      await tester.tap(find.byKey(const Key('caja_cerrar')));
+        await tester.tap(find.byKey(const Key('caja_cerrar')));
+        await tester.pump();
+        await tester.tap(find.byKey(const Key('cierre_confirmar')));
+        await _esperar(tester, find.byKey(const Key('cierre_error')));
+
+        expect(find.text('No hay una caja abierta.'), findsOneWidget);
+        expect(find.byKey(const Key('cierre_resultado')), findsNothing);
+        expect(
+          tester
+              .widget<Text>(find.byKey(const Key('caja_estado_esperado')))
+              .data,
+          'Esperado en caja: \$5000,00',
+          reason: 'un error de cierre no altera la vista del turno',
+        );
+        expect(fake.cierres, 1);
+
+        fake.cierreError = null;
+        await tester.tap(find.byKey(const Key('cierre_confirmar')));
+        await _esperar(tester, find.byKey(const Key('cierre_resultado')));
+        expect(fake.cierres, 2);
+      },
+    );
+
+    testWidgets('anular venta pide motivo y muestra confirmación del backend', (
+      tester,
+    ) async {
+      final caja = _CajaFake((_) async => _estado(ultimos: [_cobro('cob_1')]));
+      final anulaciones = _AnulacionesFake();
+      await _montarEstado(tester, caja, anulaciones: anulaciones);
+      await _esperar(tester, find.byKey(const Key('caja_mov_fila_cob_1')));
+      await tester.ensureVisible(
+        find.byKey(const Key('caja_anular_cobro_cob_1')),
+      );
+      await tester.tap(find.byKey(const Key('caja_anular_cobro_cob_1')));
+      await _esperar(tester, find.byKey(const Key('anulacion_motivo')));
+
+      await tester.enterText(
+        find.byKey(const Key('anulacion_motivo')),
+        'Venta duplicada',
+      );
       await tester.pump();
-      await tester.tap(find.byKey(const Key('cierre_confirmar')));
-      await _esperar(tester, find.byKey(const Key('cierre_error')));
+      await tester.tap(find.byKey(const Key('anulacion_confirmar')));
+      await _esperar(tester, find.text('Venta anulada. Volvió el stock.'));
 
-      expect(find.text('No hay una caja abierta.'), findsOneWidget);
-      expect(find.byKey(const Key('cierre_resultado')), findsNothing);
+      expect(anulaciones.cobros, [(id: 'cob_1', motivo: 'Venta duplicada')]);
       expect(
-        tester.widget<Text>(find.byKey(const Key('caja_estado_esperado'))).data,
-        'Esperado en caja: \$5000,00',
-        reason: 'un error de cierre no altera la vista del turno',
+        caja.llamadas,
+        greaterThanOrEqualTo(2),
+        reason: 'el estado de caja se vuelve a leer desde el backend',
       );
-      expect(fake.cierres, 1);
+    });
 
-      fake.cierreError = null;
-      await tester.tap(find.byKey(const Key('cierre_confirmar')));
-      await _esperar(tester, find.byKey(const Key('cierre_resultado')));
-      expect(fake.cierres, 2);
+    testWidgets('error al anular cobro se muestra sin ocultar la causa', (
+      tester,
+    ) async {
+      final anulaciones = _AnulacionesFake()
+        ..error = ValidationException(
+          'Emití la nota de crédito antes de anular.',
+        );
+      await _montarEstado(
+        tester,
+        _CajaFake((_) async => _estado(ultimos: [_cobro('cob_1')])),
+        anulaciones: anulaciones,
+      );
+      await tester.ensureVisible(
+        find.byKey(const Key('caja_anular_cobro_cob_1')),
+      );
+      await tester.tap(find.byKey(const Key('caja_anular_cobro_cob_1')));
+      await _esperar(tester, find.byKey(const Key('anulacion_motivo')));
+      await tester.enterText(
+        find.byKey(const Key('anulacion_motivo')),
+        'Error',
+      );
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('anulacion_confirmar')));
+      await _esperar(
+        tester,
+        find.text('Emití la nota de crédito antes de anular.'),
+      );
     });
   });
 }

@@ -40,9 +40,9 @@ Columnas: **Web** = repoweb actual · **Win/And** = puesto_flutter (código comp
 | M10 | Transición en_preparacion→listo | `updatePedidoEstado` (admin/cajero, `caja.tsx`) | ✗ (`pedidos_service` no tiene método estado) | ≡ | `POST pedidos/:id/estado` ✓ | Falta en Flutter | B3: acción de preparación en Caja | Pedido Mercado/ERP pasa a "listo" desde ambas UIs |
 | M11 | Entregar pedido | `marcarEntregado` (solo cobrado) | ✓ `POST entregar` | ≡ | ✓ | Paridad | — | Rechazo si no cobrado, igual en ambos |
 | M12 | Editar ítems pedido | `updatePedidoItems` (rearma reserva) | ✓ `editar_items_dialog` | ≡ | ✓ | Paridad | — | Reserva liberada/recreada idéntica |
-| M13 | Anular pedido | `anularPedido` (bloquea si factura electrónica) | ✗ | ✗ | `POST pedidos/:id/anular` ✓ | Falta en Flutter | B1a: anular pedido en Caja/Pedidos | Anulado libera reserva; bloquea con factura, igual en ambos |
+| M13 | Anular pedido | `anularPedido` (bloquea si factura electrónica) | ✓ `caja_anular_pedido` | ≡ | `POST pedidos/:id/anular` ✓ | Flutter pide motivo y muestra el error canónico; disponible para pedidos aún no cobrados | B1a implementado; smoke Web↔API↔Flutter pendiente | Anulado libera reserva; bloquea con factura, igual en ambos |
 | M14 | Cobro (vuelto, CC plan Pro, stock, numera ticket) | `cobrarPedido` idempotente | ✓ `cobro_dialog` | ≡ | ✓ | Paridad | — | Vuelto y asiento CC idénticos contra mismos datos |
-| M15 | Anular cobro | `anularCobro` (reintegra stock + reverso CC) | ✗ | ✗ | `POST cobros/:/anular` ✓ | Falta en Flutter | B1b: anular cobro | Reintegro visible en stock y cuenta, igual en ambos |
+| M15 | Anular cobro | `anularCobro` (reintegra stock + reverso CC) | ✓ `caja_anular_cobro_*` | ≡ | `POST cobros/:/anular` ✓ | Flutter pide motivo y backend realiza reintegro/reverso; si tiene factura electrónica, aún requiere completar nota de crédito desde Web (B7) | B1b implementado; smoke Web↔API↔Flutter pendiente | Reintegro visible en stock y cuenta, igual en ambos |
 | M16 | Cierre de caja | `estadoCaja`/`cerrarCaja` (diferencia y alerta) | ✓ `caja_estado_pane`+`cierre_dialog` | ≡ | ✓ | Paridad | — | Misma diferencia calculada por backend en ambos |
 | M17 | Ticket | `ticket.$cobroId.tsx` + térmica Web Bluetooth/USB | PDF 80mm + diálogo sistema (`ticket_pdf.dart:13-91`) | ≡ | `GET cobros/:/ticket` ✓ | Térmica directa solo web; Flutter usa diálogo del SO (diferencia de plataforma permitida) | Adaptador térmico cuando se conozca hardware | Mismo ticket imprimible en ambos |
 | M18 | Clientes alta | `createCliente` (valida plan Pro CC) | ✓ | ≡ | ✓ | Paridad | — | Rechazo CC sin plan Pro igual en ambos |
@@ -109,7 +109,7 @@ Orden estricto; cada ítem cierra con verificación triple (`tsc --noEmit` + `np
 
 | Paso | Contenido | Ref. matriz |
 |---|---|---|
-| B1 | Anular pedido (M13) + anular cobro (M15) | Operaciones financieras críticas, backend listo |
+| B1 | Implementado en código: anular pedido pendiente y venta desde Caja con motivo, confirmación, errores del backend visibles y refresco de datos. Anulación de venta facturada requiere completar nota de crédito desde Flutter (B7); falta smoke integrado | Operaciones financieras críticas, backend listo |
 | B2 | Registrar pago CC (M20) + editar cliente (M19) | Backend listo |
 | B3 | Transición de preparación en_preparacion→listo (M10/C9) | Bloquea ciclo Mercado desde Flutter |
 | B4 | Panel proveedores (M24) | CRUD simple |

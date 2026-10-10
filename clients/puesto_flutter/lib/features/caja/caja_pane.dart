@@ -5,7 +5,10 @@ import '../../core/errors/api_exceptions.dart';
 import '../../core/format.dart';
 import '../../models/cobro.dart';
 import '../../models/pedido.dart';
+import '../../services/anulaciones_service.dart';
+import '../../services/catalogo_service.dart';
 import '../../services/pedidos_service.dart';
+import 'anulacion_dialog.dart';
 import 'caja_estado_pane.dart';
 import 'cobro_controller.dart';
 import 'cobro_dialog.dart';
@@ -110,7 +113,8 @@ class _CajaPaneState extends ConsumerState<CajaPane> {
                 tooltip: 'Actualizar pedidos',
                 onPressed: pedidos.isRefreshing
                     ? null
-                    : () => ref.invalidate(pedidosCajaProvider(_filtro.estados)),
+                    : () =>
+                          ref.invalidate(pedidosCajaProvider(_filtro.estados)),
                 icon: const Icon(Icons.refresh),
               ),
             ],
@@ -153,7 +157,8 @@ class _CajaPaneState extends ConsumerState<CajaPane> {
         mensaje: error is ApiException
             ? error.message
             : 'No se pudieron cargar los pedidos.',
-        onReintentar: () => ref.invalidate(pedidosCajaProvider(_filtro.estados)),
+        onReintentar: () =>
+            ref.invalidate(pedidosCajaProvider(_filtro.estados)),
       );
     }
     if (lista.isEmpty) {
@@ -173,8 +178,8 @@ class _CajaPaneState extends ConsumerState<CajaPane> {
           subtitle: Text(
             pedido.pickedUpAt != null
                 ? '${pedido.clienteNombre} · ${pedido.estado.label} · '
-                    'Retirado · ${pedido.cargadorNombre ?? 'Cargador'} · '
-                    '${fechaCorta(pedido.pickedUpAt!)}'
+                      'Retirado · ${pedido.cargadorNombre ?? 'Cargador'} · '
+                      '${fechaCorta(pedido.pickedUpAt!)}'
                 : '${pedido.clienteNombre} · ${pedido.estado.label}',
           ),
           trailing: Text(
@@ -199,8 +204,11 @@ class _SinSeleccion extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.point_of_sale_outlined,
-              size: 56, color: tema.colorScheme.outline),
+          Icon(
+            Icons.point_of_sale_outlined,
+            size: 56,
+            color: tema.colorScheme.outline,
+          ),
           const SizedBox(height: 12),
           const Text('Elegí un pedido de la lista'),
         ],
@@ -220,27 +228,43 @@ class _SinPedidosCaja extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.receipt_long_outlined,
-              size: 56, color: tema.colorScheme.outline),
+          Icon(
+            Icons.receipt_long_outlined,
+            size: 56,
+            color: tema.colorScheme.outline,
+          ),
           const SizedBox(height: 12),
-          const Text('No hay pedidos con este filtro', textAlign: TextAlign.center),
+          const Text(
+            'No hay pedidos con este filtro',
+            textAlign: TextAlign.center,
+          ),
         ],
       ),
     );
   }
 }
 
-class _CajaDetalle extends ConsumerWidget {
+class _CajaDetalle extends ConsumerStatefulWidget {
   const _CajaDetalle({required this.pedidoId});
 
   final String pedidoId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_CajaDetalle> createState() => _CajaDetalleState();
+}
+
+class _CajaDetalleState extends ConsumerState<_CajaDetalle> {
+  bool _anulando = false;
+
+  @override
+  Widget build(BuildContext context) {
     final tema = Theme.of(context);
-    final detalle = ref.watch(pedidoDetalleProvider(pedidoId));
-    final cobro = ref.watch(cobroControllerProvider(pedidoId));
-    ref.listen(edicionItemsControllerProvider(pedidoId), (anterior, siguiente) {
+    final detalle = ref.watch(pedidoDetalleProvider(widget.pedidoId));
+    final cobro = ref.watch(cobroControllerProvider(widget.pedidoId));
+    ref.listen(edicionItemsControllerProvider(widget.pedidoId), (
+      anterior,
+      siguiente,
+    ) {
       if (siguiente.exito && anterior?.exito != true) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -262,7 +286,8 @@ class _CajaDetalle extends ConsumerWidget {
         mensaje: error is ApiException
             ? error.message
             : 'No se pudo cargar el pedido.',
-        onReintentar: () => ref.invalidate(pedidoDetalleProvider(pedidoId)),
+        onReintentar: () =>
+            ref.invalidate(pedidoDetalleProvider(widget.pedidoId)),
         claveReintentar: const Key('caja_detalle_reintentar'),
       );
     }
@@ -297,7 +322,9 @@ class _CajaDetalle extends ConsumerWidget {
                       tooltip: 'Actualizar pedido',
                       onPressed: detalle.isRefreshing
                           ? null
-                          : () => ref.invalidate(pedidoDetalleProvider(pedidoId)),
+                          : () => ref.invalidate(
+                              pedidoDetalleProvider(widget.pedidoId),
+                            ),
                       icon: const Icon(Icons.refresh),
                     ),
                   ],
@@ -346,16 +373,33 @@ class _CajaDetalle extends ConsumerWidget {
                     if (pedido.estado.editable && !cobro.exito)
                       OutlinedButton.icon(
                         key: const Key('caja_editar_items'),
-                        onPressed: () => _abrirEdicion(context, ref, pedido),
+                        onPressed: () => _abrirEdicion(context, pedido),
                         icon: const Icon(Icons.edit_outlined),
                         label: const Text('Editar ítems'),
                       ),
                     if (pedido.estado.cobrable && !cobro.exito)
                       FilledButton.icon(
                         key: const Key('caja_cobrar'),
-                        onPressed: () => _abrirCobro(context, ref, pedido),
+                        onPressed: () => _abrirCobro(context, pedido),
                         icon: const Icon(Icons.point_of_sale_outlined),
                         label: const Text('Cobrar'),
+                      ),
+                    if (pedido.estado != PedidoEstado.cobrado &&
+                        pedido.estado != PedidoEstado.anulado &&
+                        pedido.estado != PedidoEstado.entregado)
+                      OutlinedButton.icon(
+                        key: const Key('caja_anular_pedido'),
+                        onPressed: _anulando ? null : _anularPedido,
+                        icon: _anulando
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.cancel_outlined),
+                        label: Text(_anulando ? 'Anulando…' : 'Anular pedido'),
                       ),
                   ],
                 ),
@@ -370,8 +414,8 @@ class _CajaDetalle extends ConsumerWidget {
 
   /// Nuevo intento lógico de cobro: se descarta el estado anterior (y su
   /// `clientUuid`) antes de abrir el diálogo.
-  Future<void> _abrirCobro(BuildContext context, WidgetRef ref, Pedido pedido) async {
-    ref.invalidate(cobroControllerProvider(pedidoId));
+  Future<void> _abrirCobro(BuildContext context, Pedido pedido) async {
+    ref.invalidate(cobroControllerProvider(widget.pedidoId));
     await showDialog<void>(
       context: context,
       barrierDismissible: false,
@@ -379,12 +423,48 @@ class _CajaDetalle extends ConsumerWidget {
     );
   }
 
-  Future<void> _abrirEdicion(BuildContext context, WidgetRef ref, Pedido pedido) async {
-    ref.invalidate(edicionItemsControllerProvider(pedidoId));
+  Future<void> _abrirEdicion(BuildContext context, Pedido pedido) async {
+    ref.invalidate(edicionItemsControllerProvider(widget.pedidoId));
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => EditarItemsDialog(pedido: pedido),
     );
+  }
+
+  Future<void> _anularPedido() async {
+    final motivo = await pedirMotivoAnulacion(
+      context,
+      titulo: 'Anular pedido',
+      descripcion: 'Se liberarán las reservas de este pedido. Esta acción no se puede deshacer.',
+      confirmar: 'Anular pedido',
+    );
+    if (motivo == null || !mounted) return;
+    setState(() => _anulando = true);
+    try {
+      await ref
+          .read(anulacionesServiceProvider)
+          .pedido(widget.pedidoId, motivo: motivo);
+      if (!mounted) return;
+      ref.invalidate(pedidoDetalleProvider(widget.pedidoId));
+      ref.invalidate(pedidosCajaProvider);
+      ref.invalidate(pedidosMineProvider);
+      ref.invalidate(catalogoProvider);
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Pedido anulado.')));
+    } on ApiException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(error.message)));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No se pudo anular el pedido.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _anulando = false);
+    }
   }
 }
 

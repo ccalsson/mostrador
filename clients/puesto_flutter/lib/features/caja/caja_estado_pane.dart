@@ -5,6 +5,10 @@ import '../../core/errors/api_exceptions.dart';
 import '../../core/format.dart';
 import '../../models/caja.dart';
 import '../../services/caja_service.dart';
+import '../../services/anulaciones_service.dart';
+import '../../services/catalogo_service.dart';
+import '../../services/pedidos_service.dart';
+import 'anulacion_dialog.dart';
 import 'cierre_controller.dart';
 import 'cierre_dialog.dart';
 import 'error_caja.dart';
@@ -47,7 +51,10 @@ class CajaEstadoPane extends ConsumerWidget {
                   'Turno abierto desde: ${fechaCorta(caja.abiertoAt)}',
                   key: const Key('caja_estado_abierto'),
                 ),
-                subtitle: Text('Caja: ${caja.id}', key: const Key('caja_estado_id')),
+                subtitle: Text(
+                  'Caja: ${caja.id}',
+                  key: const Key('caja_estado_id'),
+                ),
                 trailing: IconButton(
                   key: const Key('caja_estado_refrescar'),
                   tooltip: 'Actualizar estado de caja',
@@ -180,53 +187,115 @@ class _CabeceraMovimientos extends StatelessWidget {
   }
 }
 
-class _FilaCobro extends StatelessWidget {
+class _FilaCobro extends ConsumerStatefulWidget {
   const _FilaCobro({required this.cobro});
 
   final UltimoCobro cobro;
 
   @override
+  ConsumerState<_FilaCobro> createState() => _FilaCobroState();
+}
+
+class _FilaCobroState extends ConsumerState<_FilaCobro> {
+  bool _enviando = false;
+
+  @override
   Widget build(BuildContext context) {
     final estilo = Theme.of(context).textTheme.bodyMedium;
+    final cobro = widget.cobro;
     return Padding(
       key: Key('caja_mov_fila_${cobro.id}'),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(
-            flex: 3,
-            child: Text(fechaCorta(cobro.createdAt), style: estilo),
+          Row(
+            children: [
+              Expanded(
+                flex: 3,
+                child: Text(fechaCorta(cobro.createdAt), style: estilo),
+              ),
+              Expanded(
+                flex: 4,
+                child: Text(
+                  cobro.cliente,
+                  style: estilo,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Expanded(
+                flex: 3,
+                child: Text(cobro.formaPagoLabel, style: estilo),
+              ),
+              Expanded(
+                flex: 2,
+                child: Text(
+                  cobro.numero != null ? 'Nº ${cobro.numero}' : '—',
+                  style: estilo,
+                  textAlign: TextAlign.right,
+                ),
+              ),
+              Expanded(
+                flex: 3,
+                child: Text(
+                  moneda(cobro.monto),
+                  style: estilo,
+                  textAlign: TextAlign.right,
+                ),
+              ),
+            ],
           ),
-          Expanded(
-            flex: 4,
-            child: Text(
-              cobro.cliente,
-              style: estilo,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          Expanded(
-            flex: 3,
-            child: Text(cobro.formaPagoLabel, style: estilo),
-          ),
-          Expanded(
-            flex: 2,
-            child: Text(
-              cobro.numero != null ? 'Nº ${cobro.numero}' : '—',
-              style: estilo,
-              textAlign: TextAlign.right,
-            ),
-          ),
-          Expanded(
-            flex: 3,
-            child: Text(
-              moneda(cobro.monto),
-              style: estilo,
-              textAlign: TextAlign.right,
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              key: Key('caja_anular_cobro_${cobro.id}'),
+              onPressed: _enviando ? null : _anularCobro,
+              icon: const Icon(Icons.undo, size: 18),
+              label: const Text('Anular venta'),
             ),
           ),
         ],
       ),
     );
+  }
+
+  Future<void> _anularCobro() async {
+    final cobro = widget.cobro;
+    final motivo = await pedirMotivoAnulacion(
+      context,
+      titulo: 'Anular venta',
+      descripcion: cobro.facturaId == null
+          ? 'Se reintegrará el stock y se revertirá la cuenta corriente si corresponde.'
+          : 'La venta tiene factura electrónica. El backend exige emitir una nota de crédito antes de anular.',
+      confirmar: 'Anular venta',
+    );
+    if (motivo == null || !mounted) return;
+    setState(() => _enviando = true);
+    try {
+      await ref
+          .read(anulacionesServiceProvider)
+          .cobro(cobro.id, motivo: motivo);
+      if (!mounted) return;
+      ref.invalidate(cajaEstadoProvider);
+      ref.invalidate(pedidosCajaProvider);
+      ref.invalidate(pedidosMineProvider);
+      ref.invalidate(catalogoProvider);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Venta anulada. Volvió el stock.')),
+      );
+    } on ApiException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(error.message)));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No se pudo anular la venta.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _enviando = false);
+    }
   }
 }
