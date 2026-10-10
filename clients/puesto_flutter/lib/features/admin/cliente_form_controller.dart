@@ -48,9 +48,35 @@ class ClienteFormController extends Notifier<ClienteFormEstado> {
       return false;
     }
   }
+
+  Future<bool> actualizar(String id, ClienteActualizacionInput input) async {
+    if (state.enviando) return false;
+    state = const ClienteFormEstado(fase: ClienteFormFase.enviando);
+    try {
+      await ref.read(clientesServiceProvider).actualizar(id, input);
+      if (!ref.mounted) return false;
+      ref.invalidate(clientesProvider);
+      state = const ClienteFormEstado();
+      return true;
+    } on ApiException catch (error) {
+      if (!ref.mounted) return false;
+      state = ClienteFormEstado(
+        fase: ClienteFormFase.error,
+        errorMensaje: error.message,
+      );
+      return false;
+    } catch (_) {
+      if (!ref.mounted) return false;
+      state = const ClienteFormEstado(
+        fase: ClienteFormFase.error,
+        errorMensaje: 'No se pudo guardar el cliente.',
+      );
+      return false;
+    }
+  }
 }
 
 final clienteFormProvider =
     NotifierProvider<ClienteFormController, ClienteFormEstado>(
-  ClienteFormController.new,
-);
+      ClienteFormController.new,
+    );

@@ -46,8 +46,8 @@ Columnas: **Web** = repoweb actual · **Win/And** = puesto_flutter (código comp
 | M16 | Cierre de caja | `estadoCaja`/`cerrarCaja` (diferencia y alerta) | ✓ `caja_estado_pane`+`cierre_dialog` | ≡ | ✓ | Paridad | — | Misma diferencia calculada por backend en ambos |
 | M17 | Ticket | `ticket.$cobroId.tsx` + térmica Web Bluetooth/USB | PDF 80mm + diálogo sistema (`ticket_pdf.dart:13-91`) | ≡ | `GET cobros/:/ticket` ✓ | Térmica directa solo web; Flutter usa diálogo del SO (diferencia de plataforma permitida) | Adaptador térmico cuando se conozca hardware | Mismo ticket imprimible en ambos |
 | M18 | Clientes alta | `createCliente` (valida plan Pro CC) | ✓ | ≡ | ✓ | Paridad | — | Rechazo CC sin plan Pro igual en ambos |
-| M19 | Editar cliente | `guardarCliente` (`portal-fn.ts:447`) | ✗ | ✗ | `POST clientes/:id` ✓ | Falta en Flutter | B2a: edición cliente | Cambios auditables idénticos |
-| M20 | Cuenta corriente + pagos | `anotarPagoCuenta`/`movimientosCliente` | cuenta **solo lectura** | ✗ | `GET cuenta` + `POST pagos` ✓ | Flutter no registra pagos de deuda | B2b: registrar pago CC | Saldo derivado correcto tras pago, igual en ambos |
+| M19 | Editar cliente | `guardarCliente` (`portal-fn.ts:447`) | ✗ | ✓ ficha editable completa | `POST clientes/:id` ✓ | Flutter actualiza nombre, teléfono, CUIT/DNI, dirección, condición IVA, cuenta corriente y activo; errores canónicos visibles | B2a implementado; smoke Web↔API↔Flutter pendiente | Cambios auditables idénticos |
+| M20 | Cuenta corriente + pagos | `anotarPagoCuenta`/`movimientosCliente` | cuenta solo lectura | ✓ saldo/movimientos + registro de pago | `GET cuenta` + `POST pagos` ✓ | Flutter registra monto y nota; refresca cuenta y saldo de clientes tras éxito | B2b implementado; smoke Web↔API↔Flutter pendiente | Saldo derivado correcto tras pago, igual en ambos |
 | M21 | Remitos alta (csv/foto/manual/pdf + match) | Alta manual/foto; crea por `POST /api/v1/remitos` | ✗ | ✗ | `POST remitos` ✓ (fuentes) | Flutter aún no tiene alta | B5: alta con foto (Android `image_picker`, Windows `file_selector`) | Confirmación genera `entrada_remito`, igual en ambos |
 | M22 | Remitos OCR | `parseRemitoVision` → `POST /api/v1/remitos/ocr` | ✗ | ✗ | `POST remitos/ocr` ✓ (fail-closed 503) | Falta OCR de remito en Flutter | B5: OCR compartido por API en ambas apps | Misma lectura revisable en web y Flutter |
 | M23 | Remitos revisión/confirmación | Detalle, edición de líneas y confirmación por `/api/v1/remitos/*` | ✓ `remitos_service:12-41` | ≡ | ✓ | Paridad de reglas; web y Flutter usan el backend canónico | — | Solo confirmación humana suma stock, igual en ambos |
@@ -110,7 +110,7 @@ Orden estricto; cada ítem cierra con verificación triple (`tsc --noEmit` + `np
 | Paso | Contenido | Ref. matriz |
 |---|---|---|
 | B1 | Implementado en código: anular pedido pendiente y venta desde Caja con motivo, confirmación, errores del backend visibles y refresco de datos. Anulación de venta facturada requiere completar nota de crédito desde Flutter (B7); falta smoke integrado | Operaciones financieras críticas, backend listo |
-| B2 | Registrar pago CC (M20) + editar cliente (M19) | Backend listo |
+| B2 | Implementado en código: ficha editable completa y registro de pagos CC desde la cuenta, con nota opcional, monto validado, errores del backend visibles e invalidación de saldos/movimientos. Falta smoke integrado Web↔API↔Flutter | Backend listo; M19/M20 |
 | B3 | Transición de preparación en_preparacion→listo (M10/C9) | Bloquea ciclo Mercado desde Flutter |
 | B4 | Panel proveedores (M24) | CRUD simple |
 | B5 | Alta de remitos + OCR con foto (M21/M22; `image_picker` Android, `file_selector` Windows) | La dependencia más pesada de UI |

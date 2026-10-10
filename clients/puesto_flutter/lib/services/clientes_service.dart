@@ -16,10 +16,40 @@ class ClienteInput {
   final bool cuentaCorriente;
 
   Map<String, dynamic> toJson() => {
-        'nombre': nombre,
-        if (telefono != null) 'telefono': telefono,
-        'cuentaCorriente': cuentaCorriente,
-      };
+    'nombre': nombre,
+    if (telefono != null) 'telefono': telefono,
+    'cuentaCorriente': cuentaCorriente,
+  };
+}
+
+class ClienteActualizacionInput {
+  const ClienteActualizacionInput({
+    required this.nombre,
+    this.telefono,
+    this.cuit,
+    this.direccion,
+    required this.cuentaCorriente,
+    required this.condicionIva,
+    required this.activo,
+  });
+
+  final String nombre;
+  final String? telefono;
+  final String? cuit;
+  final String? direccion;
+  final bool cuentaCorriente;
+  final String condicionIva;
+  final bool activo;
+
+  Map<String, dynamic> toJson() => {
+    'nombre': nombre,
+    'telefono': telefono,
+    'cuit': cuit,
+    'direccion': direccion,
+    'cuentaCorriente': cuentaCorriente,
+    'condicionIva': condicionIva,
+    'activo': activo,
+  };
 }
 
 class ClientesService {
@@ -50,9 +80,25 @@ class ClientesService {
     );
   }
 
+  Future<void> actualizar(String id, ClienteActualizacionInput input) async {
+    await _client.post('/api/v1/clientes/$id', body: input.toJson());
+  }
+
+  Future<void> registrarPago(
+    String id, {
+    required double monto,
+    String? nota,
+  }) async {
+    await _client.post(
+      '/api/v1/clientes/$id/pagos',
+      body: {'monto': monto, 'nota': nota},
+    );
+  }
+
   Future<CuentaCorriente> cuenta(String id) async {
-    final data = await _client.get('/api/v1/clientes/$id/cuenta')
-        as Map<String, dynamic>;
+    final data = await _client.get(
+      '/api/v1/clientes/$id/cuenta',
+    ) as Map<String, dynamic>;
     return CuentaCorriente.fromJson(data['data'] as Map<String, dynamic>);
   }
 }
