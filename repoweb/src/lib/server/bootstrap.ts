@@ -11,12 +11,26 @@ import {
 import { getSql } from "@/lib/db";
 import { newId, slugId } from "@/lib/ids";
 import { num } from "@/lib/money";
-import type { Rol, Staff } from "@/lib/types";
+import type { Staff } from "@/lib/types";
 import { loadStaffByUserId } from "./context";
 
 const g = globalThis as typeof globalThis & {
   __mostradorBoot__?: Promise<void>;
 };
+
+/** Cuenta autenticada sin acceso al mostrador (cliente, dada de baja o sin alta). */
+export class SinAccesoError extends Error {
+  readonly status = 403;
+  constructor(message: string) {
+    super(message);
+    this.name = "SinAccesoError";
+  }
+}
+
+/** El seed/demo sólo corre en DEV con SEED_DEMO=true. */
+function seedDemoEnabled(): boolean {
+  return (process.env.SEED_DEMO ?? "").trim().toLowerCase() === "true";
+}
 
 async function seedAuthUser(email: string, password: string, name: string) {
   const sql = await getSql();
@@ -67,6 +81,8 @@ async function seedCore() {
     values (${TENANT_ID}, ${1040})
     on conflict (tenant_id) do nothing
   `;
+
+  if (!seedDemoEnabled()) return;
 
   await asegurarCatalogo(sql);
 
@@ -349,14 +365,23 @@ export async function ensureStaffForUser(userId: string): Promise<Staff> {
   const cliente = await sql<{ id: string }>`
     select id from clientes where user_id = ${userId} limit 1
   `;
-  const users = await sql<{ email: string; name: string }>`
-    select email, name from "user" where id = ${userId} limit 1
+  if (cliente[0]) throw new SinAccesoError("Esta cuenta es de un cliente.");
+  const existing = await loadStaffByUserId(userId);
+  if (existing) {
+    await sql`update staff set ultimo_login = now() where id = ${existing.id}`;
+    return existing;
+  }
+  const baja = await sql<{ activo: boolean }>`
+    select activo from staff where user_id = ${userId} limit 1
   `;
-  const email = users[0]?.email ?? "";
-  const emailKey = email.trim().toLowerCase();
-  const esPrueba = emailKey === PRUEBA_EMAIL;
-  if (!esPrueba && cliente[0]) throw new Error("Esta cuenta es de un cliente.");
-  if (!esPrueba) {
+  if (baja[0]) {
+    throw new SinAccesoError("Tu cuenta está dada de baja. Pedile al dueño que te reactive.");
+  }
+  const users = await sql<{ email: string }>`
+    select email from "user" where id = ${userId} limit 1
+  `;
+  const emailKey = (users[0]?.email ?? "").trim().toLowerCase();
+  if (emailKey) {
     try {
       const mercado = await sql<{ id: string }>`
         select id from mercado_compradores where user_id = ${userId}
@@ -364,45 +389,31 @@ export async function ensureStaffForUser(userId: string): Promise<Staff> {
         select id from mercado_cargadores where user_id = ${userId}
         limit 1
       `;
-      if (mercado[0]) throw new Error("Esta cuenta es de Mercado al Toque.");
+      if (mercado[0]) throw new SinAccesoError("Esta cuenta es de Mercado al Toque.");
     } catch (err) {
-      if (err instanceof Error && err.message === "Esta cuenta es de Mercado al Toque.") throw err;
+      if (err instanceof SinAccesoError) throw err;
       const code = (err as { code?: string }).code;
       if (code !== "42P01" && code !== "3F000") throw err;
     }
-    if (emailKey) {
-      try {
-        const acceso = await sql<{ email: string }>`
-          select email from torre.saas_access where lower(email) = ${emailKey} limit 1
-        `;
-        if (acceso[0]) throw new Error("Esta cuenta no es del puesto.");
-      } catch (err) {
-        if (err instanceof Error && err.message === "Esta cuenta no es del puesto.") throw err;
-        const code = (err as { code?: string }).code;
-        if (code !== "42P01" && code !== "3F000") throw err;
-      }
+    try {
+      const acceso = await sql<{ email: string }>`
+        select email from torre.saas_access where lower(email) = ${emailKey} limit 1
+      `;
+      if (acceso[0]) throw new SinAccesoError("Esta cuenta no es del puesto.");
+    } catch (err) {
+      if (err instanceof SinAccesoError) throw err;
+      const code = (err as { code?: string }).code;
+      if (code !== "42P01" && code !== "3F000") throw err;
     }
   }
-  const existing = await loadStaffByUserId(userId);
-  if (existing) {
-    await sql`update staff set ultimo_login = now() where id = ${existing.id}`;
-    return existing;
-  }
-  const demo = DEMO_USERS.find((u) => u.email === emailKey);
-  const rol: Rol = demo?.rol ?? "admin";
-  const nombre = demo?.nombre ?? users[0]?.name ?? "Dueño";
-  const id = newId("stf");
-  await sql`
-    insert into staff (id, tenant_id, user_id, nombre, email, rol, activo, ultimo_login)
-    values (${id}, ${TENANT_ID}, ${userId}, ${nombre}, ${email || `${userId}@frutasroman.local`}, ${rol}, ${true}, now())
-  `;
-  const staff = await loadStaffByUserId(userId);
-  if (!staff) throw new Error("No se pudo dar de alta el usuario.");
-  return staff;
+  throw new SinAccesoError(
+    "Tu cuenta no tiene acceso al mostrador. Pedile al dueño que te dé de alta en Usuarios.",
+  );
 }
 
 export async function seedDemoAccounts() {
   await ensureBootstrapped();
+  if (!seedDemoEnabled()) return [];
   return DEMO_USERS.map((u) => ({
     email: u.email,
     password: u.password,

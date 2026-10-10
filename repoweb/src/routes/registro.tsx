@@ -23,11 +23,26 @@ function RegistroPage() {
     setBusy(true);
     setError(null);
     try {
+      // Misma higiene que /login: el bearer de una sesión previa no debe
+      // sobrevivir al alta ni filtrarse en los pedidos posteriores.
+      try {
+        sessionStorage.removeItem("grok-auth.bearer-token");
+      } catch {
+        /* el navegador puede bloquear el almacenamiento */
+      }
       await registrarCliente({
         data: { nombre, email, password, telefono, cuit, direccion },
       });
-      const { error: err } = await authClient.signIn.email({ email: email.trim().toLowerCase(), password });
+      const { data, error: err } = await authClient.signIn.email({ email: email.trim().toLowerCase(), password });
       if (err) throw new Error(err.message ?? "La cuenta quedó creada, pero no pude entrar.");
+      const token = (data as { token?: string } | null)?.token;
+      if (token) {
+        try {
+          sessionStorage.setItem("grok-auth.bearer-token", token);
+        } catch {
+          /* ignore */
+        }
+      }
       await authClient.getSession();
       nav({ to: "/portal" });
     } catch (err) {
