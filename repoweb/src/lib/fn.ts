@@ -1,22 +1,22 @@
 import { createServerFn } from "@tanstack/react-start";
 import { authMiddleware } from "@/lib/auth/middleware";
+import { appApi, AppApiError } from "@/lib/app-api.server";
 import { getSql } from "@/lib/db";
 import { newId } from "@/lib/ids";
 import { num } from "@/lib/money";
 import { matchProduct } from "@/lib/server/match";
-import { applyStock, hayReserva, reservarLineas, soltarReserva } from "@/lib/server/stock";
+import { applyStock } from "@/lib/server/stock";
 import {
   assertRole,
   audit,
   getMarcaCompleta,
   getTenant,
-  loadItems,
-  loadPedido,
   loadStaffByUserId,
   mapProducto,
 } from "@/lib/server/context";
 import { ensureBootstrapped, ensureStaffForUser, seedDemoAccounts } from "@/lib/server/bootstrap";
 import { condicionOperativa, puedeAparecer } from "@/lib/torre/presencia";
+import type { TicketContenido } from "@/lib/termica";
 import type {
   Alerta,
   Cliente,
@@ -127,27 +127,7 @@ export const quienSoy = createServerFn({ method: "GET" })
 export const listProductos = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
   .handler(async ({ context }) => {
-    const staff = await ensureStaffForUser(context.userId);
-    const sql = await getSql();
-    const rows = await sql<{
-      id: string;
-      nombre: string;
-      unidad: Producto["unidad"];
-      unidad_label: string;
-      precio: unknown;
-      stock: unknown;
-      stock_minimo: unknown;
-      alias: unknown;
-      activo: boolean;
-      orden: unknown;
-      publicado_online: boolean | null;
-    }>`
-      select id, nombre, unidad, unidad_label, precio, stock, stock_minimo, alias, activo, orden, publicado_online
-      from productos
-      where tenant_id = ${staff.tenantId}
-      order by orden nulls last, lower(nombre)
-    `;
-    return rows.map(mapProducto);
+    return appApi<Producto[]>({ token: context.token, method: "GET", path: ["catalogo"] });
   });
 
 export const canalMercado = createServerFn({ method: "GET" })
@@ -205,218 +185,42 @@ export const saveProducto = createServerFn({ method: "POST" })
     stockInicial?: number;
   }) => input)
   .handler(async ({ context, data }) => {
-    const staff = await ensureStaffForUser(context.userId);
-    assertRole(staff, ["admin"]);
-    const sql = await getSql();
-    if (data.publicadoOnline) {
-      const presencia = await puedeAparecer(staff.tenantId, { mercadoAlToque: true });
-      if (!presencia.tier) throw new Error("Sin Presencia o Pro no se publica en Mercado.");
-    }
-    const id = data.id ?? newId("p");
-    if (data.id) {
-      const prev = await sql<{ precio: unknown; nombre: string }>`
-        select precio, nombre from productos where id = ${data.id} and tenant_id = ${staff.tenantId}
-      `;
-      await sql.query(
-        `update productos
-         set nombre=$1, unidad=$2, unidad_label=$3, precio=$4, stock_minimo=$5, alias=$6::jsonb, activo=$7,
-             publicado_online = coalesce($8, publicado_online), updated_at=now()
-         where id=$9 and tenant_id=$10`,
-        [
-          data.nombre.trim(),
-          data.unidad,
-          data.unidadLabel.trim(),
-          data.precio,
-          data.stockMinimo,
-          JSON.stringify(data.alias),
-          data.activo,
-          data.publicadoOnline ?? null,
-          data.id,
-          staff.tenantId,
-        ],
-      );
-      if (prev[0] && num(prev[0].precio) !== data.precio) {
-        await audit(staff.tenantId, staff, "cambio_precio", "producto", {
-          producto: data.nombre,
-          de: num(prev[0].precio),
-          a: data.precio,
-        });
-      }
-    } else {
-      await sql.query(
-        `insert into productos (id, tenant_id, nombre, unidad, unidad_label, precio, stock, stock_minimo, alias, activo, publicado_online)
-         values ($1,$2,$3,$4,$5,$6,0,$7,$8::jsonb,$9,$10)`,
-        [
-          id,
-          staff.tenantId,
-          data.nombre.trim(),
-          data.unidad,
-          data.unidadLabel.trim(),
-          data.precio,
-          data.stockMinimo,
-          JSON.stringify(data.alias),
-          data.activo,
-          data.publicadoOnline ?? false,
-        ],
-      );
-      await audit(staff.tenantId, staff, "alta_producto", "producto", { id, nombre: data.nombre });
-      const inicial = Number(data.stockInicial);
-      if (Number.isFinite(inicial) && inicial > 0) {
-        await applyStock({
-          tenantId: staff.tenantId,
-          productoId: id,
-          tipo: "ajuste",
-          cantidad: inicial,
-          referencia: "alta en tablero",
-          staff,
-        });
-      }
-    }
-    return { id };
+    return appApi<{ id: string }>({ token: context.token, method: "POST", path: ["productos"], body: data });
   });
 
 export const quitarProducto = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator((id: string) => id)
   .handler(async ({ context, data: id }) => {
-    const staff = await ensureStaffForUser(context.userId);
-    assertRole(staff, ["admin"]);
-    const sql = await getSql();
-    const rows = await sql<{ nombre: string }>`
-      update productos set activo = false, updated_at = now()
-      where id = ${id} and tenant_id = ${staff.tenantId} and activo = true
-      returning nombre
-    `;
-    if (rows[0]) await audit(staff.tenantId, staff, "baja_producto", "producto", { id, nombre: rows[0].nombre });
-    return { ok: true };
+    return appApi<{ ok: true }>({ token: context.token, method: "POST", path: ["productos", id, "baja"] });
   });
 
 export const ordenarProductos = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator((ids: string[]) => ids.filter((id) => typeof id === "string" && id.length > 0))
   .handler(async ({ context, data: ids }) => {
-    const staff = await ensureStaffForUser(context.userId);
-    assertRole(staff, ["admin"]);
-    const sql = await getSql();
-    for (let i = 0; i < ids.length; i += 1) {
-      await sql`
-        update productos set orden = ${i}, updated_at = now()
-        where id = ${ids[i]} and tenant_id = ${staff.tenantId}
-      `;
-    }
-    return { ok: true };
+    return appApi<{ ok: true }>({ token: context.token, method: "POST", path: ["productos", "orden"], body: ids });
   });
 
 export const listClientes = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
   .handler(async ({ context }) => {
-    const staff = await ensureStaffForUser(context.userId);
-    const sql = await getSql();
-    const rows = await sql<{
-      id: string;
-      nombre: string;
-      telefono: string | null;
-      cuenta_corriente: boolean;
-      activo: boolean;
-    }>`
-      select id, nombre, telefono, cuenta_corriente, activo from clientes
-      where tenant_id = ${staff.tenantId}
-      order by lower(nombre)
-    `;
-    return rows.map(
-      (r): Cliente => ({
-        id: r.id,
-        nombre: r.nombre,
-        telefono: r.telefono,
-        cuentaCorriente: r.cuenta_corriente,
-        activo: r.activo,
-      }),
-    );
+    return appApi<Cliente[]>({ token: context.token, method: "GET", path: ["clientes"] });
   });
 
 export const createCliente = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator((input: { nombre: string; telefono?: string; cuentaCorriente?: boolean }) => input)
   .handler(async ({ context, data }) => {
-    const staff = await ensureStaffForUser(context.userId);
-    assertRole(staff, ["admin"]);
-    if (data.cuentaCorriente) {
-      const condicion = await condicionOperativa(staff.tenantId);
-      if (!condicion.cuentaCorriente) throw new Error("La cuenta corriente corresponde al plan Pro y no está activa.");
-    }
-    const sql = await getSql();
-    const id = newId("cli");
-    await sql`
-      insert into clientes (id, tenant_id, nombre, telefono, cuenta_corriente)
-      values (${id}, ${staff.tenantId}, ${data.nombre.trim()}, ${data.telefono ?? null}, ${data.cuentaCorriente ?? false})
-    `;
-    return { id, nombre: data.nombre.trim() };
+    return appApi<{ id: string; nombre: string }>({
+      token: context.token,
+      method: "POST",
+      path: ["clientes"],
+      body: data,
+    });
   });
 
 type CartLine = { productoId: string; cantidad: number };
-
-async function insertPedido(opts: {
-  staff: Staff;
-  clientUuid: string;
-  clienteId?: string | null;
-  clienteNombre: string;
-  nota?: string | null;
-  items: CartLine[];
-  estado: PedidoEstado;
-  vendedorId: string | null;
-}): Promise<Pedido> {
-  const sql = await getSql();
-  const existing = await sql<{ id: string }>`
-    select id from pedidos where tenant_id = ${opts.staff.tenantId} and client_uuid = ${opts.clientUuid} limit 1
-  `;
-  if (existing[0]) {
-    const loaded = await loadPedido(existing[0].id, opts.staff.tenantId);
-    if (loaded) return loaded;
-  }
-  const productos = await sql<{
-    id: string;
-    nombre: string;
-    unidad: Producto["unidad"];
-    unidad_label: string;
-    precio: unknown;
-    stock: unknown;
-    stock_minimo: unknown;
-    alias: unknown;
-    activo: boolean;
-  }>`
-    select id, nombre, unidad, unidad_label, precio, stock, stock_minimo, alias, activo
-    from productos where tenant_id = ${opts.staff.tenantId}
-  `;
-  const byId = new Map(productos.map((p) => [p.id, mapProducto(p)]));
-  const pedidoId = newId("ped");
-  await sql`
-    insert into pedidos (
-      id, tenant_id, client_uuid, vendedor_id, cliente_id, cliente_nombre, estado, nota
-    ) values (
-      ${pedidoId}, ${opts.staff.tenantId}, ${opts.clientUuid}, ${opts.vendedorId},
-      ${opts.clienteId ?? null}, ${opts.clienteNombre}, ${opts.estado}, ${opts.nota ?? null}
-    )
-  `;
-  for (const line of opts.items) {
-    const prod = byId.get(line.productoId);
-    if (!prod || line.cantidad <= 0) continue;
-    await sql`
-      insert into pedido_items (
-        id, pedido_id, producto_id, nombre_snapshot, cantidad, precio_unitario, unidad, unidad_label
-      ) values (
-        ${newId("itm")}, ${pedidoId}, ${prod.id}, ${prod.nombre}, ${line.cantidad},
-        ${prod.precio}, ${prod.unidad}, ${prod.unidadLabel}
-      )
-    `;
-  }
-  await audit(opts.staff.tenantId, opts.staff, "crear_pedido", "pedido", {
-    id: pedidoId,
-    estado: opts.estado,
-  });
-  const loaded = await loadPedido(pedidoId, opts.staff.tenantId);
-  if (!loaded) throw new Error("No se pudo crear el pedido.");
-  return loaded;
-}
 
 export const crearPedido = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
@@ -428,17 +232,11 @@ export const crearPedido = createServerFn({ method: "POST" })
     items: CartLine[];
   }) => input)
   .handler(async ({ context, data }) => {
-    const staff = await ensureStaffForUser(context.userId);
-    if (data.items.length === 0) throw new Error("El pedido no tiene productos.");
-    return insertPedido({
-      staff,
-      clientUuid: data.clientUuid,
-      clienteId: data.clienteId,
-      clienteNombre: data.clienteNombre || "Mostrador",
-      nota: data.nota,
-      items: data.items,
-      estado: "enviado",
-      vendedorId: staff.rol === "cajero" ? null : staff.id,
+    return appApi<Pedido>({
+      token: context.token,
+      method: "POST",
+      path: ["pedidos"],
+      body: data,
     });
   });
 
@@ -446,151 +244,66 @@ export const listPedidos = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
   .validator((input?: { mine?: boolean; estados?: PedidoEstado[] }) => input ?? {})
   .handler(async ({ context, data }) => {
-    const staff = await ensureStaffForUser(context.userId);
-    const sql = await getSql();
-    const estados = data.estados;
-    let rows: { id: string }[] = [];
-    if (data.mine) {
-      rows = await sql<{ id: string }>`
-        select id from pedidos
-        where tenant_id = ${staff.tenantId} and vendedor_id = ${staff.id}
-        order by created_at desc
-        limit 40
-      `;
-    } else if (estados && estados.length) {
-      rows = await sql.query<{ id: string }>(
-        `select id from pedidos
-         where tenant_id = $1 and estado = any($2::text[])
-         order by created_at desc
-         limit 60`,
-        [staff.tenantId, estados],
-      );
-    } else {
-      rows = await sql<{ id: string }>`
-        select id from pedidos
-        where tenant_id = ${staff.tenantId}
-        order by created_at desc
-        limit 40
-      `;
-    }
-    const out: Pedido[] = [];
-    for (const r of rows) {
-      const p = await loadPedido(r.id, staff.tenantId);
-      if (p) out.push(p);
-    }
-    return out;
+    return appApi<Pedido[]>({
+      token: context.token,
+      method: "GET",
+      path: ["pedidos"],
+      query: {
+        ...(data.mine ? { mine: "1" } : {}),
+        ...(data.estados?.length ? { estados: data.estados.join(",") } : {}),
+      },
+    });
   });
 
 export const getPedido = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
   .validator((id: string) => id)
   .handler(async ({ context, data: id }) => {
-    const staff = await ensureStaffForUser(context.userId);
-    return loadPedido(id, staff.tenantId);
+    try {
+      return await appApi<Pedido | null>({
+        token: context.token,
+        method: "GET",
+        path: ["pedidos", id],
+      });
+    } catch (error) {
+      if (error instanceof AppApiError && error.status === 404) return null;
+      throw error;
+    }
   });
 
 export const updatePedidoEstado = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator((input: { id: string; estado: PedidoEstado }) => input)
   .handler(async ({ context, data }) => {
-    const staff = await ensureStaffForUser(context.userId);
-    assertRole(staff, ["admin", "cajero"]);
-    const sql = await getSql();
-    const actual = await sql<{ estado: string }>`
-      select estado from pedidos where id = ${data.id} and tenant_id = ${staff.tenantId} limit 1
-    `;
-    if (!actual[0]) throw new Error("Ese pedido no es de este puesto.");
-    if (data.estado === "en_preparacion" && actual[0].estado !== "enviado" && actual[0].estado !== "en_preparacion") {
-      throw new Error("Ese pedido no se puede preparar.");
-    }
-    if (data.estado === "listo" && actual[0].estado !== "en_preparacion" && actual[0].estado !== "listo") {
-      throw new Error("Antes tenés que empezar la preparación.");
-    }
-    await sql`
-      update pedidos set
-        estado = ${data.estado},
-        updated_at = now(),
-        preparation_started_at = case
-          when ${data.estado} = 'en_preparacion' and preparation_started_at is null then now()
-          else preparation_started_at
-        end,
-        prepared_at = case
-          when ${data.estado} = 'listo' and prepared_at is null then now()
-          else prepared_at
-        end
-      where id = ${data.id} and tenant_id = ${staff.tenantId}
-    `;
-    await audit(staff.tenantId, staff, "cambio_estado", "pedido", data);
-    return loadPedido(data.id, staff.tenantId);
+    return appApi<Pedido | null>({
+      token: context.token,
+      method: "POST",
+      path: ["pedidos", data.id, "estado"],
+      body: { estado: data.estado },
+    });
   });
 
 export const marcarEntregado = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator((id: string) => id)
   .handler(async ({ context, data: id }) => {
-    const staff = await ensureStaffForUser(context.userId);
-    assertRole(staff, ["admin", "cajero", "vendedor"]);
-    const pedido = await loadPedido(id, staff.tenantId);
-    if (!pedido) throw new Error("Pedido no encontrado.");
-    if (pedido.estado !== "cobrado") throw new Error("Solo se entrega un pedido ya cobrado.");
-    const sql = await getSql();
-    await sql`
-      update pedidos set estado = 'entregado', updated_at = now()
-      where id = ${id} and tenant_id = ${staff.tenantId}
-    `;
-    await audit(staff.tenantId, staff, "entregar", "pedido", { id });
-    return { ok: true };
+    return appApi<{ ok: true }>({
+      token: context.token,
+      method: "POST",
+      path: ["pedidos", id, "entregar"],
+    });
   });
 
 export const updatePedidoItems = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator((input: { id: string; items: CartLine[] }) => input)
   .handler(async ({ context, data }) => {
-    const staff = await ensureStaffForUser(context.userId);
-    assertRole(staff, ["admin", "cajero"]);
-    const sql = await getSql();
-    const pedido = await loadPedido(data.id, staff.tenantId);
-    if (!pedido) throw new Error("Pedido no encontrado.");
-    if (pedido.estado === "cobrado" || pedido.estado === "anulado") {
-      throw new Error("Este pedido ya no se puede editar.");
-    }
-    const reservado = await hayReserva(staff.tenantId, data.id);
-    if (reservado) await soltarReserva(staff.tenantId, data.id);
-    await sql`delete from pedido_items where pedido_id = ${data.id}`;
-    const productos = await sql<{
-      id: string;
-      nombre: string;
-      unidad: Producto["unidad"];
-      unidad_label: string;
-      precio: unknown;
-      stock: unknown;
-      stock_minimo: unknown;
-      alias: unknown;
-      activo: boolean;
-    }>`select id, nombre, unidad, unidad_label, precio, stock, stock_minimo, alias, activo from productos where tenant_id = ${staff.tenantId}`;
-    const byId = new Map(productos.map((p) => [p.id, mapProducto(p)]));
-    for (const line of data.items) {
-      const prod = byId.get(line.productoId);
-      if (!prod || line.cantidad <= 0) continue;
-      await sql`
-        insert into pedido_items (
-          id, pedido_id, producto_id, nombre_snapshot, cantidad, precio_unitario, unidad, unidad_label
-        ) values (
-          ${newId("itm")}, ${data.id}, ${prod.id}, ${prod.nombre}, ${line.cantidad},
-          ${prod.precio}, ${prod.unidad}, ${prod.unidadLabel}
-        )
-      `;
-    }
-    await sql`update pedidos set updated_at = now() where id = ${data.id}`;
-    if (reservado) {
-      await reservarLineas(
-        staff.tenantId,
-        data.id,
-        data.items.filter((line) => line.cantidad > 0),
-      );
-    }
-    await audit(staff.tenantId, staff, "modificar_pedido", "pedido", { id: data.id });
-    return loadPedido(data.id, staff.tenantId);
+    return appApi<Pedido | null>({
+      token: context.token,
+      method: "POST",
+      path: ["pedidos", data.id, "items"],
+      body: { items: data.items },
+    });
   });
 
 export const cobrarPedido = createServerFn({ method: "POST" })
@@ -602,268 +315,57 @@ export const cobrarPedido = createServerFn({ method: "POST" })
     montoRecibido?: number;
   }) => input)
   .handler(async ({ context, data }) => {
-    const staff = await ensureStaffForUser(context.userId);
-    assertRole(staff, ["admin", "cajero"]);
-    const sql = await getSql();
-    const dup = await sql<{ id: string }>`
-      select id from cobros where tenant_id = ${staff.tenantId} and client_uuid = ${data.clientUuid} limit 1
-    `;
-    if (dup[0]) {
-      const t = await sql<{ id: string; numero: number }>`
-        select id, numero from tickets where cobro_id = ${dup[0].id} limit 1
-      `;
-      return { cobroId: dup[0].id, ticketId: t[0]?.id, numero: t[0]?.numero };
-    }
-    const pedido = await loadPedido(data.pedidoId, staff.tenantId);
-    if (!pedido) throw new Error("Pedido no encontrado.");
-    if (pedido.estado === "anulado") throw new Error("El pedido está anulado.");
-    if (pedido.estado === "cobrado") throw new Error("El pedido ya está cobrado.");
-    if (pedido.items.length === 0) throw new Error("No hay ítems para cobrar.");
-    if (data.formaPago === "cuenta_corriente") {
-      if (!pedido.clienteId) throw new Error("La cuenta corriente es solo para un cliente cargado.");
-      const ficha = await sql<{ cuenta_corriente: boolean }>`
-        select cuenta_corriente from clientes
-        where id = ${pedido.clienteId} and tenant_id = ${staff.tenantId}
-        limit 1
-      `;
-      if (!ficha[0]?.cuenta_corriente) throw new Error("Este cliente no tiene cuenta corriente.");
-      const condicion = await condicionOperativa(staff.tenantId);
-      if (!condicion.cuentaCorriente) throw new Error("La cuenta corriente corresponde al plan Pro y no está activa.");
-    }
-
-    const total = pedido.total;
-    const recibido =
-      data.formaPago === "efectivo" ? (data.montoRecibido ?? total) : total;
-    if (data.formaPago === "efectivo" && recibido < total) {
-      throw new Error("El monto recibido no cubre el total.");
-    }
-    const vuelto = data.formaPago === "efectivo" ? Math.round((recibido - total) * 100) / 100 : 0;
-    const cobroId = newId("cob");
-    await sql`
-      insert into cobros (
-        id, tenant_id, pedido_id, client_uuid, forma_pago, monto, monto_recibido, vuelto, usuario_id
-      ) values (
-        ${cobroId}, ${staff.tenantId}, ${pedido.id}, ${data.clientUuid}, ${data.formaPago},
-        ${total}, ${recibido}, ${vuelto}, ${staff.id}
-      )
-    `;
-    await sql`
-      update pedidos set estado = 'cobrado', updated_at = now()
-      where id = ${pedido.id} and tenant_id = ${staff.tenantId}
-    `;
-    for (const item of pedido.items) {
-      const reservado = await hayReserva(staff.tenantId, pedido.id);
-      if (!reservado) {
-        await applyStock({
-          tenantId: staff.tenantId,
-          productoId: item.productoId,
-          tipo: "venta",
-          cantidad: -item.cantidad,
-          referencia: cobroId,
-          staff,
-        });
-      }
-    }
-    if (await hayReserva(staff.tenantId, pedido.id)) {
-      await sql`
-        delete from stock_movimientos
-        where tenant_id = ${staff.tenantId} and referencia = ${pedido.id} and tipo = 'reserva'
-      `;
-    }
-    if (data.formaPago === "cuenta_corriente" && pedido.clienteId) {
-      await sql`
-        insert into cuenta_movimientos (id, tenant_id, cliente_id, tipo, monto, referencia, nota)
-        values (
-          ${newId("ccm")}, ${staff.tenantId}, ${pedido.clienteId}, ${"cargo"},
-          ${total}, ${cobroId}, ${"Venta en cuenta"}
-        )
-      `;
-    }
-    const seq = await sql<{ ultimo: number }>`
-      update ticket_seq set ultimo = ultimo + 1 where tenant_id = ${staff.tenantId} returning ultimo
-    `;
-    const tenant = await getTenant();
-    const numero = seq[0]?.ultimo ?? 1;
-    const contenido = {
-      puesto: tenant.nombre,
-      bajada: tenant.bajada,
-      membrete: tenant.membrete,
-      numero,
-      fecha: new Date().toISOString(),
-      cliente: pedido.clienteNombre,
-      items: pedido.items.map((it) => ({
-        nombre: it.nombre,
-        cantidad: it.cantidad,
-        unidad: it.unidadLabel,
-        precio: it.precioUnitario,
-        subtotal: it.subtotal,
-      })),
-      total,
-      formaPago: data.formaPago,
-      recibido,
-      vuelto,
-      pie: tenant.pieTicket,
-    };
-    const ticketId = newId("tck");
-    await sql.query(
-      `insert into tickets (id, cobro_id, tenant_id, numero, contenido)
-       values ($1,$2,$3,$4,$5::jsonb)`,
-      [ticketId, cobroId, staff.tenantId, numero, JSON.stringify(contenido)],
-    );
-    await audit(staff.tenantId, staff, "cobro", "cobro", {
-      cobroId,
-      pedidoId: pedido.id,
-      total,
-      formaPago: data.formaPago,
+    return appApi<{ cobroId: string; ticketId?: string; numero: number; vuelto: number; total: number }>({
+      token: context.token,
+      method: "POST",
+      path: ["pedidos", data.pedidoId, "cobrar"],
+      body: {
+        clientUuid: data.clientUuid,
+        formaPago: data.formaPago,
+        montoRecibido: data.montoRecibido,
+      },
     });
-    return { cobroId, ticketId, numero, vuelto, total };
   });
 
 export const anularPedido = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator((input: { id: string; motivo: string }) => input)
   .handler(async ({ context, data }) => {
-    const staff = await ensureStaffForUser(context.userId);
-    assertRole(staff, ["admin", "cajero"]);
-    if (!data.motivo.trim()) throw new Error("La anulación requiere un motivo.");
-    const sql = await getSql();
-    const pedido = await loadPedido(data.id, staff.tenantId);
-    if (!pedido) throw new Error("Pedido no encontrado.");
-    if (pedido.estado === "anulado") return pedido;
-    const cobro = await sql<{ id: string; anulado: boolean }>`
-      select id, anulado from cobros where pedido_id = ${pedido.id} and tenant_id = ${staff.tenantId} limit 1
-    `;
-    if (cobro[0] && !cobro[0].anulado) {
-      const factura = await sql<{ id: string }>`
-        select id from facturas
-        where tenant_id = ${staff.tenantId}
-          and cobro_id = ${cobro[0].id}
-          and estado = 'autorizada'
-          and cbte_tipo in (1, 6, 11)
-        limit 1
-      `;
-      if (factura[0]) {
-        throw new Error("Esta venta tiene factura electrónica. Emití la nota de crédito antes de anular.");
-      }
-      for (const item of pedido.items) {
-        await applyStock({
-          tenantId: staff.tenantId,
-          productoId: item.productoId,
-          tipo: "anulacion_venta",
-          cantidad: item.cantidad,
-          referencia: cobro[0].id,
-          staff,
-        });
-      }
-      await sql`
-        update cobros set anulado = true
-        where id = ${cobro[0].id} and tenant_id = ${staff.tenantId}
-      `;
-    } else if (await hayReserva(staff.tenantId, pedido.id)) {
-      await soltarReserva(staff.tenantId, pedido.id);
-    }
-    await sql`
-      update pedidos set estado = 'anulado', updated_at = now()
-      where id = ${pedido.id} and tenant_id = ${staff.tenantId}
-    `;
-    await audit(staff.tenantId, staff, "anular_pedido", "pedido", {
-      id: pedido.id,
-      motivo: data.motivo.trim(),
+    return appApi<Pedido | null>({
+      token: context.token,
+      method: "POST",
+      path: ["pedidos", data.id, "anular"],
+      body: { motivo: data.motivo },
     });
-    return loadPedido(pedido.id, staff.tenantId);
   });
 
 export const anularCobro = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator((input: { id: string; motivo: string }) => input)
   .handler(async ({ context, data }) => {
-    const staff = await ensureStaffForUser(context.userId);
-    assertRole(staff, ["admin", "cajero"]);
-    if (!data.motivo.trim()) throw new Error("La anulación requiere un motivo.");
-    const sql = await getSql();
-    const cobro = await sql<{
-      id: string;
-      pedido_id: string;
-      anulado: boolean;
-      monto: unknown;
-      forma_pago: string;
-    }>`
-      select id, pedido_id, anulado, monto, forma_pago from cobros
-      where id = ${data.id} and tenant_id = ${staff.tenantId}
-      limit 1
-    `;
-    if (!cobro[0]) throw new Error("Ticket no encontrado.");
-    if (cobro[0].anulado) throw new Error("Esa venta ya está anulada.");
-    const factura = await sql<{ id: string }>`
-      select id from facturas
-      where tenant_id = ${staff.tenantId}
-        and cobro_id = ${cobro[0].id}
-        and estado = 'autorizada'
-        and cbte_tipo in (1, 6, 11)
-      limit 1
-    `;
-    if (factura[0]) {
-      throw new Error("Esta venta tiene factura electrónica. Emití la nota de crédito en ARCA antes de anular.");
-    }
-    const pedido = await loadPedido(cobro[0].pedido_id, staff.tenantId);
-    if (!pedido) throw new Error("Pedido no encontrado.");
-    for (const item of pedido.items) {
-      await applyStock({
-        tenantId: staff.tenantId,
-        productoId: item.productoId,
-        tipo: "anulacion_venta",
-        cantidad: item.cantidad,
-        referencia: cobro[0].id,
-        staff,
-      });
-    }
-    await sql`
-      update cobros set anulado = true
-      where id = ${cobro[0].id} and tenant_id = ${staff.tenantId}
-    `;
-    await sql`
-      update pedidos set estado = 'anulado', updated_at = now()
-      where id = ${pedido.id} and tenant_id = ${staff.tenantId}
-    `;
-    if (cobro[0].forma_pago === "cuenta_corriente" && pedido.clienteId) {
-      await sql`
-        insert into cuenta_movimientos (id, tenant_id, cliente_id, tipo, monto, referencia, nota)
-        values (
-          ${newId("ccm")}, ${staff.tenantId}, ${pedido.clienteId}, ${"reverso"},
-          ${-num(cobro[0].monto)}, ${cobro[0].id}, ${"Anulación de venta"}
-        )
-      `;
-    }
-    await audit(staff.tenantId, staff, "anular_cobro", "cobro", {
-      id: cobro[0].id,
-      pedidoId: pedido.id,
-      motivo: data.motivo.trim(),
+    return appApi<{ ok: true }>({
+      token: context.token,
+      method: "POST",
+      path: ["cobros", data.id, "anular"],
+      body: { motivo: data.motivo },
     });
-    return { ok: true };
   });
 
 export const getTicket = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
   .validator((cobroId: string) => cobroId)
   .handler(async ({ context, data: cobroId }) => {
-    const staff = await ensureStaffForUser(context.userId);
-    const sql = await getSql();
-    const rows = await sql<{
-      id: string;
-      numero: number;
-      contenido: unknown;
-      created_at: string;
-    }>`
-      select id, numero, contenido, created_at::text as created_at
-      from tickets
-      where cobro_id = ${cobroId} and tenant_id = ${staff.tenantId}
-      limit 1
-    `;
-    const row = rows[0];
-    if (!row) return null;
-    const contenido =
-      typeof row.contenido === "string" ? JSON.parse(row.contenido) : row.contenido;
-    return { id: row.id, numero: row.numero, contenido, createdAt: row.created_at };
+    try {
+      return await appApi<{
+        id: string;
+        numero: number;
+        contenido: TicketContenido;
+        createdAt: string;
+      } | null>({ token: context.token, method: "GET", path: ["cobros", cobroId, "ticket"] });
+    } catch (error) {
+      if (error instanceof AppApiError && error.status === 404) return null;
+      throw error;
+    }
   });
 
 export const dashboardResumen = createServerFn({ method: "GET" })
@@ -1109,40 +611,14 @@ export const rankingCargadores = createServerFn({ method: "GET" })
 export const listAlertas = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
   .handler(async ({ context }) => {
-    const staff = await ensureStaffForUser(context.userId);
-    const sql = await getSql();
-    const rows = await sql<{
-      id: string;
-      tipo: string;
-      mensaje: string;
-      leida: boolean;
-      created_at: string;
-    }>`
-      select id, tipo, mensaje, leida, created_at::text as created_at
-      from alertas
-      where tenant_id = ${staff.tenantId}
-      order by leida asc, created_at desc
-      limit 30
-    `;
-    return rows.map(
-      (r): Alerta => ({
-        id: r.id,
-        tipo: r.tipo,
-        mensaje: r.mensaje,
-        leida: r.leida,
-        createdAt: r.created_at,
-      }),
-    );
+    return appApi<Alerta[]>({ token: context.token, method: "GET", path: ["alertas"] });
   });
 
 export const marcarAlertaLeida = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator((id: string) => id)
   .handler(async ({ context, data: id }) => {
-    const staff = await ensureStaffForUser(context.userId);
-    const sql = await getSql();
-    await sql`update alertas set leida = true where id = ${id} and tenant_id = ${staff.tenantId}`;
-    return { ok: true };
+    return appApi<{ ok: true }>({ token: context.token, method: "POST", path: ["alertas", id, "leida"] });
   });
 
 export const listUsuarios = createServerFn({ method: "GET" })
@@ -1242,143 +718,39 @@ export const listAuditoria = createServerFn({ method: "GET" })
     }));
   });
 
+type CajaEstado = {
+  id: string;
+  abiertoAt: string;
+  esperado: number;
+  totales: { formaPago: FormaPago; total: number; n: number }[];
+  ultimos: {
+    id: string;
+    monto: number;
+    formaPago: FormaPago;
+    createdAt: string;
+    cliente: string;
+    numero: number | null;
+    facturaId: string | null;
+    cae: string | null;
+  }[];
+};
+
 export const estadoCaja = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
   .handler(async ({ context }) => {
-    const staff = await ensureStaffForUser(context.userId);
-    assertRole(staff, ["admin", "cajero"]);
-    const sql = await getSql();
-    let open = await sql<{
-      id: string;
-      abierto_at: string;
-      usuario_id: string;
-    }>`
-      select id, abierto_at::text as abierto_at, usuario_id
-      from cierres_caja
-      where tenant_id = ${staff.tenantId} and cerrado_at is null
-      order by abierto_at desc
-      limit 1
-    `;
-    if (!open[0]) {
-      const id = newId("cje");
-      await sql`
-        insert into cierres_caja (id, tenant_id, usuario_id, abierto_at)
-        values (${id}, ${staff.tenantId}, ${staff.id}, now())
-      `;
-      open = await sql<{ id: string; abierto_at: string; usuario_id: string }>`
-        select id, abierto_at::text as abierto_at, usuario_id from cierres_caja where id = ${id}
-      `;
-    }
-    const desde = open[0].abierto_at;
-    const totales = await sql<{ forma_pago: string; total: unknown; n: unknown }>`
-      select forma_pago, coalesce(sum(monto),0) as total, count(*)::int as n
-      from cobros
-      where tenant_id = ${staff.tenantId} and anulado = false and created_at >= ${desde}::timestamptz
-      group by forma_pago
-    `;
-    const esperado = totales.reduce((acc, t) => acc + num(t.total), 0);
-    const ultimos = await sql<{
-      id: string;
-      monto: unknown;
-      forma_pago: string;
-      created_at: string;
-      cliente: string;
-      numero: number | null;
-      factura_id: string | null;
-      cae: string | null;
-    }>`
-      select c.id, c.monto, c.forma_pago, c.created_at::text as created_at,
-             coalesce(p.cliente_nombre, 'Mostrador') as cliente, t.numero,
-             f.id as factura_id, f.cae
-      from cobros c
-      left join pedidos p on p.id = c.pedido_id
-      left join tickets t on t.cobro_id = c.id
-      left join facturas f
-        on f.cobro_id = c.id
-       and f.tenant_id = c.tenant_id
-       and f.estado = 'autorizada'
-       and f.cbte_tipo in (1, 6, 11)
-      where c.tenant_id = ${staff.tenantId} and c.anulado = false and c.created_at >= ${desde}::timestamptz
-      order by c.created_at desc
-      limit 12
-    `;
-    return {
-      id: open[0].id,
-      abiertoAt: open[0].abierto_at,
-      esperado,
-      totales: totales.map((t) => ({
-        formaPago: t.forma_pago as FormaPago,
-        total: num(t.total),
-        n: num(t.n),
-      })),
-      ultimos: ultimos.map((u) => ({
-        id: u.id,
-        monto: num(u.monto),
-        formaPago: u.forma_pago as FormaPago,
-        createdAt: u.created_at,
-        cliente: u.cliente,
-        numero: u.numero == null ? null : num(u.numero),
-        facturaId: u.factura_id,
-        cae: u.cae,
-      })),
-    };
+    return appApi<CajaEstado>({ token: context.token, method: "GET", path: ["caja"] });
   });
 
 export const cerrarCaja = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator((input: { id: string; real: number; notas?: string }) => input)
   .handler(async ({ context, data }) => {
-    const staff = await ensureStaffForUser(context.userId);
-    assertRole(staff, ["admin", "cajero"]);
-    const sql = await getSql();
-    const open = await sql<{ id: string; abierto_at: string }>`
-      select id, abierto_at::text as abierto_at
-      from cierres_caja
-      where id = ${data.id} and tenant_id = ${staff.tenantId} and cerrado_at is null
-      limit 1
-    `;
-    if (!open[0]) throw new Error("No hay una caja abierta.");
-    const totales = await sql<{ forma_pago: string; total: unknown; n: unknown }>`
-      select forma_pago, coalesce(sum(monto),0) as total, count(*)::int as n
-      from cobros
-      where tenant_id = ${staff.tenantId} and anulado = false and created_at >= ${open[0].abierto_at}::timestamptz
-      group by forma_pago
-    `;
-    const esperado = totales.reduce((acc, t) => acc + num(t.total), 0);
-    const diferencia = Math.round((data.real - esperado) * 100) / 100;
-    await sql.query(
-      `update cierres_caja
-       set cerrado_at = now(), esperado = $1, real = $2, diferencia = $3, totales = $4::jsonb, notas = $5
-       where id = $6 and tenant_id = $7`,
-      [
-        esperado,
-        data.real,
-        diferencia,
-        JSON.stringify(totales.map((t) => ({ formaPago: t.forma_pago, total: num(t.total), n: num(t.n) }))),
-        data.notas ?? null,
-        data.id,
-        staff.tenantId,
-      ],
-    );
-    if (diferencia !== 0) {
-      await sql`
-        insert into alertas (id, tenant_id, tipo, mensaje, leida)
-        values (
-          ${newId("alr")}, ${staff.tenantId}, ${"caja_diferencia"},
-          ${`Cierre de caja con diferencia de ${diferencia}.`}, ${false}
-        )
-      `;
-    }
-    await audit(staff.tenantId, staff, "cierre_caja", "caja", {
-      esperado,
-      real: data.real,
-      diferencia,
+    return appApi<{ diferencia: number; esperado: number }>({
+      token: context.token,
+      method: "POST",
+      path: ["caja", "cerrar"],
+      body: data,
     });
-    await sql`
-      insert into cierres_caja (id, tenant_id, usuario_id, abierto_at)
-      values (${newId("cje")}, ${staff.tenantId}, ${staff.id}, now())
-    `;
-    return { diferencia, esperado };
   });
 
 
@@ -1386,19 +758,7 @@ export const ajustarStock = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator((input: { productoId: string; cantidad: number; tipo: "ajuste" | "merma"; motivo: string }) => input)
   .handler(async ({ context, data }) => {
-    const staff = await ensureStaffForUser(context.userId);
-    assertRole(staff, ["admin", "cajero"]);
-    const signed = data.tipo === "merma" ? -Math.abs(data.cantidad) : data.cantidad;
-    await applyStock({
-      tenantId: staff.tenantId,
-      productoId: data.productoId,
-      tipo: data.tipo,
-      cantidad: signed,
-      referencia: data.motivo,
-      staff,
-    });
-    await audit(staff.tenantId, staff, data.tipo, "stock", data);
-    return { ok: true };
+    return appApi<{ ok: true }>({ token: context.token, method: "POST", path: ["stock", "ajuste"], body: data });
   });
 
 export const crearRemito = createServerFn({ method: "POST" })

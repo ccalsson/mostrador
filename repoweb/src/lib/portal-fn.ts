@@ -3,6 +3,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
 import { hashPassword } from "better-auth/crypto";
 import { authMiddleware } from "@/lib/auth/middleware";
+import { appApi } from "@/lib/app-api.server";
 import { TENANT_ID } from "@/lib/catalog";
 import { getSql } from "@/lib/db";
 import { newId } from "@/lib/ids";
@@ -11,7 +12,6 @@ import { createCredentialUser, ensureBootstrapped, ensureStaffForUser } from "@/
 import { audit, loadPedido, mapProducto } from "@/lib/server/context";
 import { reservarLineas, soltarReserva } from "@/lib/server/stock";
 import type { Cliente, FormaPago, Pedido, Producto } from "@/lib/types";
-import { esCondicion } from "@/lib/afip-calc";
 import { condicionOperativa } from "@/lib/torre/presencia";
 
 type Ficha = {
@@ -434,14 +434,11 @@ export const verComprobante = createServerFn({ method: "GET" })
 export const listarClientes = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
   .handler(async ({ context }) => {
-    const staff = await ensureStaffForUser(context.userId);
-    if (staff.rol !== "admin") throw new Error("No tenés permiso para esta acción.");
-    const sql = await getSql();
-    const rows = await sql.query<Parameters<typeof mapFicha>[0]>(
-      `${FICHA_SQL} from clientes c where c.tenant_id = $1 order by lower(c.nombre)`,
-      [staff.tenantId],
-    );
-    return rows.map((r) => mapFicha(r));
+    return appApi<Omit<Ficha, "puedeCuentaCorriente">[]>({
+      token: context.token,
+      method: "GET",
+      path: ["clientes"],
+    });
   });
 
 export const guardarCliente = createServerFn({ method: "POST" })
@@ -457,63 +454,31 @@ export const guardarCliente = createServerFn({ method: "POST" })
     activo: boolean;
   }) => input)
   .handler(async ({ context, data }) => {
-    const staff = await ensureStaffForUser(context.userId);
-    if (staff.rol !== "admin") throw new Error("No tenés permiso para esta acción.");
-    if (!esCondicion(data.condicionIva)) throw new Error("Elegí la condición frente al IVA.");
-    const sql = await getSql();
-    if (data.cuentaCorriente) {
-      const condicion = await condicionOperativa(staff.tenantId);
-      if (!condicion.cuentaCorriente) throw new Error("La cuenta corriente corresponde al plan Pro y no está activa.");
-    }
-    await sql`
-      update clientes
-      set nombre = ${data.nombre.trim()},
-          telefono = ${data.telefono.trim() || null},
-          cuit = ${data.cuit.trim() || null},
-          direccion = ${data.direccion.trim() || null},
-          cuenta_corriente = ${data.cuentaCorriente},
-          condicion_iva = ${data.condicionIva},
-          activo = ${data.activo}
-      where id = ${data.id} and tenant_id = ${staff.tenantId}
-    `;
-    await audit(staff.tenantId, staff, "editar_cliente", "cliente", { id: data.id });
-    return { ok: true };
+    const { id, ...body } = data;
+    return appApi<{ ok: true }>({ token: context.token, method: "POST", path: ["clientes", id], body });
   });
 
 export const anotarPagoCuenta = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator((input: { clienteId: string; monto: number; nota?: string }) => input)
   .handler(async ({ context, data }) => {
-    const staff = await ensureStaffForUser(context.userId);
-    if (staff.rol !== "admin") throw new Error("No tenés permiso para esta acción.");
-    if (!(data.monto > 0)) throw new Error("El pago tiene que ser mayor a cero.");
-    const sql = await getSql();
-    await sql`
-      insert into cuenta_movimientos (id, tenant_id, cliente_id, tipo, monto, referencia, nota)
-      values (
-        ${newId("ccm")}, ${staff.tenantId}, ${data.clienteId}, ${"pago"},
-        ${-Math.abs(data.monto)}, ${null}, ${data.nota?.trim() || "Pago en el puesto"}
-      )
-    `;
-    await audit(staff.tenantId, staff, "pago_cuenta", "cliente", { id: data.clienteId, monto: data.monto });
-    return { ok: true };
+    const { clienteId, ...body } = data;
+    return appApi<{ ok: true }>({
+      token: context.token,
+      method: "POST",
+      path: ["clientes", clienteId, "pagos"],
+      body,
+    });
   });
 
 export const movimientosCliente = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
   .validator((clienteId: string) => clienteId)
   .handler(async ({ context, data: clienteId }) => {
-    const staff = await ensureStaffForUser(context.userId);
-    if (staff.rol !== "admin") throw new Error("No tenés permiso para esta acción.");
-    const sql = await getSql();
-    const rows = await sql<{ id: string; tipo: string; monto: unknown; nota: string | null; created_at: string }>`
-      select id, tipo, monto, nota, created_at::text as created_at
-      from cuenta_movimientos
-      where tenant_id = ${staff.tenantId} and cliente_id = ${clienteId}
-      order by created_at desc
-      limit 30
-    `;
-    return rows.map((r) => ({ id: r.id, tipo: r.tipo, monto: num(r.monto), nota: r.nota, createdAt: r.created_at }));
+    return appApi<{
+      saldo: number;
+      movimientos: { id: string; tipo: string; monto: number; nota: string | null; createdAt: string }[];
+    }>({ token: context.token, method: "GET", path: ["clientes", clienteId, "cuenta"] });
   });
 
 export type Proveedor = {

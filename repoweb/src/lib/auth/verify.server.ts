@@ -95,3 +95,34 @@ export async function requireUserId(bearerToken?: string): Promise<string> {
   if (!user) throw new UnauthorizedError();
   return user.id;
 }
+
+/**
+ * Resolve the current user id AND the raw session token. The token is what the
+ * server forwards as `Authorization: Bearer` when it calls the canonical
+ * `/api/v1` backend (convergencia A2) — same Better Auth tables and secret, so
+ * app/ validates it. `bearerToken` (live preview) is preferred; otherwise the
+ * cookie session's own token is used.
+ */
+export async function requireSession(
+  bearerToken?: string,
+): Promise<{ userId: string; token: string }> {
+  if (!authConfigured && !gateIdentityEnabled()) {
+    if (databaseConfigured) {
+      throw new Error(
+        "Auth is disabled (VITE_AUTH_ENABLED=false) but DATABASE_URL is set — " +
+          "refusing to fall back to the shared dev user against a real database.",
+      );
+    }
+    return { userId: DEV_USER_ID, token: "" };
+  }
+  const request = getRequest();
+  if (!request) throw new UnauthorizedError();
+  let headers = request.headers;
+  if (bearerToken) {
+    headers = new Headers(request.headers);
+    headers.set("Authorization", `Bearer ${bearerToken}`);
+  }
+  const session = await auth.api.getSession({ headers });
+  if (!session?.user || !session.session?.token) throw new UnauthorizedError();
+  return { userId: session.user.id, token: session.session.token };
+}
