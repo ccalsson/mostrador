@@ -44,6 +44,7 @@ import {
 } from "@/lib/server/mensajes";
 import { dashboardResumenForStaff, listAlertasForStaff, listAuditoriaForStaff, marcarAlertaLeidaForStaff } from "@/lib/server/panel";
 import {
+  comprobantePedidoForStaff,
   getPedidoForStaff,
   listPedidosForStaff,
   marcarEntregadoForStaff,
@@ -373,6 +374,15 @@ const ROUTES: Entry[] = [
       const pedido = await getPedidoForStaff(staff, segments[1]);
       if (!pedido) throw new HttpError(404, "not_found", "Pedido no encontrado.");
       return json({ data: pedido });
+    },
+  },
+  {
+    method: "GET",
+    path: ["pedidos", ":", "comprobante"],
+    handler: async ({ segments, staff }) => {
+      const comprobante = await comprobantePedidoForStaff(staff, segments[1]);
+      if (!comprobante) throw new HttpError(404, "not_found", "Este pedido no tiene comprobante.");
+      return json({ data: comprobante });
     },
   },
   {

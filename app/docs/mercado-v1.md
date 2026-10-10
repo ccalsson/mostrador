@@ -62,8 +62,12 @@ the app deep link or web Mercado page.
 
 Configure `GROK_AUTH_CLIENT_ID` and `GROK_AUTH_CLIENT_SECRET` with credentials
 for a Google OAuth web client whose authorized redirect URI is
-`<BETTER_AUTH_URL>/api/mercado/v1/auth/google/callback`. Google sign-in is
-unavailable until those credentials and redirect URI are configured.
+`<MERCADO_WEB_URL>/api/mercado/v1/auth/google/callback` when `MERCADO_WEB_URL`
+is set, otherwise `<BETTER_AUTH_URL>/api/mercado/v1/auth/google/callback`.
+Google sign-in is unavailable until those credentials and redirect URI are
+configured. When repoweb and `app/` have different public origins, set
+`MERCADO_WEB_URL` to the public repoweb origin; this keeps the OAuth state
+cookie, callback proxy, and `/mercado` return on the same origin.
 
 ### Upload buyer identity documents
 
@@ -117,6 +121,9 @@ a different request returns `409`.
 
 - `GET /pedidos`: the buyer's orders.
 - `GET /pedidos/{pedidoId}`: one of the buyer's orders.
+- `POST /pedidos/{pedidoId}/cancelar`: a buyer can cancel an unassigned order
+  that the stand has not started preparing; the reservation is released and
+  the action is audited.
 
 Orders are created with payment state `pendiente`; this API does not charge a
 payment method. Mercado orders are prepared through Mostrador before they can
@@ -135,6 +142,8 @@ be assigned for pickup.
   `{ "pedidoId" }` and an `Idempotency-Key` for the action.
 - `POST /recorridos/{id}/calificar` (buyer): `{ "estrellas": 1..5,
   "comentario": "..." }`.
+- `GET /recorridos` includes each stop's `preparado` flag so clients can
+  disable pickup until Mostrador marks the order ready.
 
 Only the assigned Cargador can accept, reject, pick up, or deliver a route.
 Each stop must be picked up before it is delivered. A rejected route releases

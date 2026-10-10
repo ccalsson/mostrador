@@ -6,6 +6,7 @@ import { num } from "@/lib/money";
 import { createCredentialUser, ensureBootstrapped, SinAccesoError } from "@/lib/server/bootstrap";
 import { loadPedido, loadPedidos, mapProducto } from "@/lib/server/context";
 import { reservarLineas, soltarReserva } from "@/lib/server/stock";
+import { condicionOperativa } from "@/lib/torre/presencia";
 import type { FormaPago, Producto } from "@/lib/types";
 
 export type Ficha = {
@@ -21,6 +22,7 @@ export type Ficha = {
   userId: string | null;
   saldo: number;
   tenantId: string;
+  puedeCuentaCorriente: boolean;
 };
 
 function mapFicha(r: {
@@ -50,6 +52,7 @@ function mapFicha(r: {
     userId: r.user_id,
     saldo: num(r.saldo),
     tenantId: r.tenant_id,
+    puedeCuentaCorriente: false,
   };
 }
 
@@ -68,7 +71,8 @@ export async function fichaActivaPorUsuario(userId: string): Promise<Ficha> {
   );
   const ficha = rows[0] ? mapFicha(rows[0]) : null;
   if (!ficha || !ficha.activo) throw new SinAccesoError("No hay una ficha de cliente activa para esta cuenta.");
-  return ficha;
+  const condicion = await condicionOperativa(ficha.tenantId);
+  return { ...ficha, puedeCuentaCorriente: condicion.cuentaCorriente };
 }
 
 function enmascarar(email: string) {
@@ -233,8 +237,12 @@ export type PedirComoClienteInput = {
 export async function pedirComoClienteForClient(ficha: Ficha, input: PedirComoClienteInput) {
   const items = input.items.filter((line) => line.cantidad > 0);
   if (items.length === 0) throw new Error("El pedido no tiene productos.");
-  if (input.formaPago === "cuenta_corriente" && !ficha.cuentaCorriente) {
-    throw new Error("El puesto todavía no te habilitó la cuenta corriente.");
+  if (input.formaPago === "cuenta_corriente" && (!ficha.cuentaCorriente || !ficha.puedeCuentaCorriente)) {
+    throw new Error(
+      ficha.puedeCuentaCorriente
+        ? "El puesto todavía no te habilitó la cuenta corriente."
+        : "La cuenta corriente no está incluida en el plan.",
+    );
   }
   if (input.formaPago === "transferencia") {
     if (!input.comprobanteData) throw new Error("Subí el comprobante de la transferencia.");

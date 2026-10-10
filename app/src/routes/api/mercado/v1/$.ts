@@ -1,5 +1,36 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { MercadoError, authenticate, cancelBuyerOrder, clearExpiredGoogleStates, createOAuthSession, createOrders, createRoute, emailFromExternal, findGoogleCredential, getBuyerOrder, getMe, listAvisos, listBuyerOrders, listCouriers, listPublicRanking, listRoutes, listStandProducts, listStands, newGoogleState, rateRoute, registerBuyer, registerCourier, restablecer, setCourierAvailability, signIn, signOut, solicitarRecuperacion, updateStop, uploadIdentity, changeRoute } from "@/lib/server/mercado";
+import {
+  MercadoError,
+  authenticate,
+  cancelBuyerOrder,
+  clearExpiredGoogleStates,
+  createOAuthSession,
+  createOrders,
+  createRoute,
+  emailFromExternal,
+  findGoogleCredential,
+  getBuyerOrder,
+  getMe,
+  listAvisos,
+  listBuyerOrders,
+  listCouriers,
+  listPublicRanking,
+  listRoutes,
+  listStandProducts,
+  listStands,
+  newGoogleState,
+  rateRoute,
+  registerBuyer,
+  registerCourier,
+  restablecer,
+  setCourierAvailability,
+  signIn,
+  signOut,
+  solicitarRecuperacion,
+  updateStop,
+  uploadIdentity,
+  changeRoute,
+} from "@/lib/server/mercado";
 import {
   aceptarDocumentoLegal,
   documentoLegalContenido,
@@ -32,19 +63,17 @@ function errorResponse(error: unknown) {
   if (error instanceof MercadoError || error instanceof RouteError) {
     return json({ error: error.code, message: error.message }, { status: error.status });
   }
-  if (
-    error !== null &&
-    typeof error === "object" &&
-    "code" in error &&
-    error.code === "23505"
-  ) {
+  if (error !== null && typeof error === "object" && "code" in error && error.code === "23505") {
     return json(
       { error: "conflict", message: "El recurso ya existe o ya fue procesado." },
       { status: 409 },
     );
   }
   console.error("[mercado] request failed");
-  return json({ error: "internal_error", message: "No se pudo completar la solicitud." }, { status: 500 });
+  return json(
+    { error: "internal_error", message: "No se pudo completar la solicitud." },
+    { status: 500 },
+  );
 }
 
 function tokenFrom(request: Request): string | undefined {
@@ -53,13 +82,16 @@ function tokenFrom(request: Request): string | undefined {
 }
 
 function segmentsOf(splat: string | undefined): string[] {
-  return (splat ?? "").split("/").filter(Boolean).map((part) => {
-    try {
-      return decodeURIComponent(part);
-    } catch {
-      return part;
-    }
-  });
+  return (splat ?? "")
+    .split("/")
+    .filter(Boolean)
+    .map((part) => {
+      try {
+        return decodeURIComponent(part);
+      } catch {
+        return part;
+      }
+    });
 }
 
 async function bodyOf(request: Request): Promise<Record<string, unknown>> {
@@ -89,7 +121,10 @@ function setCookie(state: string) {
 
 function cookieValue(request: Request, name: string): string | undefined {
   const raw = request.headers.get("cookie") ?? "";
-  const pair = raw.split(";").map((value) => value.trim()).find((value) => value.startsWith(`${name}=`));
+  const pair = raw
+    .split(";")
+    .map((value) => value.trim())
+    .find((value) => value.startsWith(`${name}=`));
   if (!pair) return undefined;
   try {
     return decodeURIComponent(pair.slice(name.length + 1));
@@ -103,6 +138,14 @@ function clearStateCookie() {
   return `mercado_google_state=; HttpOnly; SameSite=Lax; Path=/api/mercado/v1/auth/google/callback; Max-Age=0${secure}`;
 }
 
+function mercadoWebBaseUrl(request: Request) {
+  return (
+    process.env.MERCADO_WEB_URL?.trim() ||
+    process.env.BETTER_AUTH_URL?.trim() ||
+    new URL(request.url).origin
+  );
+}
+
 async function startGoogle(request: Request, body: Record<string, unknown>) {
   const perfil = body.perfil;
   if (perfil !== "comprador" && perfil !== "cargador") {
@@ -114,10 +157,13 @@ async function startGoogle(request: Request, body: Record<string, unknown>) {
   const clientId = process.env.GROK_AUTH_CLIENT_ID?.trim();
   const clientSecret = process.env.GROK_AUTH_CLIENT_SECRET?.trim();
   if (!clientId || !clientSecret) {
-    throw new RouteError(503, "google_unavailable", "El acceso con Google no está configurado en este servidor.");
+    throw new RouteError(
+      503,
+      "google_unavailable",
+      "El acceso con Google no está configurado en este servidor.",
+    );
   }
-  const baseUrl = process.env.BETTER_AUTH_URL?.trim() || new URL(request.url).origin;
-  const callback = new URL("/api/mercado/v1/auth/google/callback", baseUrl);
+  const callback = new URL("/api/mercado/v1/auth/google/callback", mercadoWebBaseUrl(request));
   const state = newGoogleState();
   const destino = body.destino === "web" ? "web" : "app";
   const sql = await getSql();
@@ -132,10 +178,7 @@ async function startGoogle(request: Request, body: Record<string, unknown>) {
   url.searchParams.set("response_type", "code");
   url.searchParams.set("scope", "openid email profile");
   url.searchParams.set("state", state);
-  return json(
-    { url: url.toString() },
-    { headers: { "set-cookie": setCookie(state) } },
-  );
+  return json({ url: url.toString() }, { headers: { "set-cookie": setCookie(state) } });
 }
 
 async function finishGoogle(request: Request, url: URL) {
@@ -152,14 +195,23 @@ async function finishGoogle(request: Request, url: URL) {
     returning perfil, destino
   `;
   const oauth = states[0];
-  if (!oauth) throw new RouteError(400, "google_state_expired", "El acceso con Google venció. Volvé a intentarlo.");
+  if (!oauth)
+    throw new RouteError(
+      400,
+      "google_state_expired",
+      "El acceso con Google venció. Volvé a intentarlo.",
+    );
   const clientId = process.env.GROK_AUTH_CLIENT_ID?.trim();
   const clientSecret = process.env.GROK_AUTH_CLIENT_SECRET?.trim();
   if (!clientId || !clientSecret) {
-    throw new RouteError(503, "google_unavailable", "El acceso con Google no está configurado en este servidor.");
+    throw new RouteError(
+      503,
+      "google_unavailable",
+      "El acceso con Google no está configurado en este servidor.",
+    );
   }
-  const baseUrl = process.env.BETTER_AUTH_URL?.trim() || new URL(request.url).origin;
-  const redirectUri = new URL("/api/mercado/v1/auth/google/callback", baseUrl).toString();
+  const callbackBaseUrl = mercadoWebBaseUrl(request);
+  const redirectUri = new URL("/api/mercado/v1/auth/google/callback", callbackBaseUrl).toString();
   const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
@@ -171,14 +223,21 @@ async function finishGoogle(request: Request, url: URL) {
       grant_type: "authorization_code",
     }),
   });
-  if (!tokenResponse.ok) throw new RouteError(502, "google_exchange_failed", "Google no pudo completar la autenticación.");
-  const tokenBody = await tokenResponse.json() as { access_token?: string };
-  if (!tokenBody.access_token) throw new RouteError(502, "google_exchange_failed", "Google no devolvió una sesión válida.");
+  if (!tokenResponse.ok)
+    throw new RouteError(
+      502,
+      "google_exchange_failed",
+      "Google no pudo completar la autenticación.",
+    );
+  const tokenBody = (await tokenResponse.json()) as { access_token?: string };
+  if (!tokenBody.access_token)
+    throw new RouteError(502, "google_exchange_failed", "Google no devolvió una sesión válida.");
   const profileResponse = await fetch("https://openidconnect.googleapis.com/v1/userinfo", {
     headers: { authorization: `Bearer ${tokenBody.access_token}` },
   });
-  if (!profileResponse.ok) throw new RouteError(502, "google_profile_failed", "No se pudo verificar el perfil de Google.");
-  const profile = await profileResponse.json() as {
+  if (!profileResponse.ok)
+    throw new RouteError(502, "google_profile_failed", "No se pudo verificar el perfil de Google.");
+  const profile = (await profileResponse.json()) as {
     sub?: string;
     email?: string;
     email_verified?: boolean;
@@ -186,7 +245,11 @@ async function finishGoogle(request: Request, url: URL) {
     phone_number?: string;
   };
   if (!profile.sub || !profile.email || profile.email_verified !== true) {
-    throw new RouteError(403, "google_email_unverified", "La cuenta de Google no tiene un correo verificado.");
+    throw new RouteError(
+      403,
+      "google_email_unverified",
+      "La cuenta de Google no tiene un correo verificado.",
+    );
   }
   const actor = await findGoogleCredential(
     emailFromExternal(profile.email),
@@ -196,9 +259,27 @@ async function finishGoogle(request: Request, url: URL) {
     profile.phone_number?.trim() || "",
   );
   const token = await createOAuthSession(actor);
-  const destination = oauth.destino === "web"
-    ? new URL(`/mercado?token=${encodeURIComponent(token)}`, baseUrl)
-    : new URL(`mercadoaltoque://auth?token=${encodeURIComponent(token)}`);
+  const webBaseUrl = callbackBaseUrl;
+  let destination: URL;
+  try {
+    destination =
+      oauth.destino === "web"
+        ? new URL(`/mercado?token=${encodeURIComponent(token)}`, webBaseUrl)
+        : new URL(`mercadoaltoque://auth?token=${encodeURIComponent(token)}`);
+  } catch {
+    throw new RouteError(
+      503,
+      "web_redirect_unavailable",
+      "El regreso a Mercado web no está configurado.",
+    );
+  }
+  if (oauth.destino === "web" && !["http:", "https:"].includes(destination.protocol)) {
+    throw new RouteError(
+      503,
+      "web_redirect_unavailable",
+      "El regreso a Mercado web no está configurado.",
+    );
+  }
   return new Response(null, {
     status: 302,
     headers: {
@@ -238,7 +319,9 @@ async function handle(method: "GET" | "POST", request: Request, splat?: string) 
       return json(await signOut(tokenFrom(request)));
     }
     if (method === "GET" && segments.join("/") === "ranking") {
-      return json(await listPublicRanking(), { headers: { "cache-control": "public, max-age=60" } });
+      return json(await listPublicRanking(), {
+        headers: { "cache-control": "public, max-age=60" },
+      });
     }
     if (method === "GET" && segments.join("/") === "avisos") {
       return json(await listAvisos(), { headers: { "cache-control": "public, max-age=60" } });
@@ -247,37 +330,92 @@ async function handle(method: "GET" | "POST", request: Request, splat?: string) 
     const actor = await authenticate(tokenFrom(request));
     const route = segments.join("/");
     if (method === "GET" && route === "yo") return json(await getMe(actor));
-    if (method === "POST" && route === "identidad") return json(await uploadIdentity(actor, await bodyOf(request)));
+    if (method === "POST" && route === "identidad")
+      return json(await uploadIdentity(actor, await bodyOf(request)));
     if (method === "GET" && route === "puestos") return json(await listStands());
-    if (method === "GET" && segments.length === 3 && segments[0] === "puestos" && segments[2] === "productos") {
+    if (
+      method === "GET" &&
+      segments.length === 3 &&
+      segments[0] === "puestos" &&
+      segments[2] === "productos"
+    ) {
       return json(await listStandProducts(segments[1]!));
     }
     if (method === "GET" && route === "pedidos") return json(await listBuyerOrders(actor));
     if (method === "POST" && route === "pedidos") {
-      return json(await createOrders(actor, request.headers.get("idempotency-key") ?? undefined, await bodyOf(request)), { status: 201 });
+      return json(
+        await createOrders(
+          actor,
+          request.headers.get("idempotency-key") ?? undefined,
+          await bodyOf(request),
+        ),
+        { status: 201 },
+      );
     }
     if (method === "GET" && segments.length === 2 && segments[0] === "pedidos") {
       return json(await getBuyerOrder(actor, segments[1]!));
     }
-    if (method === "POST" && segments.length === 3 && segments[0] === "pedidos" && segments[2] === "cancelar") {
+    if (
+      method === "POST" &&
+      segments.length === 3 &&
+      segments[0] === "pedidos" &&
+      segments[2] === "cancelar"
+    ) {
       return json(await cancelBuyerOrder(actor, segments[1]!));
     }
     if (method === "GET" && route === "cargadores") return json(await listCouriers());
     if (method === "POST" && route === "recorridos") {
-      return json(await createRoute(actor, request.headers.get("idempotency-key") ?? undefined, await bodyOf(request)), { status: 201 });
+      return json(
+        await createRoute(
+          actor,
+          request.headers.get("idempotency-key") ?? undefined,
+          await bodyOf(request),
+        ),
+        { status: 201 },
+      );
     }
     if (method === "GET" && route === "recorridos") return json(await listRoutes(actor));
-    if (method === "POST" && segments.length === 3 && segments[0] === "recorridos" && ["aceptar", "rechazar"].includes(segments[2]!)) {
-      return json(await changeRoute(actor, segments[1]!, segments[2] as "aceptar" | "rechazar", request.headers.get("idempotency-key") ?? undefined));
+    if (
+      method === "POST" &&
+      segments.length === 3 &&
+      segments[0] === "recorridos" &&
+      ["aceptar", "rechazar"].includes(segments[2]!)
+    ) {
+      return json(
+        await changeRoute(
+          actor,
+          segments[1]!,
+          segments[2] as "aceptar" | "rechazar",
+          request.headers.get("idempotency-key") ?? undefined,
+        ),
+      );
     }
-    if (method === "POST" && segments.length === 3 && segments[0] === "recorridos" && ["retirar", "entregar"].includes(segments[2]!)) {
+    if (
+      method === "POST" &&
+      segments.length === 3 &&
+      segments[0] === "recorridos" &&
+      ["retirar", "entregar"].includes(segments[2]!)
+    ) {
       const body = await bodyOf(request);
       if (typeof body.pedidoId !== "string" || !body.pedidoId.trim()) {
         throw new RouteError(400, "invalid_request", "pedidoId es obligatorio.");
       }
-      return json(await updateStop(actor, segments[1]!, body.pedidoId, segments[2] as "retirar" | "entregar", request.headers.get("idempotency-key") ?? undefined));
+      return json(
+        await updateStop(
+          actor,
+          segments[1]!,
+          body.pedidoId,
+          segments[2] as "retirar" | "entregar",
+          request.headers.get("idempotency-key") ?? undefined,
+        ),
+      );
     }
-    if (method === "POST" && segments.length === 3 && segments[0] === "recorridos" && segments[2] === "calificar") {
+    if (
+      method === "POST" &&
+      segments.length === 3 &&
+      segments[0] === "recorridos" &&
+      segments[2] === "calificar"
+    ) {
       return json(await rateRoute(actor, segments[1]!, await bodyOf(request)));
     }
     if (method === "POST" && route === "cargador/disponibilidad") {
@@ -286,7 +424,12 @@ async function handle(method: "GET" | "POST", request: Request, splat?: string) 
     if (method === "GET" && route === "legal/documentos") {
       return json(await listarDocumentosLegales(actor));
     }
-    if (method === "GET" && segments.length === 3 && segments[0] === "legal" && segments[1] === "documentos") {
+    if (
+      method === "GET" &&
+      segments.length === 3 &&
+      segments[0] === "legal" &&
+      segments[1] === "documentos"
+    ) {
       const raw = url.searchParams.get("version");
       const version = raw == null || raw === "" ? undefined : Number(raw);
       if (version !== undefined && (!Number.isInteger(version) || version <= 0)) {
@@ -294,7 +437,13 @@ async function handle(method: "GET" | "POST", request: Request, splat?: string) 
       }
       return json(await documentoLegalContenido(actor, segments[2]!, version));
     }
-    if (method === "POST" && segments.length === 4 && segments[0] === "legal" && segments[1] === "documentos" && segments[3] === "aceptar") {
+    if (
+      method === "POST" &&
+      segments.length === 4 &&
+      segments[0] === "legal" &&
+      segments[1] === "documentos" &&
+      segments[3] === "aceptar"
+    ) {
       const body = await bodyOf(request);
       const version = typeof body.version === "number" ? body.version : Number.NaN;
       const hash = typeof body.hash === "string" ? body.hash.trim() : "";

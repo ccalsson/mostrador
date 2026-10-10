@@ -116,11 +116,7 @@ function createToken(): string {
   return randomBytes(32).toString("base64url");
 }
 
-async function persistSession(
-  sql: Sql,
-  perfil: MercadoPerfil,
-  id: string,
-): Promise<string> {
+async function persistSession(sql: Sql, perfil: MercadoPerfil, id: string): Promise<string> {
   const token = createToken();
   await sql`
     insert into mercado_sesiones (id, perfil, usuario_id, token_hash, expires_at)
@@ -165,7 +161,10 @@ export async function registerBuyer(input: Record<string, unknown>) {
     `;
     return persistSession(tx, "comprador", id);
   });
-  return { token, usuario: { id, nombre, email, perfil: "comprador", estadoIdentidad: "pendiente" } };
+  return {
+    token,
+    usuario: { id, nombre, email, perfil: "comprador", estadoIdentidad: "pendiente" },
+  };
 }
 
 export async function registerCourier(input: Record<string, unknown>) {
@@ -258,7 +257,8 @@ async function actorFor(sql: Sql, perfil: MercadoPerfil, id: string): Promise<Me
   `;
   const row = rows[0];
   if (!row) fail(401, "unauthorized", "La sesión no es válida.");
-  if (row.estado_cuenta !== "activo") fail(403, "account_unavailable", "La cuenta del cargador no está activa.");
+  if (row.estado_cuenta !== "activo")
+    fail(403, "account_unavailable", "La cuenta del cargador no está activa.");
   return { perfil, id: row.id, nombre: row.nombre, email: row.email, telefono: row.telefono };
 }
 
@@ -334,7 +334,12 @@ export async function getMe(actor: MercadoActor) {
           select pais, tipo_documento, estado_identidad
           from mercado_compradores where id = ${actor.id}
         `
-      : await sql<{ estado_cuenta: string; disponibilidad: string; puntos: number; score: unknown }>`
+      : await sql<{
+          estado_cuenta: string;
+          disponibilidad: string;
+          puntos: number;
+          score: unknown;
+        }>`
           select estado_cuenta, disponibilidad, puntos, score
           from mercado_cargadores where id = ${actor.id}
         `;
@@ -342,7 +347,11 @@ export async function getMe(actor: MercadoActor) {
 }
 
 function decodeImage(value: unknown, field: string): Buffer {
-  if (typeof value !== "string" || value.length > 12_000_000 || !/^[A-Za-z0-9+/]*={0,2}$/.test(value)) {
+  if (
+    typeof value !== "string" ||
+    value.length > 12_000_000 ||
+    !/^[A-Za-z0-9+/]*={0,2}$/.test(value)
+  ) {
     fail(400, "invalid_request", `${field} no es una imagen Base64 válida.`);
   }
   const bytes = Buffer.from(value, "base64");
@@ -386,7 +395,10 @@ export async function uploadIdentity(actor: MercadoActor, input: Record<string, 
     `;
     await auditMercado(tx, actor, "mercado_identidad_cargada", "mercado", { id: actor.id });
   });
-  return { estado: "documentacion_cargada", referencias: { documento: documentoRef, selfie: selfieRef } };
+  return {
+    estado: "documentacion_cargada",
+    referencias: { documento: documentoRef, selfie: selfieRef },
+  };
 }
 
 export async function listStands() {
@@ -401,7 +413,9 @@ export async function listStands() {
     puestos: rows.flatMap((row) => {
       const tier = tierContratado(mapa.get(row.id) ?? []);
       if (!tier) return [];
-      const config = (typeof row.config === "string" ? JSON.parse(row.config) : row.config ?? {}) as {
+      const config = (
+        typeof row.config === "string" ? JSON.parse(row.config) : (row.config ?? {})
+      ) as {
         bajada?: string;
       };
       return [{ id: row.id, nombre: row.nombre, bajada: config.bajada ?? null, tier }];
@@ -417,7 +431,8 @@ export async function listStandProducts(tenantId: string) {
   `;
   if (!tenants[0]) fail(404, "not_found", "El puesto no tiene Mercado al Toque habilitado.");
   const presencia = await puedeAparecer(tenantId, { mercadoAlToque: true });
-  if (!presencia.visible) fail(404, "not_found", "Ese puesto no está publicado en Mercado al Toque.");
+  if (!presencia.visible)
+    fail(404, "not_found", "Ese puesto no está publicado en Mercado al Toque.");
   const rows = await sql<{
     id: string;
     nombre: string;
@@ -479,12 +494,7 @@ async function claimIdempotency(
   return existing.respuesta;
 }
 
-async function saveIdempotency(
-  tx: Sql,
-  actor: MercadoActor,
-  key: string,
-  response: unknown,
-) {
+async function saveIdempotency(tx: Sql, actor: MercadoActor, key: string, response: unknown) {
   await tx`
     update mercado_idempotencia set respuesta = ${JSON.stringify(response)}::jsonb
     where perfil = ${actor.perfil} and usuario_id = ${actor.id} and clave = ${key}
@@ -626,7 +636,8 @@ export async function createOrders(
           subtotal: Math.round(line.cantidad * num(product.precio) * 100) / 100,
         };
       });
-      const totalPedido = Math.round(itemsRespuesta.reduce((sum, item) => sum + num(item.subtotal), 0) * 100) / 100;
+      const totalPedido =
+        Math.round(itemsRespuesta.reduce((sum, item) => sum + num(item.subtotal), 0) * 100) / 100;
       await auditMercado(tx, actor, "mercado_pedido_creado", tenantId, {
         id: pedidoId,
         medioPago,
@@ -643,7 +654,10 @@ export async function createOrders(
         comision: textoCondicion(condicion),
         items: itemsRespuesta,
         total: totalPedido,
-        bultos: itemsRespuesta.reduce((sum, item) => sum + (item.unidad === "bulto" ? num(item.cantidad) : 0), 0),
+        bultos: itemsRespuesta.reduce(
+          (sum, item) => sum + (item.unidad === "bulto" ? num(item.cantidad) : 0),
+          0,
+        ),
         createdAt: new Date().toISOString(),
       });
     }
@@ -763,7 +777,8 @@ export async function cancelBuyerOrder(actor: MercadoActor, pedidoId: string) {
   `;
   const pedido = rows[0];
   if (!pedido) fail(403, "forbidden", "Ese pedido no es tuyo.");
-  if (pedido.estado !== "enviado") fail(409, "order_in_progress", "El puesto ya lo está trabajando.");
+  if (pedido.estado !== "enviado")
+    fail(409, "order_in_progress", "El puesto ya lo está trabajando.");
   const asignado = await sql<{ recorrido_id: string }>`
     select recorrido_id from mercado_recorrido_pedidos where pedido_id = ${pedidoId} limit 1
   `;
@@ -825,13 +840,16 @@ async function routeStops(tx: Sql, routeId: string) {
     puesto: string;
     bultos: unknown;
     estado: string;
+    estado_pedido: string;
     picked_up_at: string | null;
     delivered_at: string | null;
   }>`
     select rp.pedido_id, rp.tenant_id, t.nombre as puesto, rp.bultos, rp.estado,
+           p.estado as estado_pedido,
            rp.picked_up_at::text as picked_up_at, rp.delivered_at::text as delivered_at
     from mercado_recorrido_pedidos rp
     join tenants t on t.id = rp.tenant_id
+    join pedidos p on p.id = rp.pedido_id
     where rp.recorrido_id = ${routeId}
     order by t.nombre
   `;
@@ -841,6 +859,7 @@ async function routeStops(tx: Sql, routeId: string) {
     puesto: row.puesto,
     bultos: num(row.bultos),
     estado: row.estado,
+    preparado: row.estado_pedido === "listo" || row.estado_pedido === "cobrado",
     retiradoAt: row.picked_up_at,
     entregadoAt: row.delivered_at,
   }));
@@ -896,11 +915,16 @@ export async function createRoute(
   assertPerfil(actor, "comprador", "Solo el comprador puede crear recorridos.");
   const key = assertIdempotencyKey(keyInput);
   const cargadorId = textValue(input.cargadorId, "cargadorId", 100);
-  if (!Array.isArray(input.pedidoIds) || input.pedidoIds.length < 1 || input.pedidoIds.length > 40) {
+  if (
+    !Array.isArray(input.pedidoIds) ||
+    input.pedidoIds.length < 1 ||
+    input.pedidoIds.length > 40
+  ) {
     fail(400, "invalid_request", "Elegí entre 1 y 40 pedidos para el recorrido.");
   }
   const pedidoIds = [...new Set(input.pedidoIds.map((id) => textValue(id, "pedidoId", 100)))];
-  if (pedidoIds.length !== input.pedidoIds.length) fail(400, "invalid_request", "No repitas pedidos en un recorrido.");
+  if (pedidoIds.length !== input.pedidoIds.length)
+    fail(400, "invalid_request", "No repitas pedidos en un recorrido.");
   const request = { cargadorId, pedidoIds: [...pedidoIds].sort() };
   const sql = await getSql();
   return sql.transaction(async (tx) => {
@@ -925,7 +949,11 @@ export async function createRoute(
       for update
     `;
     if (lockedOrders.length !== pedidoIds.length) {
-      fail(400, "orders_not_ready", "Todos los pedidos deben ser tuyos y estar preparados para el retiro.");
+      fail(
+        400,
+        "orders_not_ready",
+        "Todos los pedidos deben ser tuyos y estar preparados para el retiro.",
+      );
     }
     const alreadyAssigned = await tx<{ pedido_id: string }>`
       select pedido_id from mercado_recorrido_pedidos
@@ -1034,7 +1062,8 @@ export async function changeRoute(
     const replay = await assertIdempotency(tx, actor, key, request);
     if (replay) return replay;
     const route = await assertCourierRoute(tx, actor, routeId);
-    if (route.estado !== "asignado") fail(400, "invalid_transition", "El recorrido ya no está asignado.");
+    if (route.estado !== "asignado")
+      fail(400, "invalid_transition", "El recorrido ya no está asignado.");
     if (action === "aceptar") {
       await tx`update mercado_recorridos set estado = 'aceptado', accepted_at = now() where id = ${routeId}`;
       await tx`update mercado_recorrido_pedidos set estado = 'aceptado' where recorrido_id = ${routeId}`;
@@ -1071,7 +1100,8 @@ export async function updateStop(
     const replay = await assertIdempotency(tx, actor, key, request);
     if (replay) return replay;
     const route = await assertCourierRoute(tx, actor, routeId);
-    if (route.estado !== "aceptado") fail(400, "invalid_transition", "El recorrido debe estar aceptado.");
+    if (route.estado !== "aceptado")
+      fail(400, "invalid_transition", "El recorrido debe estar aceptado.");
     const stopRows = await tx<{ estado: string; tenant_id: string; pedido_estado: string }>`
       select rp.estado, rp.tenant_id, p.estado as pedido_estado
       from mercado_recorrido_pedidos rp
@@ -1082,7 +1112,8 @@ export async function updateStop(
     const stop = stopRows[0];
     if (!stop) fail(403, "forbidden", "El pedido no pertenece a este recorrido.");
     if (action === "retirar") {
-      if (stop.estado !== "aceptado") fail(400, "invalid_transition", "La parada ya fue retirada o no está aceptada.");
+      if (stop.estado !== "aceptado")
+        fail(400, "invalid_transition", "La parada ya fue retirada o no está aceptada.");
       if (stop.pedido_estado !== "listo" && stop.pedido_estado !== "cobrado") {
         fail(400, "order_not_ready", "El puesto todavía no marcó el pedido como listo.");
       }
@@ -1095,9 +1126,13 @@ export async function updateStop(
         update pedidos set picked_up_at = now(), updated_at = now()
         where id = ${pedidoId} and tenant_id = ${stop.tenant_id}
       `;
-      await auditMercado(tx, actor, "mercado_parada_retirada", stop.tenant_id, { id: routeId, pedidoId });
+      await auditMercado(tx, actor, "mercado_parada_retirada", stop.tenant_id, {
+        id: routeId,
+        pedidoId,
+      });
     } else {
-      if (stop.estado !== "retirado") fail(400, "invalid_transition", "Retirá la parada antes de entregarla.");
+      if (stop.estado !== "retirado")
+        fail(400, "invalid_transition", "Retirá la parada antes de entregarla.");
       await tx`
         update mercado_recorrido_pedidos
         set estado = 'entregado', delivered_at = now()
@@ -1115,7 +1150,10 @@ export async function updateStop(
         await tx`update mercado_recorridos set estado = 'entregado', delivered_at = now() where id = ${routeId}`;
         await sumarPuntosMotivo(tx, actor.id, "recorrido_entregado", routeId);
       }
-      await auditMercado(tx, actor, "mercado_parada_entregada", stop.tenant_id, { id: routeId, pedidoId });
+      await auditMercado(tx, actor, "mercado_parada_entregada", stop.tenant_id, {
+        id: routeId,
+        pedidoId,
+      });
     }
     const response = { recorrido: await routeResponse(tx, routeId) };
     await saveIdempotency(tx, actor, key, response);
@@ -1130,7 +1168,8 @@ export async function rateRoute(
 ) {
   assertPerfil(actor, "comprador", "Solo el comprador puede calificar.");
   const stars = input.estrellas;
-  const comentario = typeof input.comentario === "string" ? input.comentario.trim().slice(0, 1000) : "";
+  const comentario =
+    typeof input.comentario === "string" ? input.comentario.trim().slice(0, 1000) : "";
   if (typeof stars !== "number" || !Number.isInteger(stars) || stars < 1 || stars > 5) {
     fail(400, "invalid_request", "estrellas debe ser un entero entre 1 y 5.");
   }
@@ -1143,7 +1182,8 @@ export async function rateRoute(
     `;
     const route = routes[0];
     if (!route) fail(404, "not_found", "Recorrido no encontrado.");
-    if (route.estado !== "entregado") fail(400, "route_not_delivered", "Solo se califica un recorrido entregado.");
+    if (route.estado !== "entregado")
+      fail(400, "route_not_delivered", "Solo se califica un recorrido entregado.");
     const existing = await tx<{ id: string }>`
       select id from mercado_calificaciones where recorrido_id = ${routeId} limit 1
     `;
@@ -1172,7 +1212,13 @@ export async function rateRoute(
   });
 }
 
-export async function findGoogleCredential(email: string, subject: string, perfil: MercadoPerfil, nombre: string, telefono: string) {
+export async function findGoogleCredential(
+  email: string,
+  subject: string,
+  perfil: MercadoPerfil,
+  nombre: string,
+  telefono: string,
+) {
   const sql = await getSql();
   return sql.transaction(async (tx) => {
     const existing = await tx<{ perfil: MercadoPerfil; usuario_id: string }>`
@@ -1181,7 +1227,8 @@ export async function findGoogleCredential(email: string, subject: string, perfi
       limit 1
     `;
     if (existing[0]) {
-      if (existing[0].perfil !== perfil) fail(403, "profile_mismatch", "La cuenta de Google está registrada con otro perfil.");
+      if (existing[0].perfil !== perfil)
+        fail(403, "profile_mismatch", "La cuenta de Google está registrada con otro perfil.");
       await tx`update mercado_credenciales set google_subject = ${subject} where email = ${email}`;
       return actorFor(tx, perfil, existing[0].usuario_id);
     }

@@ -23,22 +23,55 @@ type Linea = {
 
 type Pedido = {
   id: string;
-  tenantNombre: string;
+  puesto: string;
   estado: string;
   total: number;
   bultos: number;
   comision?: string | null;
 };
 
-type Parada = { pedidoId: string; puesto: string; estado: string; bultos: number; preparado: boolean };
-type Recorrido = { id: string; estado: string; bultos: number; cargador?: string; comprador?: string; paradas: Parada[] };
+type Parada = {
+  pedidoId: string;
+  puesto: string;
+  estado: string;
+  bultos: number;
+  preparado: boolean;
+};
+type Recorrido = {
+  id: string;
+  estado: string;
+  bultos: number;
+  cargador?: string;
+  compradorNombre?: string;
+  paradas: Parada[];
+};
 type Cargador = { id: string; nombre: string; nivel: string };
-type Producto = { id: string; nombre: string; precio: number; disponible: number; unidad: string; unidadLabel: string };
+type Producto = {
+  id: string;
+  nombre: string;
+  precio: number;
+  disponible: number;
+  unidad: string;
+  unidadLabel: string;
+};
 type Puesto = { id: string; nombre: string; tier?: string };
-type Aviso = { id: string; tenantNombre: string; placement: string; currency: string; price: number; startsOn: string; endsOn: string; notes: string; contentRef: string };
+type Aviso = {
+  id: string;
+  tenantNombre: string;
+  placement: string;
+  currency: string;
+  price: number;
+  startsOn: string;
+  endsOn: string;
+  notes: string;
+  contentRef: string;
+};
 type Ranking = { puesto: number; nombre: string; nivel: string; puntos: number; score: number };
 
-async function pedir<T>(ruta: string, opts: { method?: string; token?: string; body?: unknown; clave?: string } = {}) {
+async function pedir<T>(
+  ruta: string,
+  opts: { method?: string; token?: string; body?: unknown; clave?: string } = {},
+) {
   const res = await fetch(`/api/mercado/v1/${ruta}`, {
     method: opts.method ?? "GET",
     headers: {
@@ -90,7 +123,10 @@ function MercadoPage() {
 
   const bultos = useMemo(() => bultosDe(carrito), [carrito]);
   const bultosElegidos = useMemo(
-    () => pedidos.filter((pedido) => elegidos.includes(pedido.id)).reduce((suma, pedido) => suma + (pedido.bultos || 0), 0),
+    () =>
+      pedidos
+        .filter((pedido) => elegidos.includes(pedido.id))
+        .reduce((suma, pedido) => suma + (pedido.bultos || 0), 0),
     [pedidos, elegidos],
   );
 
@@ -118,11 +154,11 @@ function MercadoPage() {
     }
     if (!guardado) return;
     setToken(guardado);
-    void pedir<{ perfil?: string; comprador?: { identidadEstado?: string } }>("yo", { token: guardado })
+    void pedir<{ perfil?: string; estadoIdentidad?: string }>("yo", { token: guardado })
       .then((yo) => {
         const siguiente = yo.perfil === "cargador" ? "cargador" : "comprador";
         setPerfil(siguiente);
-        setIdentidad(yo.comprador?.identidadEstado ?? "pendiente");
+        setIdentidad(yo.estadoIdentidad ?? "pendiente");
       })
       .catch(() => {
         sessionStorage.removeItem(TOKEN);
@@ -131,10 +167,19 @@ function MercadoPage() {
   }, []);
 
   useEffect(() => {
-    if (!token || perfil !== "comprador" || identidad === "pendiente" || identidad === "rechazada") return;
-    void pedir<{ puestos: Puesto[] }>("puestos", { token }).then((data) => setPuestos(data.puestos)).catch((e: Error) => setError(e.message));
-    void pedir<{ avisos: Aviso[] }>("avisos").then((data) => setAvisos(data.avisos)).catch(() => setAvisos([]));
-    void pedir<{ ranking: Ranking[] }>("ranking").then((data) => setRanking(data.ranking)).catch(() => setRanking([]));
+    if (!token || perfil !== "comprador" || identidad === "pendiente" || identidad === "rechazada")
+      return;
+    void pedir<{ puestos: Puesto[] }>("puestos", { token })
+      .then((data) => setPuestos(data.puestos))
+      .catch((e: Error) => setError(e.message));
+    void pedir<{ avisos: Aviso[] }>("avisos")
+      .then((data) => setAvisos(data.avisos))
+      .catch(() => setAvisos([]));
+    void pedir<{ cargadores: Omit<Ranking, "puesto">[] }>("ranking")
+      .then((data) =>
+        setRanking(data.cargadores.map((cargador, index) => ({ puesto: index + 1, ...cargador }))),
+      )
+      .catch((e: Error) => setError(e.message));
   }, [token, perfil, identidad]);
 
   async function correr(accion: () => Promise<void>) {
@@ -151,11 +196,14 @@ function MercadoPage() {
 
   async function ingresar() {
     await correr(async () => {
-      const data = await pedir<{ token: string; comprador?: { identidadEstado?: string } }>("auth/ingreso", {
-        method: "POST",
-        body: { email, password, perfil: como },
-      });
-      if (data.comprador?.identidadEstado) setIdentidad(data.comprador.identidadEstado);
+      const data = await pedir<{ token: string; usuario?: { estadoIdentidad?: string } }>(
+        "auth/ingreso",
+        {
+          method: "POST",
+          body: { email, password, perfil: como },
+        },
+      );
+      if (data.usuario?.estadoIdentidad) setIdentidad(data.usuario.estadoIdentidad);
       entrar(data.token, como);
     });
   }
@@ -170,19 +218,22 @@ function MercadoPage() {
         entrar(data.token, "cargador");
         return;
       }
-      const data = await pedir<{ token: string; comprador?: { identidadEstado?: string } }>("auth/registro", {
-        method: "POST",
-        body: {
-          nombre,
-          email,
-          password,
-          telefono,
-          pais,
-          tipoDocumento: pais === "PY" ? "CI_PY" : "DNI",
-          numeroDocumento: documento,
+      const data = await pedir<{ token: string; usuario?: { estadoIdentidad?: string } }>(
+        "auth/registro",
+        {
+          method: "POST",
+          body: {
+            nombre,
+            email,
+            password,
+            telefono,
+            pais,
+            tipoDocumento: pais === "PY" ? "CI_PY" : "DNI",
+            numeroDocumento: documento,
+          },
         },
-      });
-      setIdentidad(data.comprador?.identidadEstado ?? "pendiente");
+      );
+      setIdentidad(data.usuario?.estadoIdentidad ?? "pendiente");
       entrar(data.token, "comprador");
     });
   }
@@ -203,7 +254,7 @@ function MercadoPage() {
         archivoABase64(documentoArchivo),
         archivoABase64(selfieArchivo),
       ]);
-      const data = await pedir<{ comprador?: { identidadEstado?: string } }>("identidad", {
+      const data = await pedir<{ estado?: string }>("identidad", {
         method: "POST",
         token: token ?? undefined,
         body: {
@@ -214,7 +265,7 @@ function MercadoPage() {
           selfieBase64,
         },
       });
-      setIdentidad(data.comprador?.identidadEstado ?? "documentacion_cargada");
+      setIdentidad(data.estado ?? "documentacion_cargada");
     });
   }
 
@@ -229,7 +280,9 @@ function MercadoPage() {
   function sumar(producto: Producto) {
     if (!puesto) return;
     setCarrito((actual) => {
-      const previa = actual.find((linea) => linea.tenantId === puesto.id && linea.productoId === producto.id);
+      const previa = actual.find(
+        (linea) => linea.tenantId === puesto.id && linea.productoId === producto.id,
+      );
       if (previa) {
         return actual.map((linea) =>
           linea === previa ? { ...linea, cantidad: linea.cantidad + 1 } : linea,
@@ -282,6 +335,19 @@ function MercadoPage() {
     setCargadores(lista.cargadores);
   }
 
+  async function cancelarPedido(pedidoId: string) {
+    if (!token) return;
+    await correr(async () => {
+      await pedir(`pedidos/${encodeURIComponent(pedidoId)}/cancelar`, {
+        method: "POST",
+        token,
+        body: {},
+      });
+      setElegidos((actual) => actual.filter((id) => id !== pedidoId));
+      await cargarPedidos();
+    });
+  }
+
   async function elegir(cargadorId: string) {
     if (!token || elegidos.length === 0) return;
     await correr(async () => {
@@ -316,7 +382,11 @@ function MercadoPage() {
   async function disponibilidad(valor: string) {
     if (!token) return;
     await correr(async () => {
-      await pedir("cargador/disponibilidad", { method: "POST", token, body: { disponibilidad: valor } });
+      await pedir("cargador/disponibilidad", {
+        method: "POST",
+        token,
+        body: { disponibilidad: valor },
+      });
     });
   }
 
@@ -339,10 +409,16 @@ function MercadoPage() {
         <p className="font-display text-3xl">Mercado al Toque</p>
         <p className="mt-1 text-sm text-muted">Comprá en los puestos o entrá como cargador.</p>
         <div className="mt-4 grid grid-cols-2 gap-2">
-          <Button variant={como === "comprador" ? "primary" : "secondary"} onClick={() => setComo("comprador")}>
+          <Button
+            variant={como === "comprador" ? "primary" : "secondary"}
+            onClick={() => setComo("comprador")}
+          >
             Comprador
           </Button>
-          <Button variant={como === "cargador" ? "primary" : "secondary"} onClick={() => setComo("cargador")}>
+          <Button
+            variant={como === "cargador" ? "primary" : "secondary"}
+            onClick={() => setComo("cargador")}
+          >
             Cargador
           </Button>
         </div>
@@ -361,12 +437,20 @@ function MercadoPage() {
             <>
               <label className="block text-sm">
                 País
-                <select className="mt-1 h-11 w-full rounded-md border border-line bg-surface px-3" value={pais} onChange={(ev) => setPais(ev.target.value)}>
+                <select
+                  className="mt-1 h-11 w-full rounded-md border border-line bg-surface px-3"
+                  value={pais}
+                  onChange={(ev) => setPais(ev.target.value)}
+                >
                   <option value="AR">Argentina</option>
                   <option value="PY">Paraguay</option>
                 </select>
               </label>
-              <Campo label={pais === "PY" ? "Cédula" : "DNI"} value={documento} onChange={setDocumento} />
+              <Campo
+                label={pais === "PY" ? "Cédula" : "DNI"}
+                value={documento}
+                onChange={setDocumento}
+              />
             </>
           ) : null}
           {error ? <p className="text-sm text-terra">{error}</p> : null}
@@ -377,7 +461,12 @@ function MercadoPage() {
         <button type="button" className="mt-3 text-sm text-leaf" onClick={() => setAlta((v) => !v)}>
           {alta ? "Ya tengo cuenta" : "Crear cuenta"}
         </button>
-        <Button variant="secondary" className="mt-4 w-full" disabled={ocupado} onClick={() => void google()}>
+        <Button
+          variant="secondary"
+          className="mt-4 w-full"
+          disabled={ocupado}
+          onClick={() => void google()}
+        >
           Continuar con Google
         </Button>
         <p className="mt-6 text-center text-sm">
@@ -392,18 +481,28 @@ function MercadoPage() {
   if (perfil === "cargador") {
     return (
       <PuertaLegal token={token}>
-      <Marco titulo="Cargador" onSalir={salir} onCargar={() => void cargarRecorridos()}>
-        {error ? <p className="text-sm text-terra">{error}</p> : null}
-        <div className="grid grid-cols-2 gap-2">
-          <Button disabled={ocupado} onClick={() => void disponibilidad("disponible")}>
-            Disponible
-          </Button>
-          <Button variant="secondary" disabled={ocupado} onClick={() => void disponibilidad("no_disponible")}>
-            No disponible
-          </Button>
-        </div>
-        <ListaRecorridos recorridos={recorridos} cargador ocupado={ocupado} onAccion={accion} onCalificar={calificar} />
-      </Marco>
+        <Marco titulo="Cargador" onSalir={salir} onCargar={() => void cargarRecorridos()}>
+          {error ? <p className="text-sm text-terra">{error}</p> : null}
+          <div className="grid grid-cols-2 gap-2">
+            <Button disabled={ocupado} onClick={() => void disponibilidad("disponible")}>
+              Disponible
+            </Button>
+            <Button
+              variant="secondary"
+              disabled={ocupado}
+              onClick={() => void disponibilidad("no_disponible")}
+            >
+              No disponible
+            </Button>
+          </div>
+          <ListaRecorridos
+            recorridos={recorridos}
+            cargador
+            ocupado={ocupado}
+            onAccion={accion}
+            onCalificar={calificar}
+          />
+        </Marco>
       </PuertaLegal>
     );
   }
@@ -411,164 +510,277 @@ function MercadoPage() {
   if (identidad === "pendiente" || identidad === "rechazada") {
     return (
       <PuertaLegal token={token}>
-      <Marco titulo="Documentación" onSalir={salir}>
-        <p className="text-sm text-muted">Cargá el documento y una selfie. Eso no los marca como verificados.</p>
-        <form
-          className="mt-3 space-y-3"
-          onSubmit={(ev) => {
-            ev.preventDefault();
-            const form = ev.currentTarget;
-            const doc = (form.elements.namedItem("doc") as HTMLInputElement).files?.[0];
-            const selfie = (form.elements.namedItem("selfie") as HTMLInputElement).files?.[0];
-            if (!doc || !selfie) return;
-            void subirIdentidad(doc, selfie);
-          }}
-        >
-          <Campo label={pais === "PY" ? "Cédula" : "DNI"} value={documento} onChange={setDocumento} />
-          <label className="block text-sm">
-            Foto del documento
-            <input name="doc" type="file" accept="image/*" capture="environment" className="mt-1 block w-full text-sm" required />
-          </label>
-          <label className="block text-sm">
-            Selfie
-            <input name="selfie" type="file" accept="image/*" capture="user" className="mt-1 block w-full text-sm" required />
-          </label>
-          {error ? <p className="text-sm text-terra">{error}</p> : null}
-          <Button type="submit" className="w-full" disabled={ocupado}>
-            Guardar
-          </Button>
-        </form>
-      </Marco>
+        <Marco titulo="Documentación" onSalir={salir}>
+          <p className="text-sm text-muted">
+            Cargá el documento y una selfie. Eso no los marca como verificados.
+          </p>
+          <form
+            className="mt-3 space-y-3"
+            onSubmit={(ev) => {
+              ev.preventDefault();
+              const form = ev.currentTarget;
+              const doc = (form.elements.namedItem("doc") as HTMLInputElement).files?.[0];
+              const selfie = (form.elements.namedItem("selfie") as HTMLInputElement).files?.[0];
+              if (!doc || !selfie) return;
+              void subirIdentidad(doc, selfie);
+            }}
+          >
+            <Campo
+              label={pais === "PY" ? "Cédula" : "DNI"}
+              value={documento}
+              onChange={setDocumento}
+            />
+            <label className="block text-sm">
+              Foto del documento
+              <input
+                name="doc"
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="mt-1 block w-full text-sm"
+                required
+              />
+            </label>
+            <label className="block text-sm">
+              Selfie
+              <input
+                name="selfie"
+                type="file"
+                accept="image/*"
+                capture="user"
+                className="mt-1 block w-full text-sm"
+                required
+              />
+            </label>
+            {error ? <p className="text-sm text-terra">{error}</p> : null}
+            <Button type="submit" className="w-full" disabled={ocupado}>
+              Guardar
+            </Button>
+          </form>
+        </Marco>
       </PuertaLegal>
     );
   }
 
   return (
     <PuertaLegal token={token}>
-    <Marco titulo="Mercado al Toque" onSalir={salir}>
-      <div className="grid grid-cols-3 gap-2">
-        <Button variant={panel === "puestos" ? "primary" : "secondary"} onClick={() => setPanel("puestos")}>
-          Puestos
-        </Button>
-        <Button variant={panel === "carrito" ? "primary" : "secondary"} onClick={() => setPanel("carrito")}>
-          Carrito
-        </Button>
-        <Button
-          variant={panel === "pedidos" ? "primary" : "secondary"}
-          onClick={() => {
-            setPanel("pedidos");
-            void cargarPedidos();
-          }}
-        >
-          Pedidos
-        </Button>
-      </div>
-      {error ? <p className="mt-3 text-sm text-terra">{error}</p> : null}
-      {panel === "puestos" ? (
-        <div className="mt-4 space-y-3">
-          {puestos.length === 0 ? <p className="text-sm text-muted">Ningún puesto está publicado en Mercado al Toque.</p> : null}
-          {avisos.map((aviso) => (
-            <article key={aviso.id} className="rounded-md border border-line bg-surface px-3 py-2 text-sm">
-              <p className="font-medium">{aviso.tenantNombre}</p>
-              <p className="text-muted">{aviso.placement} · {aviso.startsOn} → {aviso.endsOn} · {aviso.currency} {aviso.price}</p>
-              {aviso.contentRef ? <p className="text-muted">{aviso.contentRef}</p> : null}
-              {aviso.notes ? <p>{aviso.notes}</p> : null}
-            </article>
-          ))}
-          {puestos.map((item) => (
-            <button key={item.id} type="button" className="block w-full rounded-md border border-line bg-surface px-3 py-3 text-left" onClick={() => void abrirPuesto(item)}>
-              {item.nombre}
-              {item.tier ? <span className="ml-2 text-xs text-muted">{item.tier}</span> : null}
-            </button>
-          ))}
-          {puesto ? (
-            <div className="space-y-2">
-              {productos.map((producto) => (
-                <div key={producto.id} className="flex items-center justify-between gap-2 border-t border-line py-2">
-                  <div>
-                    <p>{producto.nombre}</p>
-                    <p className="text-sm text-muted">
-                      ${producto.precio} · {producto.unidadLabel} · hay {producto.disponible}
-                    </p>
-                  </div>
-                  <Button size="sm" onClick={() => sumar(producto)}>
-                    Sumar
-                  </Button>
-                </div>
-              ))}
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-      {panel === "carrito" ? (
-        <div className="mt-4 space-y-3">
-          <p className="text-sm">{bultos} bultos en {new Set(carrito.map((linea) => linea.tenantNombre)).size || 0} puestos. Los kilos no se cuentan.</p>
-          {carrito.map((linea) => (
-            <p key={`${linea.tenantId}-${linea.productoId}`}>
-              {linea.tenantNombre}: {linea.cantidad} {linea.unidad === "bulto" ? "bultos" : linea.unidad} de {linea.nombre}
-            </p>
-          ))}
-          <Button className="w-full" disabled={ocupado || carrito.length === 0} onClick={() => void confirmar()}>
-            Confirmar pedidos
+      <Marco titulo="Mercado al Toque" onSalir={salir}>
+        <div className="grid grid-cols-3 gap-2">
+          <Button
+            variant={panel === "puestos" ? "primary" : "secondary"}
+            onClick={() => setPanel("puestos")}
+          >
+            Puestos
+          </Button>
+          <Button
+            variant={panel === "carrito" ? "primary" : "secondary"}
+            onClick={() => setPanel("carrito")}
+          >
+            Carrito
+          </Button>
+          <Button
+            variant={panel === "pedidos" ? "primary" : "secondary"}
+            onClick={() => {
+              setPanel("pedidos");
+              void cargarPedidos();
+            }}
+          >
+            Pedidos
           </Button>
         </div>
-      ) : null}
-      {panel === "pedidos" ? (
-        <div className="mt-4 space-y-3">
-          <p className="text-sm">{elegidos.length ? `${bultosElegidos} bultos en los pedidos elegidos.` : "Elegí los pedidos y después un cargador."}</p>
-          {pedidos.map((pedido) => (
-            <label key={pedido.id} className="flex items-start gap-2 rounded-md border border-line px-3 py-2">
-              <input
-                type="checkbox"
-                checked={elegidos.includes(pedido.id)}
-                onChange={(ev) =>
-                  setElegidos((actual) =>
-                    ev.target.checked ? [...actual, pedido.id] : actual.filter((id) => id !== pedido.id),
-                  )
-                }
-              />
-              <span>
-                {pedido.tenantNombre}
-                <span className="block text-sm text-muted">
-                  {pedido.bultos} bultos · {pedido.estado} · ${pedido.total}
-                  {pedido.comision ? <span className="block">{pedido.comision}</span> : null}
-                </span>
-              </span>
-            </label>
-          ))}
-          {cargadores.map((cargador) => (
-            <Button key={cargador.id} variant="secondary" className="w-full" disabled={ocupado || elegidos.length === 0} onClick={() => void elegir(cargador.id)}>
-              Elegir a {cargador.nombre} · {cargador.nivel}
-            </Button>
-          ))}
-          <ListaRecorridos recorridos={recorridos} ocupado={ocupado} onAccion={accion} onCalificar={calificar} />
-          {ranking.length > 0 ? (
-            <div className="pt-2">
-              <p className="text-sm font-medium">Ranking de cargadores</p>
-              <ul className="mt-1 text-sm text-muted">
-                {ranking.map((item) => (
-                  <li key={`${item.puesto}-${item.nombre}`}>{item.puesto}. {item.nombre} · {item.nivel} · {item.puntos} pts · score {item.score}</li>
+        {error ? <p className="mt-3 text-sm text-terra">{error}</p> : null}
+        {panel === "puestos" ? (
+          <div className="mt-4 space-y-3">
+            {puestos.length === 0 ? (
+              <p className="text-sm text-muted">
+                Ningún puesto está publicado en Mercado al Toque.
+              </p>
+            ) : null}
+            {avisos.map((aviso) => (
+              <article
+                key={aviso.id}
+                className="rounded-md border border-line bg-surface px-3 py-2 text-sm"
+              >
+                <p className="font-medium">{aviso.tenantNombre}</p>
+                <p className="text-muted">
+                  {aviso.placement} · {aviso.startsOn} → {aviso.endsOn} · {aviso.currency}{" "}
+                  {aviso.price}
+                </p>
+                {aviso.contentRef ? <p className="text-muted">{aviso.contentRef}</p> : null}
+                {aviso.notes ? <p>{aviso.notes}</p> : null}
+              </article>
+            ))}
+            {puestos.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className="block w-full rounded-md border border-line bg-surface px-3 py-3 text-left"
+                onClick={() => void abrirPuesto(item)}
+              >
+                {item.nombre}
+                {item.tier ? <span className="ml-2 text-xs text-muted">{item.tier}</span> : null}
+              </button>
+            ))}
+            {puesto ? (
+              <div className="space-y-2">
+                {productos.map((producto) => (
+                  <div
+                    key={producto.id}
+                    className="flex items-center justify-between gap-2 border-t border-line py-2"
+                  >
+                    <div>
+                      <p>{producto.nombre}</p>
+                      <p className="text-sm text-muted">
+                        ${producto.precio} · {producto.unidadLabel} · hay {producto.disponible}
+                      </p>
+                    </div>
+                    <Button size="sm" onClick={() => sumar(producto)}>
+                      Sumar
+                    </Button>
+                  </div>
                 ))}
-              </ul>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-    </Marco>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+        {panel === "carrito" ? (
+          <div className="mt-4 space-y-3">
+            <p className="text-sm">
+              {bultos} bultos en {new Set(carrito.map((linea) => linea.tenantNombre)).size || 0}{" "}
+              puestos. Los kilos no se cuentan.
+            </p>
+            {carrito.map((linea) => (
+              <p key={`${linea.tenantId}-${linea.productoId}`}>
+                {linea.tenantNombre}: {linea.cantidad}{" "}
+                {linea.unidad === "bulto" ? "bultos" : linea.unidad} de {linea.nombre}
+              </p>
+            ))}
+            <Button
+              className="w-full"
+              disabled={ocupado || carrito.length === 0}
+              onClick={() => void confirmar()}
+            >
+              Confirmar pedidos
+            </Button>
+          </div>
+        ) : null}
+        {panel === "pedidos" ? (
+          <div className="mt-4 space-y-3">
+            <p className="text-sm">
+              {elegidos.length
+                ? `${bultosElegidos} bultos en los pedidos elegidos.`
+                : "Elegí los pedidos y después un cargador."}
+            </p>
+            {pedidos.map((pedido) => (
+              <div
+                key={pedido.id}
+                className="flex items-start gap-2 rounded-md border border-line px-3 py-2"
+              >
+                <input
+                  type="checkbox"
+                  checked={elegidos.includes(pedido.id)}
+                  disabled={pedido.estado !== "preparado"}
+                  onChange={(ev) =>
+                    setElegidos((actual) =>
+                      ev.target.checked
+                        ? [...actual, pedido.id]
+                        : actual.filter((id) => id !== pedido.id),
+                    )
+                  }
+                />
+                <div className="min-w-0 flex-1">
+                  {pedido.puesto}
+                  <span className="block text-sm text-muted">
+                    {pedido.bultos} bultos · {pedido.estado} · ${pedido.total}
+                    {pedido.comision ? <span className="block">{pedido.comision}</span> : null}
+                  </span>
+                  {pedido.estado === "confirmado" ? (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      className="mt-2"
+                      disabled={ocupado}
+                      onClick={() => void cancelarPedido(pedido.id)}
+                    >
+                      Cancelar pedido
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+            ))}
+            {cargadores.map((cargador) => (
+              <Button
+                key={cargador.id}
+                variant="secondary"
+                className="w-full"
+                disabled={ocupado || elegidos.length === 0}
+                onClick={() => void elegir(cargador.id)}
+              >
+                Elegir a {cargador.nombre} · {cargador.nivel}
+              </Button>
+            ))}
+            <ListaRecorridos
+              recorridos={recorridos}
+              ocupado={ocupado}
+              onAccion={accion}
+              onCalificar={calificar}
+            />
+            {ranking.length > 0 ? (
+              <div className="pt-2">
+                <p className="text-sm font-medium">Ranking de cargadores</p>
+                <ul className="mt-1 text-sm text-muted">
+                  {ranking.map((item) => (
+                    <li key={`${item.puesto}-${item.nombre}`}>
+                      {item.puesto}. {item.nombre} · {item.nivel} · {item.puntos} pts · score{" "}
+                      {item.score}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </Marco>
     </PuertaLegal>
   );
 }
 
-function Campo({ label, value, onChange, type = "text" }: { label: string; value: string; onChange: (v: string) => void; type?: string }) {
+function Campo({
+  label,
+  value,
+  onChange,
+  type = "text",
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  type?: string;
+}) {
   return (
     <label className="block text-sm font-medium">
       {label}
-      <Input className="mt-1" type={type} value={value} onChange={(ev) => onChange(ev.target.value)} required />
+      <Input
+        className="mt-1"
+        type={type}
+        value={value}
+        onChange={(ev) => onChange(ev.target.value)}
+        required
+      />
     </label>
   );
 }
 
-function Marco({ titulo, onSalir, onCargar, children }: { titulo: string; onSalir: () => void; onCargar?: () => void; children: ReactNode }) {
+function Marco({
+  titulo,
+  onSalir,
+  onCargar,
+  children,
+}: {
+  titulo: string;
+  onSalir: () => void;
+  onCargar?: () => void;
+  children: ReactNode;
+}) {
   return (
     <main className="mx-auto min-h-dvh max-w-md bg-paper px-4 py-6 text-ink">
       <div className="mb-4 flex items-center justify-between gap-2">
@@ -608,19 +820,31 @@ function ListaRecorridos({
       {recorridos.map((recorrido) => (
         <section key={recorrido.id} className="rounded-md border border-line p-3">
           <p className="font-medium">{recorrido.bultos} bultos</p>
-          <p className="text-sm text-muted">{cargador ? recorrido.comprador : recorrido.cargador} · {recorrido.estado}</p>
+          <p className="text-sm text-muted">
+            {cargador ? recorrido.compradorNombre : recorrido.cargador} · {recorrido.estado}
+          </p>
           {(recorrido.paradas ?? []).map((parada) => (
             <div key={parada.pedidoId} className="mt-2 border-t border-line pt-2">
               <p>
                 {parada.puesto}: {parada.bultos} bultos · {parada.estado}
               </p>
               {cargador && parada.estado === "aceptado" ? (
-                <Button size="sm" className="mt-1" disabled={ocupado || !parada.preparado} onClick={() => void onAccion(recorrido.id, "retirar", parada.pedidoId)}>
+                <Button
+                  size="sm"
+                  className="mt-1"
+                  disabled={ocupado || !parada.preparado}
+                  onClick={() => void onAccion(recorrido.id, "retirar", parada.pedidoId)}
+                >
                   Retiré este puesto
                 </Button>
               ) : null}
               {cargador && parada.estado === "retirado" ? (
-                <Button size="sm" className="mt-1" disabled={ocupado} onClick={() => void onAccion(recorrido.id, "entregar", parada.pedidoId)}>
+                <Button
+                  size="sm"
+                  className="mt-1"
+                  disabled={ocupado}
+                  onClick={() => void onAccion(recorrido.id, "entregar", parada.pedidoId)}
+                >
                   Entregué este puesto
                 </Button>
               ) : null}
@@ -628,10 +852,19 @@ function ListaRecorridos({
           ))}
           {cargador && recorrido.estado === "asignado" ? (
             <div className="mt-2 grid grid-cols-2 gap-2">
-              <Button size="sm" disabled={ocupado} onClick={() => void onAccion(recorrido.id, "aceptar")}>
+              <Button
+                size="sm"
+                disabled={ocupado}
+                onClick={() => void onAccion(recorrido.id, "aceptar")}
+              >
                 Aceptar
               </Button>
-              <Button size="sm" variant="secondary" disabled={ocupado} onClick={() => void onAccion(recorrido.id, "rechazar")}>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={ocupado}
+                onClick={() => void onAccion(recorrido.id, "rechazar")}
+              >
                 Rechazar
               </Button>
             </div>
@@ -639,7 +872,13 @@ function ListaRecorridos({
           {!cargador && recorrido.estado === "entregado" ? (
             <div className="mt-2 flex gap-1">
               {[1, 2, 3, 4, 5].map((estrella) => (
-                <Button key={estrella} size="sm" variant="secondary" disabled={ocupado} onClick={() => void onCalificar(recorrido.id, estrella)}>
+                <Button
+                  key={estrella}
+                  size="sm"
+                  variant="secondary"
+                  disabled={ocupado}
+                  onClick={() => void onCalificar(recorrido.id, estrella)}
+                >
                   {estrella}
                 </Button>
               ))}

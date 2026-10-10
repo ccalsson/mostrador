@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/cn";
 import { clock, dayLabel } from "@/lib/money";
-import { useMensajesVivo } from "@/lib/mensajes-en-vivo";
 import {
   conversacionesNegocio,
   enviarMensajePedido,
@@ -24,11 +23,10 @@ export function PedidoChat({
   lado: "cliente" | "negocio";
 }) {
   const qc = useQueryClient();
-  const vivo = useMensajesVivo({ tipo: "ver", pedidoId });
   const lista = useQuery({
     queryKey: ["mensajes", pedidoId],
-    queryFn: () => mensajesDelPedido({ data: { pedidoId } }),
-    refetchInterval: vivo ? false : 4000,
+    queryFn: () => mensajesDelPedido({ data: { pedidoId, lado } }),
+    refetchInterval: 4000,
     staleTime: 0,
   });
   const [viejos, setViejos] = useState<Mensaje[]>([]);
@@ -63,7 +61,7 @@ export function PedidoChat({
   }, [mensajes.length, pedidoId]);
 
   const enviar = useMutation({
-    mutationFn: () => enviarMensajePedido({ data: { pedidoId, cuerpo: texto } }),
+    mutationFn: () => enviarMensajePedido({ data: { pedidoId, lado, cuerpo: texto } }),
     onSuccess: () => {
       setTexto("");
       void qc.invalidateQueries({ queryKey: ["mensajes", pedidoId] });
@@ -80,7 +78,7 @@ export function PedidoChat({
     if (!primero || cargando) return;
     setCargando(true);
     try {
-      const page = await mensajesDelPedido({ data: { pedidoId, antes: primero.createdAt } });
+      const page = await mensajesDelPedido({ data: { pedidoId, lado, antes: primero.createdAt } });
       setViejos((prev) => [...page.mensajes, ...prev]);
       setHayMasViejos(page.hayMas);
     } catch (e) {
@@ -146,11 +144,10 @@ export function PedidoChat({
 }
 
 export function BandejaMensajes() {
-  const vivo = useMensajesVivo({ tipo: "bandeja" });
   const lista = useQuery({
     queryKey: ["conversaciones"],
     queryFn: () => conversacionesNegocio(),
-    refetchInterval: vivo ? false : 8000,
+    refetchInterval: 8000,
     staleTime: 0,
   });
   const [sel, setSel] = useState<string | null>(null);

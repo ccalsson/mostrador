@@ -45,6 +45,23 @@ export async function getPedidoForStaff(staff: Staff, id: string): Promise<Pedid
   return loadPedido(id, staff.tenantId);
 }
 
+export async function comprobantePedidoForStaff(
+  staff: Staff,
+  id: string,
+): Promise<{ nombre: string | null; data: string } | null> {
+  assertRole(staff, ["admin", "cajero"]);
+  const sql = await getSql();
+  const rows = await sql<{ comprobante_nombre: string | null; comprobante_data: string | null }>`
+    select comprobante_nombre, comprobante_data
+    from pedidos
+    where id = ${id} and tenant_id = ${staff.tenantId}
+    limit 1
+  `;
+  const row = rows[0];
+  if (!row?.comprobante_data) return null;
+  return { nombre: row.comprobante_nombre, data: row.comprobante_data };
+}
+
 export async function updatePedidoEstadoForStaff(
   staff: Staff,
   input: { id: string; estado: PedidoEstado },

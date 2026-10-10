@@ -111,10 +111,10 @@ function authPopupPlugin(): Plugin {
             headers: requestHeaders,
           });
 
-          const mod = (await server.ssrLoadModule("/src/lib/auth/popup.server.ts")) as {
-            handleAuthPopupRequest: (req: Request) => Promise<Response>;
+          const mod = (await server.ssrLoadModule("/src/lib/app-auth-popup.server.ts")) as {
+            handleAppAuthPopupRequest: (req: Request) => Promise<Response>;
           };
-          const response = await mod.handleAuthPopupRequest(request);
+          const response = await mod.handleAppAuthPopupRequest(request);
 
           res.statusCode = response.status;
           // Preserve multiple Set-Cookie headers (OAuth state + session).

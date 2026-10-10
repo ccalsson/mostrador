@@ -4,10 +4,15 @@ import { getSql } from "@/lib/db";
 import { newId } from "@/lib/ids";
 import { num } from "@/lib/money";
 import { auditar } from "@/lib/torre/audit";
-import { audienciasDe, beneficioVigente, hashDocumento, pendienteDeAceptacion } from "@/lib/torre/legal";
+import {
+  audienciasDe,
+  beneficioVigente,
+  hashDocumento,
+  pendienteDeAceptacion,
+} from "@/lib/torre/legal";
 import { precioEfectivo } from "@/lib/torre/comercial";
 import { condicionOperativa } from "@/lib/torre/presencia";
-import { leerSesion } from "@/lib/mercado/servicio";
+import { AppApiError, appMercadoApi } from "@/lib/app-api.server";
 import type { Rol } from "@/lib/types";
 
 export class CentralError extends Error {
@@ -37,7 +42,8 @@ function hoy() {
 }
 
 async function resolver(request: Request): Promise<Actor> {
-  const user = await getSessionUser(request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") || undefined);
+  const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") || undefined;
+  const user = await getSessionUser(token);
   if (user) {
     const staff = await loadStaffByUserId(user.id);
     if (staff) {
@@ -48,17 +54,43 @@ async function resolver(request: Request): Promise<Actor> {
         order by created_at
         limit 1
       `;
-      if (!tenants[0]) throw new CentralError("Este puesto no está vinculado a un tenant de Torre.", 404, "tenant_not_linked");
-      return { kind: "mostrador", torreTenantId: tenants[0].id, userId: user.id, email: staff.email, rol: staff.rol };
+      if (!tenants[0])
+        throw new CentralError(
+          "Este puesto no está vinculado a un tenant de Torre.",
+          404,
+          "tenant_not_linked",
+        );
+      return {
+        kind: "mostrador",
+        torreTenantId: tenants[0].id,
+        userId: user.id,
+        email: staff.email,
+        rol: staff.rol,
+      };
     }
   }
-  try {
-    const ses = await leerSesion(request);
-    const sql = await getSql();
-    const users = await sql<{ email: string }>`select email from "user" where id = ${ses.userId} limit 1`;
-    return { kind: "mercado", perfil: ses.perfil, userId: ses.userId, email: users[0]?.email ?? "" };
-  } catch {
+  if (!token) {
     throw new CentralError("Tenés que iniciar sesión.", 401, "unauthenticated");
+  }
+  try {
+    const actor = await appMercadoApi<{
+      id: string;
+      email: string;
+      perfil: "comprador" | "cargador";
+    }>({ token, method: "GET", path: ["yo"] });
+    if (!actor.id || !actor.email || !["comprador", "cargador"].includes(actor.perfil)) {
+      throw new CentralError(
+        "La API de Mercado devolvió una sesión inválida.",
+        502,
+        "invalid_market_session",
+      );
+    }
+    return { kind: "mercado", perfil: actor.perfil, userId: actor.id, email: actor.email };
+  } catch (error) {
+    if (error instanceof AppApiError && error.status === 401) {
+      throw new CentralError("Tenés que iniciar sesión.", 401, "unauthenticated");
+    }
+    throw error;
   }
 }
 
@@ -106,7 +138,13 @@ async function suscripcionDe(tenantId: string) {
     where l.subscription_id = ${sub.id}
     order by l.starts_on
   `;
-  const grants = await sql<{ code: string; status: string; starts_on: unknown; ends_on: unknown; conditions: string }>`
+  const grants = await sql<{
+    code: string;
+    status: string;
+    starts_on: unknown;
+    ends_on: unknown;
+    conditions: string;
+  }>`
     select p.code, g.status, g.starts_on, g.ends_on, g.conditions
     from torre.saas_promotion_grants g
     join torre.saas_promotions p on p.id = g.promotion_id
@@ -144,7 +182,12 @@ async function suscripcionDe(tenantId: string) {
   return {
     id: sub.id,
     status: sub.status,
-    plan: { code: sub.plan_code, name: sub.plan_name, currency: sub.currency, periodicity: sub.periodicity },
+    plan: {
+      code: sub.plan_code,
+      name: sub.plan_name,
+      currency: sub.currency,
+      periodicity: sub.periodicity,
+    },
     startDate: String(sub.start_date).slice(0, 10),
     nextPaymentDate: sub.next_payment_date ? String(sub.next_payment_date).slice(0, 10) : null,
     lines: lines.map((line) => {
@@ -180,42 +223,75 @@ async function suscripcionDe(tenantId: string) {
       };
     }),
     grants: grants
-      .filter((grant) => beneficioVigente({
-        status: grant.status,
+      .filter((grant) =>
+        beneficioVigente(
+          {
+            status: grant.status,
+            startsOn: String(grant.starts_on).slice(0, 10),
+            endsOn: grant.ends_on ? String(grant.ends_on).slice(0, 10) : null,
+          },
+          today,
+        ),
+      )
+      .map((grant) => ({
+        code: grant.code,
         startsOn: String(grant.starts_on).slice(0, 10),
         endsOn: grant.ends_on ? String(grant.ends_on).slice(0, 10) : null,
-      }, today))
-      .map((grant) => ({ code: grant.code, startsOn: String(grant.starts_on).slice(0, 10), endsOn: grant.ends_on ? String(grant.ends_on).slice(0, 10) : null, conditions: grant.conditions })),
+        conditions: grant.conditions,
+      })),
     commissionOverrides: mappedAdjustments
       .filter((row) => row.kind === "commission_override" && row.status === "active")
-      .map((row) => ({ percent: row.percent, startsOn: row.startsOn, endsOn: row.endsOn, status: row.status })),
+      .map((row) => ({
+        percent: row.percent,
+        startsOn: row.startsOn,
+        endsOn: row.endsOn,
+        status: row.status,
+      })),
   };
 }
 
 export async function handleCentral(request: Request) {
   try {
-    const ruta = new URL(request.url).pathname.replace(/^\/api\/central\/v1\/?/, "").replace(/\/$/, "");
+    const ruta = new URL(request.url).pathname
+      .replace(/^\/api\/central\/v1\/?/, "")
+      .replace(/\/$/, "");
     const actor = await resolver(request);
     if (request.method === "GET" && (ruta === "subscription" || ruta === "addons")) {
-      if (actor.kind !== "mostrador") throw new CentralError("Esto es de la relación comercial del puesto.", 403, "not_a_tenant");
-      if (actor.rol !== "admin") throw new CentralError("Solo el dueño del puesto puede ver esto.", 403, "rol_no_permitido");
+      if (actor.kind !== "mostrador")
+        throw new CentralError("Esto es de la relación comercial del puesto.", 403, "not_a_tenant");
+      if (actor.rol !== "admin")
+        throw new CentralError("Solo el dueño del puesto puede ver esto.", 403, "rol_no_permitido");
       const sub = await suscripcionDe(actor.torreTenantId);
-      if (!sub) throw new CentralError("No hay suscripción para este puesto.", 404, "subscription_not_found");
+      if (!sub)
+        throw new CentralError(
+          "No hay suscripción para este puesto.",
+          404,
+          "subscription_not_found",
+        );
       if (ruta === "addons") {
-        return json({ addons: sub.lines.filter((line) => line.kind !== "base_product" && line.status === "active") });
+        return json({
+          addons: sub.lines.filter(
+            (line) => line.kind !== "base_product" && line.status === "active",
+          ),
+        });
       }
       return json({ subscription: sub });
     }
     if (request.method === "GET" && ruta === "capabilities") {
-      if (actor.kind !== "mostrador") throw new CentralError("Esto es de la relación comercial del puesto.", 403, "not_a_tenant");
-      if (actor.rol !== "admin") throw new CentralError("Solo el dueño del puesto puede ver esto.", 403, "rol_no_permitido");
+      if (actor.kind !== "mostrador")
+        throw new CentralError("Esto es de la relación comercial del puesto.", 403, "not_a_tenant");
+      if (actor.rol !== "admin")
+        throw new CentralError("Solo el dueño del puesto puede ver esto.", 403, "rol_no_permitido");
       const sql = await getSql();
       const refs = await sql<{ ref: string | null }>`
         select operational_tenant_ref as ref from torre.saas_tenants where id = ${actor.torreTenantId} limit 1
       `;
       return json(await condicionOperativa(refs[0]?.ref ?? ""));
     }
-    if (request.method === "GET" && (ruta === "contracts" || ruta.startsWith("contracts/") || ruta === "legal-documents")) {
+    if (
+      request.method === "GET" &&
+      (ruta === "contracts" || ruta.startsWith("contracts/") || ruta === "legal-documents")
+    ) {
       return json(await leerDocumentos(actor, ruta));
     }
     const aceptar = ruta.match(/^contracts\/([^/]+)\/accept$/);
@@ -224,10 +300,17 @@ export async function handleCentral(request: Request) {
     }
     throw new CentralError("No existe esa ruta.", 404, "not_found");
   } catch (err) {
-    if (err instanceof CentralError) return json({ error: { code: err.code, message: err.message } }, err.status);
+    if (err instanceof CentralError)
+      return json({ error: { code: err.code, message: err.message } }, err.status);
+    if (err instanceof AppApiError) {
+      return json({ error: { code: err.code, message: err.message } }, err.status);
+    }
     const message = err instanceof Error ? err.message : "Error";
     const status = message === "Unauthorized" ? 401 : 500;
-    return json({ error: { code: status === 401 ? "unauthenticated" : "internal", message } }, status);
+    return json(
+      { error: { code: status === 401 ? "unauthenticated" : "internal", message } },
+      status,
+    );
   }
 }
 
@@ -269,35 +352,48 @@ async function leerDocumentos(actor: Actor, ruta: string) {
       })),
     };
   }
-  const hashes = actor.kind === "mostrador"
-    ? await sql<{ snapshot_hash: string; document_id: string }>`
+  const hashes =
+    actor.kind === "mostrador"
+      ? await sql<{ snapshot_hash: string; document_id: string }>`
         select a.snapshot_hash, v.document_id
         from torre.saas_contract_acceptances a
         join torre.saas_legal_versions v on v.id = a.version_id
         where a.tenant_id = ${actor.torreTenantId}
       `
-    : await sql<{ snapshot_hash: string; document_id: string }>`
+      : await sql<{ snapshot_hash: string; document_id: string }>`
         select a.snapshot_hash, v.document_id
         from torre.saas_contract_acceptances a
         join torre.saas_legal_versions v on v.id = a.version_id
         where a.user_id = ${actor.userId} and a.tenant_id is null
       `;
-  const contracts = actor.kind === "mostrador"
-    ? await sql<{ id: string; document_id: string; status: string; snapshot_hash: string; snapshot_body: string; version_id: string }>`
+  const contracts =
+    actor.kind === "mostrador"
+      ? await sql<{
+          id: string;
+          document_id: string;
+          status: string;
+          snapshot_hash: string;
+          snapshot_body: string;
+          version_id: string;
+        }>`
         select id, document_id, status, snapshot_hash, snapshot_body, version_id
         from torre.saas_tenant_contracts where tenant_id = ${actor.torreTenantId}
       `
-    : [];
+      : [];
   const pending = [];
   for (const version of visibles) {
-    const accepted = hashes.filter((row) => row.document_id === version.document_id).map((row) => row.snapshot_hash);
+    const accepted = hashes
+      .filter((row) => row.document_id === version.document_id)
+      .map((row) => row.snapshot_hash);
     const falta = pendienteDeAceptacion({
       reacceptOnChange: version.reaccept_on_change,
       publishedHash: version.content_hash,
       acceptedHashes: accepted,
     });
     if (!falta) continue;
-    const ofrecido = contracts.find((row) => row.document_id === version.document_id && row.status === "pending");
+    const ofrecido = contracts.find(
+      (row) => row.document_id === version.document_id && row.status === "pending",
+    );
     if (actor.kind === "mostrador" && version.audience === "saas_b2b" && !ofrecido) continue;
     pending.push({
       id: ofrecido?.id ?? version.id,
@@ -314,13 +410,20 @@ async function leerDocumentos(actor: Actor, ruta: string) {
   if (ruta === "contracts/history") return { history };
   if (ruta === "contracts/current") {
     return {
-      current: visibles.filter((version) => hashes.some((row) => row.document_id === version.document_id && row.snapshot_hash === version.content_hash)).map((version) => ({
-        code: version.code,
-        title: version.title,
-        version: version.version_label,
-        hash: version.content_hash,
-        body: version.body,
-      })),
+      current: visibles
+        .filter((version) =>
+          hashes.some(
+            (row) =>
+              row.document_id === version.document_id && row.snapshot_hash === version.content_hash,
+          ),
+        )
+        .map((version) => ({
+          code: version.code,
+          title: version.title,
+          version: version.version_label,
+          hash: version.content_hash,
+          body: version.body,
+        })),
     };
   }
   return { pending, history };
@@ -331,15 +434,30 @@ async function aceptarDocumento(actor: Actor, id: string, request: Request) {
   const ip = (request.headers.get("x-forwarded-for") || "").split(",")[0]?.trim() || "";
   const userAgent = (request.headers.get("user-agent") || "").slice(0, 300);
   if (actor.kind === "mostrador") {
-    if (actor.rol !== "admin") throw new CentralError("Solo el dueño del puesto puede aceptar contratos.", 403, "rol_no_permitido");
-    const rows = await sql<{ id: string; tenant_id: string; status: string; snapshot_body: string; snapshot_hash: string; version_id: string }>`
+    if (actor.rol !== "admin")
+      throw new CentralError(
+        "Solo el dueño del puesto puede aceptar contratos.",
+        403,
+        "rol_no_permitido",
+      );
+    const rows = await sql<{
+      id: string;
+      tenant_id: string;
+      status: string;
+      snapshot_body: string;
+      snapshot_hash: string;
+      version_id: string;
+    }>`
       select id, tenant_id, status, snapshot_body, snapshot_hash, version_id
       from torre.saas_tenant_contracts where id = ${id} limit 1
     `;
     const contract = rows[0];
-    if (!contract || contract.tenant_id !== actor.torreTenantId) throw new CentralError("No está ese contrato.", 404, "not_found");
-    if (contract.status === "accepted") throw new CentralError("Ese contrato ya fue aceptado.", 409, "already_accepted");
-    if (contract.status !== "pending") throw new CentralError("Ese contrato no está pendiente.", 409, "not_pending");
+    if (!contract || contract.tenant_id !== actor.torreTenantId)
+      throw new CentralError("No está ese contrato.", 404, "not_found");
+    if (contract.status === "accepted")
+      throw new CentralError("Ese contrato ya fue aceptado.", 409, "already_accepted");
+    if (contract.status !== "pending")
+      throw new CentralError("Ese contrato no está pendiente.", 409, "not_pending");
     if (hashDocumento(contract.snapshot_body) !== contract.snapshot_hash) {
       throw new CentralError("El snapshot no coincide con su hash.", 409, "hash_mismatch");
     }
@@ -353,10 +471,19 @@ async function aceptarDocumento(actor: Actor, id: string, request: Request) {
       )
     `;
     await sql`update torre.saas_tenant_contracts set status = 'accepted' where id = ${contract.id}`;
-    await auditar(actor.email || actor.userId, "aceptar_contrato", "tenant_contract", contract.id, { hash: contract.snapshot_hash, tenantId: actor.torreTenantId });
+    await auditar(actor.email || actor.userId, "aceptar_contrato", "tenant_contract", contract.id, {
+      hash: contract.snapshot_hash,
+      tenantId: actor.torreTenantId,
+    });
     return { acceptanceId, hash: contract.snapshot_hash, action: "electronic_acceptance" };
   }
-  const versions = await sql<{ id: string; body: string; content_hash: string; status: string; audience: string }>`
+  const versions = await sql<{
+    id: string;
+    body: string;
+    content_hash: string;
+    status: string;
+    audience: string;
+  }>`
     select v.id, v.body, v.content_hash, v.status, d.audience
     from torre.saas_legal_versions v
     join torre.saas_legal_documents d on d.id = v.document_id
@@ -367,7 +494,8 @@ async function aceptarDocumento(actor: Actor, id: string, request: Request) {
   if (!version || !permitidas.has(version.audience) || version.status !== "published") {
     throw new CentralError("No está ese documento.", 404, "not_found");
   }
-  if (hashDocumento(version.body) !== version.content_hash) throw new CentralError("El documento no coincide con su hash.", 409, "hash_mismatch");
+  if (hashDocumento(version.body) !== version.content_hash)
+    throw new CentralError("El documento no coincide con su hash.", 409, "hash_mismatch");
   const previos = await sql<{ id: string }>`
     select id from torre.saas_contract_acceptances
     where user_id = ${actor.userId} and version_id = ${version.id} and snapshot_hash = ${version.content_hash}
@@ -382,6 +510,9 @@ async function aceptarDocumento(actor: Actor, id: string, request: Request) {
       ${acceptanceId}, ${version.id}, ${actor.userId}, ${actor.email}, ${version.content_hash}, ${ip}, ${userAgent}, 'electronic_acceptance'
     )
   `;
-  await auditar(actor.email || actor.userId, "aceptar_terminos", "legal_version", version.id, { hash: version.content_hash, perfil: actor.perfil });
+  await auditar(actor.email || actor.userId, "aceptar_terminos", "legal_version", version.id, {
+    hash: version.content_hash,
+    perfil: actor.perfil,
+  });
   return { acceptanceId, hash: version.content_hash, action: "electronic_acceptance" };
 }

@@ -2,25 +2,21 @@ import { useCallback, useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
-  CentralClientError,
-  aceptarContrato,
-  etiquetaCargo,
-  etiquetaEstado,
-  leerAddons,
-  leerCapacidades,
-  leerPendientes,
-  leerSuscripcion,
-  leerVigentes,
-  textoImporte,
-  type LineaCentral,
-  type PendienteCentral,
-  type SuscripcionCentral,
-  type VigenteCentral,
-} from "@/lib/central/cliente";
+  aceptarContratoPuesto,
+  leerCapacidadesPuesto,
+  leerHistorialContratoPuesto,
+  leerContratoPuesto,
+  leerResumenSuscripcionPuesto,
+  type CapacidadesPuesto,
+  type ContratoPuesto as ContratoPuestoData,
+  type HistorialContratoPuesto,
+  type ResumenSuscripcionPuesto,
+} from "@/lib/central/suscripcion-fn";
 import { textoCondicion } from "@/lib/torre/condiciones";
 
 function codigo(err: unknown) {
-  return err instanceof CentralClientError ? err.code : "";
+  if (typeof err === "object" && err !== null && "code" in err && typeof err.code === "string") return err.code;
+  return "";
 }
 
 function fecha(iso: string | null | undefined) {
@@ -29,12 +25,32 @@ function fecha(iso: string | null | undefined) {
   return dia && mes && anio ? `${dia}/${mes}/${anio}` : iso;
 }
 
-function avisoPlan(code: string) {
-  if (code === "subscription_not_found" || code === "tenant_not_linked") return "Todavía no hay un plan asignado a este puesto.";
+function importe(currency: string, amount: number) {
+  const texto = new Intl.NumberFormat("es-AR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount);
+  return `${currency} ${texto}`;
+}
+
+function avisoPlan(err: unknown) {
+  if (["sin_suscripcion", "tenant_not_linked", "subscription_not_found"].includes(codigo(err))) {
+    return "Todavía no hay un plan asignado a este puesto.";
+  }
   return "No se pudo leer el plan. Probá de nuevo en un momento.";
 }
 
-function etiquetaTier(tier: string | null | undefined) {
+function etiquetaEstado(estado: string) {
+  const estados: Record<string, string> = {
+    activa: "Activa",
+    cancelada: "Cancelada",
+    prueba: "Prueba",
+    vencida: "Vencida",
+  };
+  return estados[estado] ?? estado;
+}
+
+function etiquetaTier(tier: string | null) {
   if (tier === "pro") return "Pro";
   if (tier === "presencia") return "Presencia";
   return "";
@@ -43,38 +59,52 @@ function etiquetaTier(tier: string | null | undefined) {
 export function ContratoPuesto() {
   const [online, setOnline] = useState(true);
   const [cargando, setCargando] = useState(true);
-  const [suscripcion, setSuscripcion] = useState<SuscripcionCentral | null>(null);
-  const [addons, setAddons] = useState<LineaCentral[]>([]);
+  const [resumen, setResumen] = useState<ResumenSuscripcionPuesto | null>(null);
   const [avisoSuscripcion, setAvisoSuscripcion] = useState<string | null>(null);
-  const [pendientes, setPendientes] = useState<PendienteCentral[]>([]);
-  const [vigentes, setVigentes] = useState<VigenteCentral[]>([]);
-  const [capacidades, setCapacidades] = useState<Awaited<ReturnType<typeof leerCapacidades>> | null>(null);
+  const [contrato, setContrato] = useState<ContratoPuestoData | null>(null);
+  const [historial, setHistorial] = useState<HistorialContratoPuesto["entradas"]>([]);
+  const [capacidades, setCapacidades] = useState<CapacidadesPuesto | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [ocupado, setOcupado] = useState<string | null>(null);
+  const [avisoContrato, setAvisoContrato] = useState<string | null>(null);
+  const [ocupado, setOcupado] = useState(false);
 
   const cargar = useCallback(async () => {
     setCargando(true);
     setError(null);
-    const [sub, extra, pending, current, caps] = await Promise.allSettled([
-      leerSuscripcion(),
-      leerAddons(),
-      leerPendientes("mostrador"),
-      leerVigentes("mostrador"),
-      leerCapacidades(),
+    const [sub, legal, historialResult, caps] = await Promise.allSettled([
+      leerResumenSuscripcionPuesto(),
+      leerContratoPuesto(),
+      leerHistorialContratoPuesto(),
+      leerCapacidadesPuesto(),
     ]);
+
     if (sub.status === "fulfilled") {
-      setSuscripcion(sub.value.subscription);
+      setResumen(sub.value);
       setAvisoSuscripcion(null);
     } else {
-      setSuscripcion(null);
-      setAvisoSuscripcion(avisoPlan(codigo(sub.reason)));
+      setResumen(null);
+      setAvisoSuscripcion(avisoPlan(sub.reason));
     }
-    setAddons(extra.status === "fulfilled" ? extra.value.addons : []);
-    setPendientes(pending.status === "fulfilled" ? pending.value.pending : []);
-    setVigentes(current.status === "fulfilled" ? current.value.current : []);
+
+    if (legal.status === "fulfilled") {
+      setContrato(legal.value);
+      setAvisoContrato(null);
+    } else if (codigo(legal.reason) === "contrato_no_encontrado") {
+      setContrato(null);
+      setAvisoContrato(null);
+    } else {
+      setContrato(null);
+      setAvisoContrato("No se pudo leer el texto del contrato.");
+    }
+
+    setHistorial(historialResult.status === "fulfilled" ? historialResult.value.entradas : []);
     setCapacidades(caps.status === "fulfilled" ? caps.value : null);
-    const falloSesion = [pending, current].find((item) => item.status === "rejected" && codigo(item.reason) === "unauthenticated");
-    if (falloSesion && falloSesion.status === "rejected") setError("La sesión venció. Salí y volvé a entrar.");
+
+    const fallos = [sub, legal, historialResult, caps]
+      .filter((item): item is PromiseRejectedResult => item.status === "rejected");
+    if (fallos.some(({ reason }) => ["unauthorized", "unauthenticated"].includes(codigo(reason)))) {
+      setError("La sesión venció. Salí y volvé a entrar.");
+    }
     setCargando(false);
   }, []);
 
@@ -93,21 +123,41 @@ export function ContratoPuesto() {
     void cargar();
   }, [cargar]);
 
-  async function aceptar(id: string) {
-    setOcupado(id);
+  async function aceptar() {
+    if (!contrato || !resumen?.pendiente.hayPendiente) return;
+    setOcupado(true);
     setError(null);
     try {
-      await aceptarContrato("mostrador", id);
+      await aceptarContratoPuesto({
+        data: {
+          documentoId: contrato.documentoId,
+          version: contrato.version,
+          hash: contrato.hash,
+        },
+      });
       await cargar();
     } catch (err) {
-      setError(codigo(err) === "offline" ? "Sin conexión no se puede aceptar." : "No se pudo aceptar. Probá de nuevo.");
+      const code = codigo(err);
+      setError(code === "offline"
+        ? "Sin conexión no se puede aceptar."
+        : code === "version_obsoleta" || code === "hash_mismatch"
+          ? "El contrato cambió. Actualizá la página y revisá la nueva versión."
+          : "No se pudo aceptar. Probá de nuevo.");
     } finally {
-      setOcupado(null);
+      setOcupado(false);
     }
   }
 
   if (cargando) return <p className="text-sm text-muted">Cargando el contrato…</p>;
 
+  const suscripcion = resumen?.suscripcion;
+  const pendiente = Boolean(
+    resumen?.pendiente.hayPendiente &&
+    contrato &&
+    contrato.documentoId === resumen.pendiente.documentoId &&
+    contrato.version === resumen.pendiente.version &&
+    contrato.hash === resumen.pendiente.hash,
+  );
   const comision = textoCondicion(capacidades?.comision);
 
   return (
@@ -121,46 +171,36 @@ export function ContratoPuesto() {
         {suscripcion ? (
           <div className="mt-3">
             <p className="text-sm">
-              <span className="font-medium">{suscripcion.plan.name}</span>
-              <Badge className="ml-2" tone={suscripcion.status === "active" ? "ok" : "muted"}>
-                {etiquetaEstado(suscripcion.status)}
+              <span className="font-medium">{suscripcion.plan.nombre}</span>
+              <Badge className="ml-2" tone={suscripcion.estado === "activa" ? "ok" : "muted"}>
+                {etiquetaEstado(suscripcion.estado)}
               </Badge>
             </p>
             <p className="mt-1 text-xs text-muted">
-              Desde {fecha(suscripcion.startDate)}
-              {suscripcion.nextPaymentDate ? ` · próximo pago ${fecha(suscripcion.nextPaymentDate)}` : ""}
+              Desde {fecha(suscripcion.inicio)}
+              {suscripcion.proximaRenovacion ? ` · próximo pago ${fecha(suscripcion.proximaRenovacion)}` : ""}
             </p>
-            <ul className="mt-3 divide-y divide-line">
-              {suscripcion.lines.map((linea) => (
-                <Linea key={linea.id} linea={linea} />
-              ))}
-            </ul>
-            {suscripcion.grants.some((grant) => grant.conditions) ? (
-              <ul className="mt-3 space-y-1 text-sm text-muted">
-                {suscripcion.grants
-                  .filter((grant) => grant.conditions)
-                  .map((grant) => (
-                    <li key={`${grant.startsOn}-${grant.conditions}`}>
-                      Beneficio{grant.endsOn ? ` hasta ${fecha(grant.endsOn)}` : ""}: {grant.conditions}
-                    </li>
-                  ))}
-              </ul>
+            <p className="mt-2 text-sm">
+              {importe(resumen.precioVigente.moneda, resumen.precioVigente.monto)} · {resumen.precioVigente.periodo}
+            </p>
+            {resumen.condicionesComerciales ? (
+              <p className="mt-2 text-sm text-muted">{resumen.condicionesComerciales.resumen}</p>
             ) : null}
-            {comision ? <p className="mt-3 text-sm text-muted">{comision}</p> : null}
           </div>
         ) : null}
+        {resumen?.addons.some((addon) => addon.activo) ? (
+          <>
+            <h3 className="mt-4 font-medium">Servicios extra</h3>
+            <ul className="mt-1 space-y-1 text-sm">
+              {resumen.addons.filter((addon) => addon.activo).map((addon) => (
+                <li key={addon.codigo}>
+                  {addon.nombre}{addon.detalle ? ` · ${addon.detalle}` : ""}
+                </li>
+              ))}
+            </ul>
+          </>
+        ) : null}
       </section>
-
-      {addons.length > 0 ? (
-        <section className="rounded-lg border border-line bg-surface p-4">
-          <h2 className="font-display text-xl font-semibold">Servicios extra</h2>
-          <ul className="mt-2 divide-y divide-line">
-            {addons.map((linea) => (
-              <Linea key={linea.id} linea={linea} />
-            ))}
-          </ul>
-        </section>
-      ) : null}
 
       <section className="rounded-lg border border-line bg-surface p-4">
         <h2 className="font-display text-xl font-semibold">Qué incluye</h2>
@@ -169,86 +209,69 @@ export function ContratoPuesto() {
             <li>{capacidades.presencia ? `Mercado al Toque: ${etiquetaTier(capacidades.tier)}.` : "Mercado al Toque no está incluido."}</li>
             <li>{capacidades.cuentaCorriente ? "Cuenta corriente incluida." : "Cuenta corriente no incluida."}</li>
             {capacidades.packs.map((pack) => (
-              <li key={pack.product}>
-                {pack.product}: {pack.remaining} envíos de {pack.quantity}.
-              </li>
+              <li key={pack.product}>{pack.product}: {pack.remaining} envíos de {pack.quantity}.</li>
             ))}
             {capacidades.avisos.map((aviso) => (
               <li key={aviso.id}>
-                Aviso {aviso.placement} · {fecha(aviso.startsOn)} a {fecha(aviso.endsOn)} · {textoImporte(aviso.currency, aviso.price)}
+                Aviso {aviso.placement} · {fecha(aviso.startsOn)} a {fecha(aviso.endsOn)} · {importe(aviso.currency, aviso.price)}
               </li>
             ))}
             {capacidades.packs.length === 0 && capacidades.avisos.length === 0 ? (
               <li className="text-muted">Sin packs ni avisos vigentes.</li>
             ) : null}
+            {comision ? <li className="text-muted">{comision}</li> : null}
           </ul>
         ) : (
           <p className="mt-2 text-sm text-muted">No se pudo leer qué incluye el plan.</p>
         )}
       </section>
 
-      {pendientes.length > 0 ? (
-        <section className="rounded-lg border border-line border-t-2 border-t-naranja bg-surface p-4">
-          <h2 className="font-display text-xl font-semibold">Para aceptar</h2>
-          <ul className="mt-3 space-y-4">
-            {pendientes.map((item) => (
-              <li key={item.id}>
-                <p className="font-medium">{item.title}</p>
-                <p className="text-xs text-muted">Versión {item.version}</p>
-                {item.body ? (
-                  <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap rounded-md bg-paper p-3 font-sans text-sm leading-relaxed">
-                    {item.body}
-                  </pre>
-                ) : (
-                  <p className="mt-2 text-sm text-terra">El texto no está disponible. No se puede aceptar.</p>
-                )}
-                <Button className="mt-3" disabled={!online || !item.body || ocupado === item.id} onClick={() => void aceptar(item.id)}>
-                  {ocupado === item.id ? "Aceptando…" : "Aceptar"}
-                </Button>
-              </li>
-            ))}
-          </ul>
+      {contrato ? (
+        <section className={`rounded-lg border border-line bg-surface p-4${pendiente ? " border-t-2 border-t-naranja" : ""}`}>
+          <h2 className="font-display text-xl font-semibold">{pendiente ? "Para aceptar" : "Contrato vigente"}</h2>
+          <p className="mt-3 font-medium">{contrato.titulo}</p>
+          <p className="text-xs text-muted">Versión {contrato.version}</p>
+          {contrato.contenido.valor ? (
+            <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap rounded-md bg-paper p-3 font-sans text-sm leading-relaxed">
+              {contrato.contenido.valor}
+            </pre>
+          ) : (
+            <p className="mt-2 text-sm text-terra">El texto no está disponible. No se puede aceptar.</p>
+          )}
+          {pendiente ? (
+            <Button
+              className="mt-3"
+              disabled={!online || !contrato.contenido.valor || ocupado}
+              onClick={() => void aceptar()}
+            >
+              {ocupado ? "Aceptando…" : "Aceptar"}
+            </Button>
+          ) : null}
         </section>
+      ) : avisoContrato ? (
+        <p className="text-sm text-terra">{avisoContrato}</p>
       ) : null}
 
-      {vigentes.length > 0 ? (
+      {historial.length > 0 ? (
         <section className="rounded-lg border border-line bg-surface p-4">
-          <h2 className="font-display text-xl font-semibold">Ya aceptado</h2>
+          <h2 className="font-display text-xl font-semibold">Historial de contratos</h2>
           <ul className="mt-3 space-y-3">
-            {vigentes.map((item) => (
-              <li key={`${item.title}-${item.version}`}>
-                <p className="font-medium">{item.title}</p>
-                <p className="text-xs text-muted">Versión {item.version}</p>
-                {item.body ? (
-                  <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap rounded-md bg-paper p-3 font-sans text-sm leading-relaxed">
-                    {item.body}
-                  </pre>
-                ) : null}
+            {historial.map((item) => (
+              <li key={`${item.documentoId}-${item.version}`}>
+                <p className="font-medium">Contrato · versión {item.version}</p>
+                <p className="text-xs text-muted">
+                  {item.estado} · vigente desde {fecha(item.fechaDesde)}
+                  {item.aceptacion ? ` · aceptado ${fecha(item.aceptacion.fecha)}` : ""}
+                </p>
               </li>
             ))}
           </ul>
         </section>
       ) : null}
 
-      {pendientes.length === 0 && vigentes.length === 0 ? (
+      {!pendiente && !avisoContrato ? (
         <p className="text-sm text-muted">No hay un contrato pendiente de aceptación.</p>
       ) : null}
     </div>
-  );
-}
-
-function Linea({ linea }: { linea: LineaCentral }) {
-  return (
-    <li className="py-2 text-sm">
-      <div className="flex items-baseline justify-between gap-3">
-        <p className="min-w-0 font-medium">
-          {linea.product}
-          <span className="ml-2 text-xs font-normal text-muted">{etiquetaCargo(linea.charge, linea.frequency)}</span>
-        </p>
-        <p className="shrink-0 tabular-nums">{textoImporte(linea.currency, linea.amountDue)}</p>
-      </div>
-      {linea.frozen ? <p className="text-xs text-muted">Precio fijo</p> : null}
-      {linea.quantity !== 1 ? <p className="text-xs text-muted">Cantidad {linea.quantity}</p> : null}
-    </li>
   );
 }

@@ -1,24 +1,18 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
-import { confirmarRecuperacion, pedirRecuperacion, recordarUsuario } from "@/lib/portal-fn";
+import { confirmarRecuperacion, recordarUsuario } from "@/lib/portal-fn";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 export const Route = createFileRoute("/recuperar")({ component: RecuperarPage });
 
-function tokenDeLaUrl() {
-  if (typeof window === "undefined") return "";
-  return new URLSearchParams(window.location.search).get("token") ?? "";
-}
-
 function RecuperarPage() {
   const [dato, setDato] = useState("");
   const [email, setEmail] = useState("");
+  const [cuit, setCuit] = useState("");
   const [password, setPassword] = useState("");
-  const [enlace, setEnlace] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const token = tokenDeLaUrl();
 
   return (
     <main className="min-h-dvh bg-paper px-4 py-8">
@@ -46,58 +40,37 @@ function RecuperarPage() {
           </form>
         </section>
         <section className="rounded-xl border border-line bg-surface p-4">
-          {token ? (
-            <form
-              className="space-y-3"
-              onSubmit={(e) => {
-                e.preventDefault();
-                setError(null);
-                void confirmarRecuperacion({ data: { token, password } })
-                  .then(() => setAviso("Listo. Entrá con la clave nueva."))
-                  .catch((err: Error) => setError(err.message));
-              }}
-            >
-              <p className="text-sm text-muted">Elegí la clave nueva. El enlace vence a los 30 minutos.</p>
-              <label className="block text-sm font-medium">
-                Contraseña nueva
-                <Input className="mt-1" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={8} />
-              </label>
-              <Button type="submit" className="w-full">
-                Guardar clave
-              </Button>
-            </form>
-          ) : (
-            <form
-              className="space-y-3"
-              onSubmit={(e) => {
-                e.preventDefault();
-                setError(null);
-                setEnlace(null);
-                void pedirRecuperacion({ data: { email } })
-                  .then((r) => {
-                    setAviso(r.aviso);
-                    setEnlace(r.enlace);
-                  })
-                  .catch((err: Error) => setError(err.message));
-              }}
-            >
-              <label className="block text-sm font-medium">
-                Olvidé la clave
-                <Input className="mt-1" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-              </label>
-              <Button type="submit" className="w-full">
-                Enviar enlace
-              </Button>
-            </form>
-          )}
-          {enlace ? (
-            <p className="mt-3 text-sm">
-              En esta vista previa el correo no está conectado.{" "}
-              <a className="text-leaf underline" href={enlace}>
-                Abrir el enlace
-              </a>
-            </p>
-          ) : null}
+          <form
+            className="space-y-3"
+            onSubmit={(e) => {
+              e.preventDefault();
+              setError(null);
+              setAviso(null);
+              void confirmarRecuperacion({ data: { email, cuit, password } })
+                .then(() => {
+                  setPassword("");
+                  setAviso("Listo. Entrá con la clave nueva.");
+                })
+                .catch((err: Error) => setError(err.message));
+            }}
+          >
+            <p className="text-sm text-muted">Recuperá la clave con el correo y el CUIT registrados en tu ficha.</p>
+            <label className="block text-sm font-medium">
+              Correo
+              <Input className="mt-1" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+            </label>
+            <label className="block text-sm font-medium">
+              CUIT
+              <Input className="mt-1" value={cuit} onChange={(e) => setCuit(e.target.value)} required />
+            </label>
+            <label className="block text-sm font-medium">
+              Contraseña nueva
+              <Input className="mt-1" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} />
+            </label>
+            <Button type="submit" className="w-full">
+              Guardar clave
+            </Button>
+          </form>
           {aviso ? <p className="mt-3 text-sm text-ok">{aviso}</p> : null}
           {error ? <p className="mt-3 text-sm text-terra">{error}</p> : null}
           <Link to="/login" className="mt-3 block text-center text-sm text-leaf">

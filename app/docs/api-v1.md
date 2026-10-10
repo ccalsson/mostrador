@@ -1,12 +1,24 @@
 # API móvil v1
 
-La API mantiene Better Auth en `/api/auth/*`. Flutter inicia sesión por ese
+`app/` es la autoridad de Better Auth en `/api/auth/*` para Web y Flutter.
+Flutter inicia sesión por ese
 contrato existente (`POST /api/auth/sign-in/email` con `Origin`) y envía el
 token de sesión como `Authorization: Bearer <token>` en las llamadas a
-`/api/v1`. El tenant sale siempre de la sesión; nunca se acepta por parámetro.
+`/api/v1`. La Web conserva Google/X, pero inicia y completa esos proveedores a
+través del proxy hacia esta API y usa la misma sesión. El tenant sale siempre
+de la sesión; nunca se acepta por parámetro.
+
+Para desplegar el proxy web, configura `BETTER_AUTH_URL` con el origen público
+compartido y registra en el broker los callbacks
+`/api/auth/oauth2/callback/grok-google` y `/api/auth/oauth2/callback/grok-x`.
+Web y `app/` deben compartir `DATABASE_URL` y `BETTER_AUTH_SECRET` mientras
+repoweb conserve las funciones locales de Torre que verifican la sesión.
 
 Contrato versionado: [`openapi-v1.yaml`](./openapi-v1.yaml). Inventario de
 funciones y roles: [`inventario-funciones.md`](./inventario-funciones.md).
+El branding público completo del puesto (incluido el fondo de login) está
+disponible sin autenticación en `GET /api/tenant`; su respuesta es compatible
+con Flutter y con la web.
 
 ## Respuestas y errores
 
@@ -73,6 +85,31 @@ enviar un cuerpo válido.
 | `GET` | `/api/v1/caja` | admin, cajero | Estado de caja abierta con totales y últimos cobros. |
 | `POST` | `/api/v1/caja/cerrar` | admin, cajero | Cierre `{ id, real, notas? }`; alerta si hay diferencia. |
 | `GET` | `/api/v1/auditoria` | admin | Últimos movimientos auditados. |
+| `GET` | `/api/v1/afip/config` | admin, cajero | Configuración pública ARCA, sin exponer certificado ni clave. |
+| `POST` | `/api/v1/afip/config` | admin | Guarda datos fiscales y certificados del puesto. |
+| `POST` | `/api/v1/afip/probar` | admin | Prueba conexión con ARCA y WSAA. |
+| `POST` | `/api/v1/afip/habilitada` | admin | Habilita o inhabilita emisión de comprobantes. |
+| `GET` | `/api/v1/afip/facturacion` | admin, cajero | Cola pendiente y comprobantes autorizados. |
+| `POST` | `/api/v1/afip/facturas` | admin, cajero | Emite o recupera la factura de un cobro. |
+| `POST` | `/api/v1/afip/notas-credito` | admin, cajero | Emite nota de crédito para una factura. |
+| `GET` | `/api/v1/afip/facturas/:id` | admin, cajero | Detalle imprimible del comprobante, incluido QR. |
+| `GET` | `/api/v1/pedidos/:id/comprobante` | admin, cajero | Comprobante de transferencia asociado al pedido. |
+| `GET` | `/api/v1/pedidos/:id/mensajes` | admin | Mensajes del pedido; `?antes=<ISO-8601>` pagina hacia atrás y marca los del cliente como leídos. |
+| `POST` | `/api/v1/pedidos/:id/mensajes` | admin | Envía un mensaje del puesto al cliente (`{ cuerpo }`). |
+| `GET` | `/api/v1/mensajes/conversaciones` | admin | Conversaciones del puesto ordenadas por último mensaje. |
+| `POST` | `/api/v1/portal/registro` | público | Registra un cliente y crea su credencial. |
+| `POST` | `/api/v1/portal/recordar` | público | Busca usuario por CUIT o teléfono y devuelve correo enmascarado. |
+| `POST` | `/api/v1/portal/recuperar` | público | Recupera clave de cliente por correo + CUIT. |
+| `GET` | `/api/v1/portal/catalogo` | cliente | Catálogo activo del tenant de la ficha. |
+| `GET` | `/api/v1/portal/ficha` | cliente | Ficha del cliente autenticado y condición de cuenta corriente del plan. |
+| `POST` | `/api/v1/portal/ficha` | cliente | Actualiza los datos personales de la ficha. |
+| `GET` | `/api/v1/portal/movimientos` | cliente | Movimientos de cuenta corriente de la ficha. |
+| `GET` | `/api/v1/portal/pedidos` | cliente | Pedidos propios del cliente. |
+| `POST` | `/api/v1/portal/pedidos` | cliente | Crea pedido con reserva de stock y validación de plan. |
+| `GET` | `/api/v1/portal/pedidos/:id/comprobante` | cliente | Comprobante de transferencia propio del cliente. |
+| `GET` | `/api/v1/portal/pedidos/:id/mensajes` | cliente | Mensajes propios del pedido; admite `?antes=<ISO-8601>`. |
+| `POST` | `/api/v1/portal/pedidos/:id/mensajes` | cliente | Envía un mensaje al puesto (`{ cuerpo }`). |
+| `GET` | `/api/v1/portal/mensajes-pendientes` | cliente | Recuento de mensajes del puesto sin leer. |
 
 ## Catálogo incremental
 

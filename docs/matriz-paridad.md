@@ -1,7 +1,7 @@
 # Matriz de paridad funcional Web + Flutter (P0)
 
 **Mandato:** convergencia funcional total — un solo producto con dos clientes equivalentes.
-**Fecha:** 2026-10-09 · **Rama:** `convergence/p0-backend-authz`
+**Fecha:** 2026-10-10 · **Rama:** `convergence/p0-backend-authz`
 **Método:** 4 inventarios verificados contra código real (no por pantalla/endpoint/test aislado): repoweb (43 rutas, 128 server fns), backend canónico `app/` (76 rutas /api/v1 + ~40 /api/mercado/v1), `clients/puesto_flutter` (cero condicionales de plataforma), `clients/mercado_flutter`. Cada celda cita evidencia `archivo:línea` cuando aporta.
 
 ## 0. Decisiones de alcance cerradas (con el usuario, 2026-10-09)
@@ -28,7 +28,7 @@ Columnas: **Web** = repoweb actual · **Win/And** = puesto_flutter (código comp
 
 | # | Funcionalidad | Web | Win | And | Backend | Diferencia | Trabajo necesario | Prueba de aceptación |
 |---|---|---|---|---|---|---|---|---|
-| M1 | Login staff | `login.tsx` (Better Auth propio) | ✓ `login_screen` | ✓ | `/api/auth/*` ✓ | Web usa auth local propia | A1: repuntar login a Better Auth de `app/` (Bearer) | Login de los 3 roles en web y Flutter contra el mismo backend |
+| M1 | Login staff | `login.tsx` (Google/X vía `/api/auth/*`) | ✓ `login_screen` | ✓ | `/api/auth/*` ✓ | Web proxy enruta auth a `app/`; OAuth requiere credenciales configuradas por entorno y aceptación integrada | A1 parcial: OAuth Google/X en `app/`, proxy de auth web y cookie común; validar callback, sesión, logout, Torre y roles en despliegue | Login de los 3 roles en web y Flutter contra el mismo backend |
 | M2 | Recuperación contraseña staff | `recuperar.tsx` + `reset-password.tsx` | ✗ | ✗ | forget/reset Better Auth ✓ (link a consola, sin SMTP; `server.ts:116-126`) | Falta UI Flutter; sin entrega real de email en ningún cliente | B9: UI recuperación en Flutter; SMTP = decisión de producto (ver §5) | Recuperar desde Flutter cambia la contraseña y permite reingresar |
 | M3 | Alta de puesto/tenant | `registro.tsx` (SQL local repoweb) | ✗ | ✗ | ✗ (solo seed DEV; "primer dueño a mano" en prod) | La lógica de alta vive fuera del backend canónico | Nuevo endpoint en `app/` o manual prod — **backend nuevo, decidir (§5)** | Crear puesto desde web deja tenant+dueño operativos |
 | M4 | Sesión/roles en UI | `quienSoy` + guards | píldoras por rol; router NO valida rol por URL (`app_router.dart:20-31`) | ≡ | `GET session` ✓ | Router Flutter deja renderizar `/admin` a un vendedor (el 403 del backend cubre) | Opcional: guard por rol en router | Vendedor en `/admin` ve 403s del backend, sin datos |
@@ -48,20 +48,20 @@ Columnas: **Web** = repoweb actual · **Win/And** = puesto_flutter (código comp
 | M18 | Clientes alta | `createCliente` (valida plan Pro CC) | ✓ | ≡ | ✓ | Paridad | — | Rechazo CC sin plan Pro igual en ambos |
 | M19 | Editar cliente | `guardarCliente` (`portal-fn.ts:447`) | ✗ | ✗ | `POST clientes/:id` ✓ | Falta en Flutter | B2a: edición cliente | Cambios auditables idénticos |
 | M20 | Cuenta corriente + pagos | `anotarPagoCuenta`/`movimientosCliente` | cuenta **solo lectura** | ✗ | `GET cuenta` + `POST pagos` ✓ | Flutter no registra pagos de deuda | B2b: registrar pago CC | Saldo derivado correcto tras pago, igual en ambos |
-| M21 | Remitos alta (csv/foto/manual/pdf + match) | `crearRemito` (`fn.ts:1404`) | ✗ | ✗ | `POST remitos` ✓ (fuentes) | Falta alta completa en Flutter | B5: alta con foto (Android `image_picker`, Windows `file_selector`) | Confirmación genera `entrada_remito`, igual en ambos |
-| M22 | Remitos OCR | `parseRemitoVision` → **xAI directo desde repoweb** (`fn.ts:1591`) | ✗ | ✗ | `POST remitos/ocr` ✓ (fail-closed 503) | Web llama al proveedor de IA por su cuenta; debe pasar por `app/` | A3: repuntar web a `/api/v1/remitos/ocr` | Misma lectura revisable en web y Flutter |
-| M23 | Remitos revisión/confirmación | get/item/confirmar | ✓ `remitos_service:12-41` | ≡ | ✓ | Paridad | — | Solo confirmación humana suma stock, igual en ambos |
-| M24 | Proveedores CRUD | `listar/guardarProveedor` + productos | ✗ (solo nombre en texto del remito) | ✗ | GET/POST/update/productos ✓ | Panel entero ausente en Flutter | B4: panel proveedores | CRUD auditable idéntico |
-| M25 | Usuarios alta/toggle | list/create/toggle | ✓ (sin edición, igual que web) | ≡ | ✓ | Paridad | — | Usuario creado entra por rol correcto en ambos |
-| M26 | Auditoría | `listAuditoria` (admin) | ✓ sin filtros | ≡ | ✓ | Paridad | — | Misma traza visible en ambos |
-| M27 | Dashboard | `dashboardResumen` (admin) | ✓ selector 1/7/30 días | ≡ | ✓ | Paridad | — | Mismos montos contra mismos datos |
-| M28 | Reportes productos/historial | `resumenVentasProductos`/`historialProducto` | ✗ | ✗ | `GET reportes/productos` + `/historial` ✓ | Falta en Flutter | B6a: reportes | Mismos totales por producto en ambos |
-| M29 | Ranking de cargadores | `rankingCargadores` (admin) | ✗ | ✗ | `GET cargadores/ranking` ✓ | Falta en Flutter | B6b: panel ranking | Ranking consistente con datos de Mercado |
-| M30 | ARCA/AFIP completo | 8 fns `afip-fn.ts` + `arca.tsx`/`factura.$id.tsx` | ✗ | ✗ | `afip/*` 8 rutas ✓ (config admin; emisión admin+cajero) | UI entera ausente en Flutter (extra aprobado) | B7: paneles ARCA (config, habilitar, emitir, NC, listado, ver) | CAE y número idénticos emitiendo desde web o Flutter |
-| M31 | Marca/canal Mercado (config) | `guardarMarca`/`guardarCanalMercado` | ✗ (solo branding público `GET /api/tenant`) | ≡ | `marca` + `canal-mercado` GET/POST ✓ | Falta config admin en Flutter | B10b: pantalla config | Marca persiste y se refleja en ambas apps |
-| M32 | Mensajería de pedido | REST 4 fns + WebSocket vivo (`mensajes-socket.ts`) | ✗ | ✗ | REST ✓ (`pedidos/:/mensajes`, `conversaciones`) + WS admin-only en `app/` | Falta chat en Flutter | B8: chat con polling (WS opcional) | Mensaje staff↔cliente visible en web y Flutter |
-| M33 | Portal del cliente | `portal.tsx` + 16 fns (`portal-fn.ts`) | ✗ (por decisión §0.2) | ✗ | `portal/*` 13 rutas ✓ | Portal queda web; hoy corre con SQL local de repoweb | A6: repuntar portal web a `/api/v1/portal/*` | Cliente ve catálogo/saldo/pedidos/comprobante desde web sobre `app/` |
-| M34 | Suscripción/legal (A.1–A.4) | `contrato.tsx` + central API local | ✓ `suscripcion_pane` (solo dueño) | ✗ (no aplica a staff no-admin: 403) | `GET/POST suscripcion*` ✓ | Web consume su central local; falta repuntar | A8: web → `/api/v1/suscripcion` | Aceptación idempotente (Idempotency-Key) igual en ambos |
+| M21 | Remitos alta (csv/foto/manual/pdf + match) | Alta manual/foto; crea por `POST /api/v1/remitos` | ✗ | ✗ | `POST remitos` ✓ (fuentes) | Flutter aún no tiene alta | B5: alta con foto (Android `image_picker`, Windows `file_selector`) | Confirmación genera `entrada_remito`, igual en ambos |
+| M22 | Remitos OCR | `parseRemitoVision` → `POST /api/v1/remitos/ocr` | ✗ | ✗ | `POST remitos/ocr` ✓ (fail-closed 503) | Falta OCR de remito en Flutter | B5: OCR compartido por API en ambas apps | Misma lectura revisable en web y Flutter |
+| M23 | Remitos revisión/confirmación | Detalle, edición de líneas y confirmación por `/api/v1/remitos/*` | ✓ `remitos_service:12-41` | ≡ | ✓ | Paridad de reglas; web y Flutter usan el backend canónico | — | Solo confirmación humana suma stock, igual en ambos |
+| M24 | Proveedores CRUD | ✓ panel CRUD + productos vía `/api/v1/proveedores*` | ✗ (solo nombre en texto del remito) | ✗ | GET/POST/update/productos ✓ | Panel de proveedores ausente en Flutter | B4: panel proveedores | CRUD auditable idéntico |
+| M25 | Usuarios alta/toggle | list/create/toggle vía `/api/v1/usuarios*` | ✓ (sin edición, igual que web) | ≡ | ✓ | Web y Flutter delegan permisos y escritura al backend | — | Usuario creado entra por rol correcto en ambos |
+| M26 | Auditoría | `listAuditoria` vía `/api/v1/auditoria` (admin) | ✓ sin filtros | ≡ | ✓ | Web y Flutter leen del backend canónico | — | Misma traza visible en ambos |
+| M27 | Dashboard | `dashboardResumen` vía `/api/v1/dashboard` (admin), selector 1/7/30 días | ✓ selector 1/7/30 días | ≡ | ✓ | Web y Flutter leen del backend canónico | — | Mismos montos contra mismos datos |
+| M28 | Reportes productos/historial | `resumenVentasProductos`/`historialProducto` vía `/api/v1/reportes/*` | ✗ | ✗ | `GET reportes/productos` + `/historial` ✓ | Falta en Flutter | B6a: reportes | Mismos totales por producto en ambos |
+| M29 | Ranking de cargadores | `rankingCargadores` vía `/api/v1/cargadores/ranking` (admin) | ✗ | ✗ | `GET cargadores/ranking` ✓ | Falta en Flutter | B6b: panel ranking | Ranking consistente con datos de Mercado |
+| M30 | ARCA/AFIP completo | ✓ 8 fns `afip-fn.ts` → `/api/v1/afip/*` + UI `arca.tsx`/`factura.$id.tsx` | ✗ | ✗ | `afip/*` 8 rutas ✓ (config admin; emisión admin+cajero) | UI entera ausente en Flutter (extra aprobado) | B7: paneles ARCA (config, habilitar, emitir, NC, listado, ver) | CAE y número idénticos emitiendo desde web o Flutter |
+| M31 | Marca/canal Mercado (config) | ✓ Branding público `/api/tenant`; guardar marca/canal vía `/api/v1/marca` y `/canal-mercado` | ✓ solo lectura (`GET /api/tenant`) | ✓ solo lectura | `marca` + `canal-mercado` GET/POST ✓ | Flutter aún no tiene configuración admin | B10b: pantalla config | Marca persiste y se refleja en ambas apps |
+| M32 | Mensajería de pedido | ✓ Chat y bandeja vía REST `/api/v1`; polling cada 4/8 s | ✗ | ✗ | REST ✓ (`pedidos/:/mensajes`, `conversaciones`, rutas de portal); WebSocket no disponible en producción | Web convergió al transporte REST canónico; falta chat en Flutter | B8: chat con polling (WS opcional) | Mensaje staff↔cliente visible en web y Flutter |
+| M33 | Portal del cliente | ✓ `portal.tsx` y operaciones vía `/api/v1/portal/*`; comprobante de transferencia en Caja vía API | ✗ (por decisión §0.2) | ✗ | `portal/*` rutas ✓; comprobante staff expuesto bajo pedidos | Portal permanece web; reglas, identidad y datos viven en `app/` | A6: aceptación integrada Web↔API pendiente | Cliente ve catálogo/saldo/pedidos/comprobante desde web sobre `app/` |
+| M34 | Suscripción/legal (A.1–A.4) | `contrato.tsx` → funciones protegidas → `/api/v1/suscripcion*` | ✓ `suscripcion_pane` (solo dueño) | ✗ (no aplica a staff no-admin: 403) | `GET/POST suscripcion*` ✓ | Resumen, capacidades, contrato, historial y aceptación pasan por el backend canónico; falta aceptación integrada en DEV | A8 implementado en código; validar aceptación, permisos y actualización tras aceptar | Aceptación autenticada en Web y Flutter contra el mismo contrato y datos |
 | M35 | Torre (planes/tenants/suscripciones/finanzas/... ) | Panel completo: 20 páginas + 54 fns (`torre-fn`, `control-fn`, `legal-fn`) | ✗ | ✗ | `app/`: solo legal A/B; gestión Torre vive en repoweb (mandato maestro) | Torre = app escritorio nueva (extra aprobado) | H: Torre escritorio Windows sobre stack repoweb | e2e real dueño / vendedor-403 / aislamiento de tenant |
 
 ## 3. Matriz Módulo Mercado al Toque
@@ -75,7 +75,7 @@ Columnas: **Web** = repoweb actual · **Win/And** = puesto_flutter (código comp
 | C5 | Puestos + catálogo | ✓ | ✓ `stands_screen` (caché 45s) | `puestos`, `puestos/:/productos` ✓ | Paridad | — | Catálogo coherente entre clientes |
 | C6 | Carrito/checkout idempotente | ✓ (`idempotency-key`, `mercado.tsx:48`) | ✓ clave persistida + body para reintento (`market_api.dart:410-443`) | ✓ | Paridad | — | Reintento no duplica pedido, en ambos |
 | C7 | Pedidos comprador + detalle | ✓ | ✓ polling 10s (`order_detail_screen:24-38`) | ✓ | Paridad | — | Hitos y estados mapeados idénticos |
-| C8 | **Cancelar pedido comprador** | ✗ | ✗ | `POST pedidos/:/cancelar` ✓ (M9g: restituye reserva + audita) | Falta UI en **ambos** clientes | D1: UI cancelar (web + Flutter) | Cancelado devuelve stock y audita, igual en ambos |
+| C8 | **Cancelar pedido comprador** | ✓ (acción visible solo en pedido confirmado; backend valida que no esté preparando/asignado) | ✗ | `POST pedidos/:/cancelar` ✓ (M9g: restituye reserva + audita) | Falta UI en Flutter | D1: UI cancelar en Flutter | Cancelado devuelve stock y audita, igual en ambos |
 | C9 | Preparación (en_preparacion→listo) | vía ERP (`updatePedidoEstado`) | ✗ (M10 del ERP) | `/api/v1/pedidos/:id/estado` ✓ | Mismo gap M10 en Flutter ERP | B3 | Pedido Mercado pasa a "listo" desde ambas UIs |
 | C10 | Recorridos: armar (comprador) | ✓ (`armarRecorrido`, `mercado.tsx:288`) | ✓ `buyer_orders:179-215` | `POST recorridos` ✓ | Paridad | — | Mismo pedido no entra en 2 recorridos (409 backend) |
 | C11 | Recorridos: aceptar/rechazar/retirar/entregar | ✓ (`accion`, `mercado.tsx:323`) | ✓ `courier_screen:122-177` | ✓ | Paridad | — | Transición inválida rechazada igual |
@@ -95,15 +95,15 @@ Orden estricto; cada ítem cierra con verificación triple (`tsc --noEmit` + `np
 
 | Paso | Contenido | Por qué va aquí |
 |---|---|---|
-| **A0** | **Cerrar gap de rol en `central-http.ts`** (vendedor/cajero puede leer suscripción y aceptar contratos → exigir 403 `rol_no_permitido` para no-dueño) + test de acceso cruzado | Seguridad primero (§1/§6 del mandato). Desbloquea A8 y H |
-| A1 | Auth: login/recuperar/sesión staff vía Better Auth de `app/` (Bearer); jubilar auth local para Mostrador/Mercado. Torre conserva su `torreGuard` local | Sin auth unificada nada más se puede repuntar |
+| **A0** | Implementado en `central-http.ts`: suscripción, addons, capacidades, lectura y aceptación de contratos legales exigen admin; vendedor/cajero recibe 403 `rol_no_permitido`. Falta prueba automatizada de acceso cruzado | Seguridad primero (§1/§6 del mandato). Desbloquea A8 y H |
+| A1 | Parcial en código: auth web proxied a Better Auth de `app/`, OAuth Google/X configurable en el backend canónico y nombre de cookie compartido; faltan credenciales/orígenes de despliegue y aceptación del ciclo completo. Torre conserva su `torreGuard` y validación local transitorios | Prueba autenticada Web/Flutter más Torre, roles y sesiones existentes antes de retirar el Better Auth local |
 | A2 | Núcleo ERP: productos/stock/alertas → clientes (edición+pagos) → pedidos (incl. anular) → caja/cobros (incl. anular) → tickets | Módulos de mayor tráfico; dependen solo de A1 |
-| A3 | Remitos + OCR (xAI deja de llamarse desde repoweb; pasa por `/api/v1/remitos/ocr`) + proveedores | Depende de A2 (productos) |
-| A4 | Usuarios, auditoría, dashboard, reportes, ranking, marca/canal | Solo lecturas/admin, bajo riesgo |
-| A5 | ARCA (`afip-fn.ts` → proxy `/api/v1/afip/*`) | Certificados ya viven en servidor; solo cambia el punto de entrada |
-| A6 | Mensajes + portal (proxy `/api/v1/portal/*`) | Portal queda web (§0.2); repuntado puro |
-| A7 | Canal Mercado web → `/api/mercado/v1` de `app/`; jubilar `mercado/http.ts` + `servicio.ts` locales; adoptar cancelar (C8) | Requiere A1 (auth mercado ya es de `app/`) |
-| A8 | Suscripción/legal web → `/api/v1/suscripcion`; `central-http.ts` queda **solo para Torre** (H) | Requiere A0 |
+| A3 | Implementado en repoweb: remitos, OCR y proveedores usan `/api/v1`; OCR directo desde repoweb retirado. Falta ejecutar aceptación integrada Web↔API en DEV | Depende de A2 (productos) |
+| A4 | Implementados en repoweb sobre `/api/v1`: usuarios, auditoría, dashboard, reportes, ranking y marca/canal; branding público usa `/api/tenant`. Falta aceptación integrada Web↔API en DEV | Solo lecturas/admin, bajo riesgo |
+| A5 | Implementado en repoweb: las ocho operaciones ARCA usan `/api/v1/afip/*`; reglas y certificados siguen en `app/`. Falta aceptación integrada Web↔API en DEV | Certificados ya viven en servidor; solo cambia el punto de entrada |
+| A6 | Implementados en repoweb los proxies del portal cliente, registro/recuperación, comprobantes de caja y chat REST; eliminado acceso local a BD y WS propio para chat | Falta aceptación integrada Web↔API en DEV; portal queda web (§0.2) |
+| A7 | Implementado en código: Mercado web y su puerta legal pasan por `/api/mercado/v1` de `app/`; retirado el backend HTTP/SQL local de Mercado; añadida cancelación de pedidos (C8). Smoke de `GET /ranking` por el proxy: HTTP 200. Falta aceptación autenticada Web↔API en DEV | Mercado tiene autenticación propia del canal en `app/`; no depende del Better Auth de staff (A1) |
+| A8 | Implementado en código: suscripción, capacidades, contrato e historial web → `/api/v1/suscripcion*`; aceptación reenvía versión/hash y metadatos al backend. `central-http.ts` queda **solo para Torre** (H) | Requiere A0; falta aceptación integrada autenticada en DEV |
 
 ### Bloque B — puesto_flutter hasta paridad (5–7 sesiones; paralelizable con A desde B1)
 
