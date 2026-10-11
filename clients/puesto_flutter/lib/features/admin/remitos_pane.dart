@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/format.dart';
 import '../../services/remitos_service.dart';
+import 'remito_alta_dialog.dart';
 import 'remito_detalle_pane.dart';
 
 class RemitosPane extends ConsumerWidget {
@@ -26,6 +27,12 @@ class RemitosPane extends ConsumerWidget {
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
                 ),
               ),
+              FilledButton.icon(
+                icon: const Icon(Icons.add),
+                label: const Text('Nuevo remito'),
+                onPressed: () => mostrarAltaRemito(context),
+              ),
+              const SizedBox(width: 8),
               IconButton(
                 icon: const Icon(Icons.refresh),
                 onPressed: () => ref.invalidate(remitosProvider),
