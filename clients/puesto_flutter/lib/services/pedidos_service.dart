@@ -37,6 +37,15 @@ class PedidosService {
     return _pedidoDe(data);
   }
 
+  /// `POST /api/v1/pedidos/:id/estado`; la API valida roles y transiciones.
+  Future<Pedido> actualizarEstado(String id, PedidoEstado estado) async {
+    final data = await _client.post(
+      '/api/v1/pedidos/$id/estado',
+      body: {'estado': estado.apiValue},
+    ) as Map<String, dynamic>;
+    return _pedidoDe(data);
+  }
+
   /// `POST /api/v1/pedidos/:id/entregar`, sin cuerpo. El backend sólo lo
   /// permite si el pedido está `cobrado`; no es idempotente (repetir → 400).
   Future<void> entregar(String id) async {

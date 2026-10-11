@@ -58,6 +58,10 @@ class _PedidosFake implements PedidosService {
   Future<void> entregar(String id) async => throw UnimplementedError();
 
   @override
+  Future<Pedido> actualizarEstado(String id, PedidoEstado estado) async =>
+      throw UnimplementedError();
+
+  @override
   Future<Pedido> crear({
     required String clientUuid,
     required List<({String productoId, int cantidad})> items,

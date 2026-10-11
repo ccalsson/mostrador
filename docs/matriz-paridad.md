@@ -37,7 +37,7 @@ Columnas: **Web** = repoweb actual · **Win/And** = puesto_flutter (código comp
 | M7 | Stock ajuste/merma | `ajustarStock` | ✓ `POST stock/ajuste` | ≡ | ✓ | Paridad | — | Movimiento `ajuste`/`merma` auditado en ambos |
 | M8 | Alertas stock | list + marcar leída | ✓ `alertas_service:14-22` | ≡ | ✓ | Paridad (umbral se edita en el producto en ambos) | — | Alerta al cruzar mínimo visible en ambos |
 | M9 | Alta pedido idempotente | `crearPedido` + cola offline `localStorage` (`vendedor.tsx:10-11`) | ✓ `clientUuid` | ≡ | ✓ | Web tiene outbox; Flutter no persiste pendientes | B11: outbox persistente Android | Mismo `clientUuid` en reintento = 1 solo pedido, en ambos |
-| M10 | Transición en_preparacion→listo | `updatePedidoEstado` (admin/cajero, `caja.tsx`) | ✗ (`pedidos_service` no tiene método estado) | ≡ | `POST pedidos/:id/estado` ✓ | Falta en Flutter | B3: acción de preparación en Caja | Pedido Mercado/ERP pasa a "listo" desde ambas UIs |
+| M10 | Transición en_preparacion→listo | `updatePedidoEstado` (admin/cajero, `caja.tsx`) | ✓ `caja_marcar_listo` | ≡ | `POST pedidos/:id/estado` ✓ | Flutter marca listo desde Caja; backend valida la transición, Flutter relee detalle/lista y muestra errores canónicos | B3 implementado; smoke Web↔API↔Flutter pendiente | Pedido Mercado/ERP pasa a "listo" desde ambas UIs |
 | M11 | Entregar pedido | `marcarEntregado` (solo cobrado) | ✓ `POST entregar` | ≡ | ✓ | Paridad | — | Rechazo si no cobrado, igual en ambos |
 | M12 | Editar ítems pedido | `updatePedidoItems` (rearma reserva) | ✓ `editar_items_dialog` | ≡ | ✓ | Paridad | — | Reserva liberada/recreada idéntica |
 | M13 | Anular pedido | `anularPedido` (bloquea si factura electrónica) | ✓ `caja_anular_pedido` | ≡ | `POST pedidos/:id/anular` ✓ | Flutter pide motivo y muestra el error canónico; disponible para pedidos aún no cobrados | B1a implementado; smoke Web↔API↔Flutter pendiente | Anulado libera reserva; bloquea con factura, igual en ambos |
@@ -76,7 +76,7 @@ Columnas: **Web** = repoweb actual · **Win/And** = puesto_flutter (código comp
 | C6 | Carrito/checkout idempotente | ✓ (`idempotency-key`, `mercado.tsx:48`) | ✓ clave persistida + body para reintento (`market_api.dart:410-443`) | ✓ | Paridad | — | Reintento no duplica pedido, en ambos |
 | C7 | Pedidos comprador + detalle | ✓ | ✓ polling 10s (`order_detail_screen:24-38`) | ✓ | Paridad | — | Hitos y estados mapeados idénticos |
 | C8 | **Cancelar pedido comprador** | ✓ (acción visible solo en pedido confirmado; backend valida que no esté preparando/asignado) | ✗ | `POST pedidos/:/cancelar` ✓ (M9g: restituye reserva + audita) | Falta UI en Flutter | D1: UI cancelar en Flutter | Cancelado devuelve stock y audita, igual en ambos |
-| C9 | Preparación (en_preparacion→listo) | vía ERP (`updatePedidoEstado`) | ✗ (M10 del ERP) | `/api/v1/pedidos/:id/estado` ✓ | Mismo gap M10 en Flutter ERP | B3 | Pedido Mercado pasa a "listo" desde ambas UIs |
+| C9 | Preparación (en_preparacion→listo) | vía ERP (`updatePedidoEstado`) | ✓ acción en Caja (M10) | `/api/v1/pedidos/:id/estado` ✓ | Ambos clientes usan la misma validación y persistencia canónicas; aceptación integrada pendiente | B3 implementado | Pedido Mercado pasa a "listo" desde ambas UIs |
 | C10 | Recorridos: armar (comprador) | ✓ (`armarRecorrido`, `mercado.tsx:288`) | ✓ `buyer_orders:179-215` | `POST recorridos` ✓ | Paridad | — | Mismo pedido no entra en 2 recorridos (409 backend) |
 | C11 | Recorridos: aceptar/rechazar/retirar/entregar | ✓ (`accion`, `mercado.tsx:323`) | ✓ `courier_screen:122-177` | ✓ | Paridad | — | Transición inválida rechazada igual |
 | C12 | Calificación | ✓ (`calificar`, `mercado.tsx:299`) | ✓ 1-5 + comentario | `POST calificar` ✓ | Paridad | — | Puntos/reputación actualizados igual |
@@ -111,7 +111,7 @@ Orden estricto; cada ítem cierra con verificación triple (`tsc --noEmit` + `np
 |---|---|---|
 | B1 | Implementado en código: anular pedido pendiente y venta desde Caja con motivo, confirmación, errores del backend visibles y refresco de datos. Anulación de venta facturada requiere completar nota de crédito desde Flutter (B7); falta smoke integrado | Operaciones financieras críticas, backend listo |
 | B2 | Implementado en código: ficha editable completa y registro de pagos CC desde la cuenta, con nota opcional, monto validado, errores del backend visibles e invalidación de saldos/movimientos. Falta smoke integrado Web↔API↔Flutter | Backend listo; M19/M20 |
-| B3 | Transición de preparación en_preparacion→listo (M10/C9) | Bloquea ciclo Mercado desde Flutter |
+| B3 | Implementado en código: pedidos en preparación pueden marcarse listos desde Caja; la respuesta no se simula, se releen detalle y lista, y se muestran errores canónicos. Falta smoke integrado Web↔API↔Flutter | M10/C9; API canónica |
 | B4 | Panel proveedores (M24) | CRUD simple |
 | B5 | Alta de remitos + OCR con foto (M21/M22; `image_picker` Android, `file_selector` Windows) | La dependencia más pesada de UI |
 | B6 | Reportes productos/historial (M28) + ranking cargadores (M29) | Solo lectura |

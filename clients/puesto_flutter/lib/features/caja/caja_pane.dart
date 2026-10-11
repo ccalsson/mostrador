@@ -131,7 +131,12 @@ class _CajaPaneState extends ConsumerState<CajaPane> {
               Expanded(
                 child: _seleccionado == null
                     ? const _SinSeleccion()
-                    : _CajaDetalle(pedidoId: _seleccionado!),
+                    : _CajaDetalle(
+                        pedidoId: _seleccionado!,
+                        onEstadoActualizado: () => ref.invalidate(
+                          pedidosCajaProvider(_filtro.estados),
+                        ),
+                      ),
               ),
             ],
           ),
@@ -245,9 +250,13 @@ class _SinPedidosCaja extends StatelessWidget {
 }
 
 class _CajaDetalle extends ConsumerStatefulWidget {
-  const _CajaDetalle({required this.pedidoId});
+  const _CajaDetalle({
+    required this.pedidoId,
+    required this.onEstadoActualizado,
+  });
 
   final String pedidoId;
+  final VoidCallback onEstadoActualizado;
 
   @override
   ConsumerState<_CajaDetalle> createState() => _CajaDetalleState();
@@ -255,6 +264,7 @@ class _CajaDetalle extends ConsumerStatefulWidget {
 
 class _CajaDetalleState extends ConsumerState<_CajaDetalle> {
   bool _anulando = false;
+  bool _actualizandoEstado = false;
 
   @override
   Widget build(BuildContext context) {
@@ -377,6 +387,23 @@ class _CajaDetalleState extends ConsumerState<_CajaDetalle> {
                         icon: const Icon(Icons.edit_outlined),
                         label: const Text('Editar ítems'),
                       ),
+                    if (pedido.estado == PedidoEstado.enPreparacion)
+                      OutlinedButton.icon(
+                        key: const Key('caja_marcar_listo'),
+                        onPressed: _actualizandoEstado ? null : _marcarListo,
+                        icon: _actualizandoEstado
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.task_alt_outlined),
+                        label: Text(
+                          _actualizandoEstado ? 'Guardando…' : 'Marcar listo',
+                        ),
+                      ),
                     if (pedido.estado.cobrable && !cobro.exito)
                       FilledButton.icon(
                         key: const Key('caja_cobrar'),
@@ -410,6 +437,33 @@ class _CajaDetalleState extends ConsumerState<_CajaDetalle> {
         ),
       ],
     );
+  }
+
+  Future<void> _marcarListo() async {
+    setState(() => _actualizandoEstado = true);
+    try {
+      await ref
+          .read(pedidosServiceProvider)
+          .actualizarEstado(widget.pedidoId, PedidoEstado.listo);
+      if (!mounted) return;
+      ref.invalidate(pedidoDetalleProvider(widget.pedidoId));
+      widget.onEstadoActualizado();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Pedido marcado como listo.')),
+      );
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.message)),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No se pudo actualizar el estado.')),
+      );
+    } finally {
+      if (mounted) setState(() => _actualizandoEstado = false);
+    }
   }
 
   /// Nuevo intento lógico de cobro: se descarta el estado anterior (y su

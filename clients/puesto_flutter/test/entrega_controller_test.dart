@@ -28,6 +28,10 @@ class _PedidosFake implements PedidosService {
   }
 
   @override
+  Future<Pedido> actualizarEstado(String id, PedidoEstado estado) async =>
+      throw UnimplementedError();
+
+  @override
   Future<Pedido> detalle(String id) async {
     detalleLlamadas++;
     return pedidos.firstWhere((p) => p.id == id);

@@ -1,15 +1,16 @@
 /// Estados del pedido según el contrato v1 (`app/docs/openapi-v1.yaml`).
 enum PedidoEstado {
-  borrador('Borrador'),
-  enviado('Enviado'),
-  enPreparacion('En preparación'),
-  listo('Listo'),
-  cobrado('Cobrado'),
-  anulado('Anulado'),
-  entregado('Entregado');
+  borrador('borrador', 'Borrador'),
+  enviado('enviado', 'Enviado'),
+  enPreparacion('en_preparacion', 'En preparación'),
+  listo('listo', 'Listo'),
+  cobrado('cobrado', 'Cobrado'),
+  anulado('anulado', 'Anulado'),
+  entregado('entregado', 'Entregado');
 
-  const PedidoEstado(this.label);
+  const PedidoEstado(this.apiValue, this.label);
 
+  final String apiValue;
   final String label;
 
   static PedidoEstado fromApi(String value) {

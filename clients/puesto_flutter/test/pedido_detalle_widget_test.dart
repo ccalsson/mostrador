@@ -24,6 +24,10 @@ class _PedidosFake implements PedidosService {
   }
 
   @override
+  Future<Pedido> actualizarEstado(String id, PedidoEstado estado) async =>
+      throw UnimplementedError();
+
+  @override
   Future<Pedido> detalle(String id) async => pedido;
 
   @override

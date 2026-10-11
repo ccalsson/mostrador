@@ -31,7 +31,9 @@ class _PedidosFake implements PedidosService {
 
   List<Pedido> pedidos;
   ApiException? cobrarError;
+  ApiException? estadoError;
   final List<String?> estadosConsultados = [];
+  final List<({String id, PedidoEstado estado})> estadosActualizados = [];
   final List<String> cobroUuids = [];
   final List<FormaPago> formas = [];
   final List<double?> recibidos = [];
@@ -119,6 +121,16 @@ class _PedidosFake implements PedidosService {
 
   @override
   Future<void> entregar(String id) async => throw UnimplementedError();
+
+  @override
+  Future<Pedido> actualizarEstado(String id, PedidoEstado estado) async {
+    estadosActualizados.add((id: id, estado: estado));
+    final fallo = estadoError;
+    if (fallo != null) throw fallo;
+    final actualizado = _copia(_buscar(id), estado: estado);
+    _reemplazar(id, actualizado);
+    return actualizado;
+  }
 
   @override
   Future<Pedido> crear({
@@ -316,6 +328,45 @@ void main() {
     );
     expect(find.byKey(const Key('caja_cobrar')), findsNothing);
     expect(find.byKey(const Key('caja_editar_items')), findsNothing);
+  });
+
+  testWidgets('preparación: marca listo y relee el detalle canónico', (
+    tester,
+  ) async {
+    final fake = _PedidosFake([
+      _pedido('ped_1', estado: PedidoEstado.enPreparacion),
+    ]);
+    await _montar(tester, fake);
+    await _abrirDetalle(tester, 'ped_1');
+
+    expect(find.byKey(const Key('caja_marcar_listo')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('caja_marcar_listo')));
+    await _esperar(tester, find.text('Pedido marcado como listo.'));
+    await _esperar(tester, find.text('Listo'));
+
+    expect(
+      fake.estadosActualizados,
+      [(id: 'ped_1', estado: PedidoEstado.listo)],
+    );
+    expect(find.byKey(const Key('caja_marcar_listo')), findsNothing);
+  });
+
+  testWidgets('fallo al marcar listo muestra error y conserva el estado', (
+    tester,
+  ) async {
+    final fake = _PedidosFake([
+      _pedido('ped_1', estado: PedidoEstado.enPreparacion),
+    ])..estadoError = const ApiException('Transición no permitida.');
+    await _montar(tester, fake);
+    await _abrirDetalle(tester, 'ped_1');
+
+    await tester.tap(find.byKey(const Key('caja_marcar_listo')));
+    await _esperar(tester, find.text('Transición no permitida.'));
+
+    expect(
+      tester.widget<Text>(find.byKey(const Key('caja_detalle_estado'))).data,
+      'En preparación',
+    );
   });
 
   testWidgets(
