@@ -1,12 +1,55 @@
+import 'dart:convert';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/network/api_client.dart';
 import '../models/remito.dart';
+import '../models/remito_ocr.dart';
 
 class RemitosService {
   RemitosService(this._client);
 
   final ApiClient _client;
+
+  Future<String> crear({
+    required String proveedorId,
+    required String fuente,
+    String? archivoNombre,
+    required List<RemitoLineaAlta> lineas,
+  }) async {
+    final data = await _client.post(
+      '/api/v1/remitos',
+      body: {
+        'proveedorId': proveedorId,
+        'fuente': fuente,
+        'archivoNombre': ?archivoNombre,
+        'lineas': [for (final linea in lineas) linea.toJson()],
+      },
+    ) as Map<String, dynamic>;
+    final cuerpo = data['data'] as Map<String, dynamic>;
+    return cuerpo['id'] as String;
+  }
+
+  Future<RemitoOcrLectura> ocr(RemitoImagen imagen) async {
+    final data = await _client.post(
+      '/api/v1/remitos/ocr',
+      body: {
+        'imageBase64': base64Encode(imagen.bytes),
+        'mimeType': imagen.mimeType,
+      },
+    ) as Map<String, dynamic>;
+    return RemitoOcrLectura.fromJson(data['data'] as Map<String, dynamic>);
+  }
+
+  Future<void> asignarProveedor({
+    required String remitoId,
+    required String proveedorId,
+  }) async {
+    await _client.post(
+      '/api/v1/remitos/$remitoId/proveedor',
+      body: {'proveedorId': proveedorId},
+    );
+  }
 
   Future<List<Remito>> listar() async {
     final data = await _client.get('/api/v1/remitos') as Map<String, dynamic>;

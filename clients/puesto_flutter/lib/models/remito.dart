@@ -3,6 +3,7 @@ class Remito {
   const Remito({
     required this.id,
     this.proveedor,
+    this.proveedorId,
     required this.fuente,
     required this.estado,
     required this.createdAt,
@@ -11,6 +12,7 @@ class Remito {
 
   final String id;
   final String? proveedor;
+  final String? proveedorId;
   final String fuente;
   final String estado; // 'procesado', 'confirmado'
   final String createdAt;
@@ -20,6 +22,7 @@ class Remito {
     return Remito(
       id: json['id'] as String,
       proveedor: json['proveedor'] as String?,
+      proveedorId: (json['proveedorId'] ?? json['proveedor_id']) as String?,
       fuente: json['fuente'] as String,
       estado: json['estado'] as String,
       createdAt: json['createdAt'] as String,
