@@ -5,9 +5,7 @@ import 'package:puesto_flutter/features/admin/remito_alta_controller.dart';
 import 'package:puesto_flutter/features/admin/remito_alta_dialog.dart';
 import 'package:puesto_flutter/models/proveedor.dart';
 import 'package:puesto_flutter/services/proveedores_service.dart';
-import 'package:puesto_flutter/services/remito_imagen.dart';
 import 'package:puesto_flutter/models/remito_ocr.dart';
-import 'package:puesto_flutter/models/remito.dart';
 
 class _FakeController extends RemitoAltaController {
   @override

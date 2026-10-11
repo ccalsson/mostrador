@@ -14,6 +14,7 @@ import '../admin/dashboard_pane.dart';
 import '../admin/productos_pane.dart';
 import '../admin/proveedores_pane.dart';
 import '../admin/remitos_pane.dart';
+import '../admin/reportes_pane.dart';
 import '../admin/suscripcion_pane.dart';
 import '../admin/usuarios_pane.dart';
 import '../caja/caja_pane.dart';
@@ -65,6 +66,8 @@ const _destinoProveedores =
     _Destino(Icons.local_shipping_outlined, Icons.local_shipping, 'Proveedores');
 const _destinoRemitos =
     _Destino(Icons.local_shipping_outlined, Icons.local_shipping, 'Remitos');
+const _destinoReportes =
+    _Destino(Icons.leaderboard_outlined, Icons.leaderboard, 'Reportes');
 const _destinoAuditoria =
     _Destino(Icons.history_outlined, Icons.history, 'Auditoría');
 const _destinoSuscripcion = _Destino(
@@ -94,6 +97,7 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
             _destinoClientes,
             _destinoProveedores,
             _destinoRemitos,
+            _destinoReportes,
             _destinoAuditoria,
             _destinoSuscripcion,
             _destinoSesion,
@@ -114,8 +118,9 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
       (Rol.admin, 5) => const ClientesPane(),
       (Rol.admin, 6) => const ProveedoresPane(),
       (Rol.admin, 7) => const RemitosPane(),
-      (Rol.admin, 8) => const AuditoriaPane(),
-      (Rol.admin, 9) => const SuscripcionPane(),
+      (Rol.admin, 8) => const ReportesPane(),
+      (Rol.admin, 9) => const AuditoriaPane(),
+      (Rol.admin, 10) => const SuscripcionPane(),
       _ => const _SesionPane(),
     };
   }

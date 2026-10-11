@@ -5,7 +5,6 @@ import 'package:puesto_flutter/features/admin/remito_alta_controller.dart';
 import 'package:puesto_flutter/models/proveedor.dart';
 import 'package:puesto_flutter/models/remito.dart';
 import 'package:puesto_flutter/models/remito_ocr.dart';
-import 'package:puesto_flutter/services/remito_imagen.dart';
 import 'package:puesto_flutter/services/remitos_service.dart';
 
 class MockRemitosService implements RemitosService {
@@ -47,7 +46,10 @@ class MockRemitosService implements RemitosService {
   }) async {}
 
   @override
-  Future<void> asignarProveedor({required String id, required String proveedorId}) async {}
+  Future<void> asignarProveedor({
+    required String remitoId,
+    required String proveedorId,
+  }) async {}
 
   @override
   Future<void> confirmar(String id) async {}
