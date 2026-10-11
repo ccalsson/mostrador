@@ -1,6 +1,6 @@
 # Mostrador — builds de prueba contra DEV (NO producción)
 
-Fecha de entrega: 2026-10-06 · Versión app: **0.1.0+1** · Commit: **7c1c58e**
+Fecha de entrega: 2026-10-11 · Versión app: **0.2.0+2** · Commit: (se completa al publicar)
 
 ## Qué es esto
 
@@ -8,6 +8,18 @@ Instalables del cliente Flutter (Android vendedor / Windows Caja-Admin) para
 probar **físicamente** en el negocio. **No** es producción: no se deployó
 nada y la infraestructura no cambió. La base de datos es **Neon DEV** y el
 backend corre **en la PC de desarrollo**.
+
+## Novedades de esta entrega (0.2.0, sobre la 0.1.0 del 2026-10-06)
+
+- **Remitos (nuevo)**: ingreso de mercadería con proveedor y líneas; listado y
+  detalle con confirmación. La lectura automática por foto (OCR) todavía no
+  está habilitada en el servidor DEV: el alta es **manual** por ahora.
+- **Reportes (nuevo, Admin)**: dashboard con períodos (7/30/90 días), ventas
+  por producto y ranking de cargadores.
+- **Proveedores (nuevo, Admin)**: alta, edición y baja del directorio.
+- **Clientes**: edición y registro de pagos de cuenta corriente.
+- **Anulaciones**: pedidos y ventas se pueden anular desde Admin/Caja.
+- **Pedidos**: Caja también puede marcar pedidos como listos, además de cobrarlos.
 
 ## Backend utilizado (importante)
 
@@ -48,7 +60,7 @@ fijar la IP de la PC.
 
 ### Android (vendedor)
 
-1. Copiar `Mostrador-0.1.0-dev.apk` al teléfono (USB, Drive, WhatsApp a uno
+1. Copiar `Mostrador-0.2.0-dev.apk` al teléfono (USB, Drive, WhatsApp a uno
    mismo, etc.).
 2. Abrir el APK desde el teléfono. Si pide permiso: *Configuración → Permitir
    instalar apps de orígenes desconocidos* para el gestor de archivos usado.
@@ -57,11 +69,14 @@ fijar la IP de la PC.
 
 ### Windows (Caja/Admin)
 
-1. Copiar `Mostrador-Windows-0.1.0-dev.exe` a la PC.
-2. Ejecutarlo (doble clic). Descomprime y copia la app a
-   `%LOCALAPPDATA%\Mostrador` y crea el acceso directo **Mostrador** en el
-   Escritorio y en el menú Inicio.
-3. Abrir desde ese acceso directo y loguearse.
+1. Copiar `Mostrador-Windows-0.2.0-dev.zip` a la PC.
+2. **Descomprimir el zip** en cualquier carpeta. Adentro hay un `Instalar.cmd`
+   y la carpeta `Mostrador\`.
+3. Doble clic en `Instalar.cmd`: copia la app a `%LOCALAPPDATA%\Mostrador` y
+   crea el acceso directo **Mostrador** en el Escritorio y en el menú Inicio.
+4. Abrir desde ese acceso directo y loguearse.
+
+> En esta entrega no hay `.exe` autodescomprimible: usar el zip + `Instalar.cmd`.
 
 ## Credenciales de prueba (seed DEV)
 
@@ -74,19 +89,22 @@ fijar la IP de la PC.
 ## Circuito a validar
 
 1. Vendedor (Android) arma pedido desde el catálogo y lo confirma.
-2. Caja (Windows) ve el pedido en la bandeja, lo cobra (efectivo con vuelto /
-   transferencia / débito / crédito), imprime el ticket (diálogo del sistema,
-   80 mm).
-3. Admin (Windows) ve dashboard, productos, stock, usuarios, clientes,
-   remitos y auditoría; el stock descuenta con los pedidos.
+2. Caja (Windows) ve el pedido en la bandeja, lo marca listo si hace falta, lo
+   cobra (efectivo con vuelto / transferencia / débito / crédito), imprime el
+   ticket (diálogo del sistema, 80 mm).
+3. Admin (Windows) ve dashboard, productos, stock, usuarios, clientes, proveedores,
+   remitos, reportes y auditoría; el stock descuenta con los pedidos.
+4. Admin carga un remito a mano (proveedor + líneas) y confirma el ingreso.
+5. Admin registra un pago de cuenta corriente y/o anula un pedido o venta.
 
 ## Cómo actualizar / reinstalar
 
 - **Android:** instalar el APK nuevo encima del anterior; no se pierden datos
   (el login queda guardado). Si falla, desinstalar e instalar de nuevo.
-- **Windows:** ejecutar de nuevo el instalador; pisa la versión anterior sin
-  tocar nada más. Para desinstalar: `Desinstalar.cmd` dentro de
-  `%LOCALAPPDATA%\Mostrador`, o borrar esa carpeta y los accesos directos.
+- **Windows:** descomprimir el zip nuevo y ejecutar `Instalar.cmd` otra vez;
+  pisa la versión anterior sin tocar nada más. Para desinstalar:
+  `Desinstalar.cmd` dentro de `%LOCALAPPDATA%\Mostrador`, o borrar esa carpeta
+  y los accesos directos.
 
 ## Recompilar apuntando a otra URL
 
@@ -102,6 +120,9 @@ flutter build windows --release --dart-define=API_BASE_URL=http://IP:8080 --dart
 
 ## Alcance y limitaciones conocidas (DEV)
 
+- OCR de remitos: **no habilitado** en el servidor DEV (falta la clave del
+  proveedor). El alta de remitos es manual; la foto/archivo avisa que la
+  lectura no está disponible.
 - Impresión: diálogo del sistema de Windows (PDF 80 mm). La impresora
   térmica directa queda pendiente de definir hardware.
 - El vendedor necesita conexión (no hay modo offline todavía).

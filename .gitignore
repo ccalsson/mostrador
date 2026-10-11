@@ -4,6 +4,7 @@
 *.exe
 *.msi
 *.zip
+*.apk
 
 # --- Dependencias ---
 node_modules/
