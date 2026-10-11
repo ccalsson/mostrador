@@ -1,59 +1,46 @@
-# Mostrador — builds de prueba contra DEV (NO producción)
+# Mostrador — builds de prueba contra la nube (NO producción)
 
-Fecha de entrega: 2026-10-11 · Versión app: **0.2.0+2** · Commit: **1a4b432** (código: fc3b463)
+Fecha de entrega: 2026-10-11 (re-empaquetado) · Versión app: **0.2.0+2** · Commit: **2a30a1d**
 
 ## Qué es esto
 
-Instalables del cliente Flutter (Android vendedor / Windows Caja-Admin) para
-probar **físicamente** en el negocio. **No** es producción: no se deployó
-nada y la infraestructura no cambió. La base de datos es **Neon DEV** y el
-backend corre **en la PC de desarrollo**.
+Instalables del cliente Flutter (Android vendedor / Windows Caja-Admin) y de
+Mercado Al Toque (Android) para probar **físicamente** en el negocio.
+**No** es producción: no se deployó la web, la infraestructura no cambió y la
+base de datos sigue siendo **Neon DEV** (descartable).
 
-## Novedades de esta entrega (0.2.0, sobre la 0.1.0 del 2026-10-06)
+## Novedades de esta entrega
 
-- **Remitos (nuevo)**: ingreso de mercadería con proveedor y líneas; listado y
-  detalle con confirmación. La lectura automática por foto (OCR) todavía no
-  está habilitada en el servidor DEV: el alta es **manual** por ahora.
-- **Reportes (nuevo, Admin)**: dashboard con períodos (7/30/90 días), ventas
-  por producto y ranking de cargadores.
-- **Proveedores (nuevo, Admin)**: alta, edición y baja del directorio.
-- **Clientes**: edición y registro de pagos de cuenta corriente.
-- **Anulaciones**: pedidos y ventas se pueden anular desde Admin/Caja.
-- **Pedidos**: Caja también puede marcar pedidos como listos, además de cobrarlos.
+- **Ya no dependen de la PC de desarrollo.** Los builds apuntan a la API
+  pública en la nube (`https://mostrador-api.vercel.app`, deployment de
+  Vercel) conectada a la misma Neon DEV. La PC puede estar apagada.
+- **Nuevo: APK de Mercado Al Toque** (1.0.0), también contra la API pública.
+- Todo lo de la entrega 0.2.0 del mismo día se mantiene: remitos (alta manual;
+  OCR no habilitado en DEV), reportes, proveedores, edición de clientes y
+  pagos de cuenta corriente, anulaciones de pedidos/ventas, y Caja marcando
+  pedidos listos.
 
 ## Backend utilizado (importante)
 
+- API/backend: **https://mostrador-api.vercel.app** (proyecto Vercel
+  `mostrador-api` de este repositorio, carpeta `app/`).
 - Base de datos: **Neon DEV** (rama de desarrollo, sin tocar producción).
-- API/backend: TanStack Start de este repositorio (`app/`), levantado con
-  `npm run dev`, escuchando en **todas las interfaces** (`--host 0.0.0.0`, puerto 8080).
-- **Mientras la app esté en uso, la PC de desarrollo debe estar encendida con
-  el backend corriendo.** Si se apaga o se cierra, los clientes no conectan.
+- **La PC de desarrollo ya no participa**: no hace falta encenderla, ni
+  firewall, ni estar en la misma red.
 
 ### URL/API configurada en los builds
 
 | Build | API_BASE_URL compilada |
 |---|---|
-| Android (APK) | `http://192.168.0.101:8080` |
-| Windows (instalador) | `http://192.168.0.101:8080` |
+| Android Mostrador (APK) | `https://mostrador-api.vercel.app` |
+| Windows Mostrador (instalador) | `https://mostrador-api.vercel.app` |
+| Android Mercado Al Toque (APK) | `https://mostrador-api.vercel.app/api/mercado/v1` |
 
-`192.168.0.101` es la IP LAN actual de la PC de desarrollo. Si la IP cambia
-(router DHCP), hay que recompilar los builds con la nueva IP (ver abajo) o
-fijar la IP de la PC.
+## Requisitos previos
 
-## Requisitos previos en el negocio
-
-1. **PC de desarrollo** encendida, con el backend corriendo:
-   ```bat
-   cd app
-   npm run dev
-   ```
-2. **Firewall de Windows** permitiendo entrada al 8080 (sólo la primera vez,
-   requiere administrador; o aceptar el diálogo de Windows cuando aparezca):
-   ```bat
-   netsh advfirewall firewall add rule name="Mostrador DEV backend 8080" dir=in action=allow protocol=TCP localport=8080
-   ```
-3. **Misma red local** (WiFi del negocio) para el teléfono Android y la PC Windows.
-4. La PC Windows limpia necesita **Windows 10/11 x64** (incluye el runtime
+1. **Internet** en el dispositivo (WiFi del negocio o datos móviles). Nada más:
+   no hace falta PC encendida, ni firewall, ni misma red local.
+2. La PC Windows limpia necesita **Windows 10/11 x64** (incluye el runtime
    Visual C++ que usa la app). No requiere instalar nada más.
 
 ## Instalación
@@ -65,7 +52,7 @@ fijar la IP de la PC.
 2. Abrir el APK desde el teléfono. Si pide permiso: *Configuración → Permitir
    instalar apps de orígenes desconocidos* para el gestor de archivos usado.
 3. Abrir la app **Mostrador**, loguearse (credenciales abajo).
-4. El icono queda en el lanzador como cualquier app (es el "acceso directo").
+4. El icono queda en el lanzador como cualquier app.
 
 ### Windows (Caja/Admin)
 
@@ -76,7 +63,10 @@ fijar la IP de la PC.
    crea el acceso directo **Mostrador** en el Escritorio y en el menú Inicio.
 4. Abrir desde ese acceso directo y loguearse.
 
-> En esta entrega no hay `.exe` autodescomprimible: usar el zip + `Instalar.cmd`.
+### Android (Mercado Al Toque)
+
+1. Copiar `Mercado-Al-Toque-1.0.0-dev.apk` al teléfono e instalarlo igual que
+   el APK de Mostrador.
 
 ## Credenciales de prueba (seed DEV)
 
@@ -96,6 +86,17 @@ fijar la IP de la PC.
    remitos, reportes y auditoría; el stock descuenta con los pedidos.
 4. Admin carga un remito a mano (proveedor + líneas) y confirma el ingreso.
 5. Admin registra un pago de cuenta corriente y/o anula un pedido o venta.
+6. Mercado Al Toque (Android): navegar puestos/avisos/ranking y, si hay
+   credenciales de comprador/cargador de prueba, el flujo de la app.
+
+## Notas de uso
+
+- **Login con rate limit**: si se hacen varios intentos de login seguidos
+  (p. ej. cambiar de usuario varias veces, o probar credenciales inválidas),
+  el servidor puede responder "Too many requests". Esperar ~10 segundos y
+  reintentar; es una protección normal de la API pública.
+- La API pública es serverless: el primer acceso tras un rato de inactividad
+  puede tardar 1-2 segundos de más.
 
 ## Cómo actualizar / reinstalar
 
@@ -110,13 +111,16 @@ fijar la IP de la PC.
 
 ```bat
 cd clients/puesto_flutter
-flutter build apk --release --dart-define=API_BASE_URL=http://IP:8080 --dart-define=API_AUTH_ORIGIN=http://IP:8080
-flutter build windows --release --dart-define=API_BASE_URL=http://IP:8080 --dart-define=API_AUTH_ORIGIN=http://IP:8080
+flutter build apk --release --dart-define=API_BASE_URL=https://mostrador-api.vercel.app --dart-define=API_AUTH_ORIGIN=https://mostrador-api.vercel.app
+flutter build windows --release --dart-define=API_BASE_URL=https://mostrador-api.vercel.app --dart-define=API_AUTH_ORIGIN=https://mostrador-api.vercel.app
+
+cd clients/mercado_flutter
+flutter build apk --release --dart-define=API_BASE_URL=https://mostrador-api.vercel.app/api/mercado/v1 --dart-define=API_AUTH_ORIGIN=https://mostrador-api.vercel.app
 ```
 
-> El backend debe aceptar el origen: en `app/.env` fijar
-> `BETTER_AUTH_URL=http://IP:8080` y reiniciar `npm run dev` (sin esto el
-> login desde la LAN devuelve 403 "Invalid origin").
+> El backend (en Vercel) debe aceptar el origen: `BETTER_AUTH_URL` está fijada
+> en las variables de entorno del proyecto `mostrador-api` (Production). Si se
+> cambia el dominio de la API, actualizarla ahí y redesplegar.
 
 ## Alcance y limitaciones conocidas (DEV)
 
@@ -126,4 +130,5 @@ flutter build windows --release --dart-define=API_BASE_URL=http://IP:8080 --dart
 - Impresión: diálogo del sistema de Windows (PDF 80 mm). La impresora
   térmica directa queda pendiente de definir hardware.
 - El vendedor necesita conexión (no hay modo offline todavía).
-- Todo lo que se cargue/cobre es contra la base **DEV** (descartable).
+- Todo lo que se cargue/cobre es contra la base **DEV** (descartable); no es
+  producción y los datos pueden borrarse sin aviso.

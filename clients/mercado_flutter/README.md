@@ -22,6 +22,9 @@ La app apunta a la API del canal por `--dart-define`:
 API_BASE_URL (default: http://192.168.0.101:8080/api/mercado/v1)
 ```
 
+Los builds de prueba entregados apuntan a la API pública (sin depender de la
+PC de desarrollo): `--dart-define=API_BASE_URL=https://mostrador-api.vercel.app/api/mercado/v1`.
+
 Para apuntar a otra máquina (por ejemplo el emulador usa `10.0.2.2` para
 llegar al host):
 
