@@ -8,14 +8,14 @@ import 'package:integration_test/integration_test.dart';
 import 'package:puesto_flutter/core/config/app_config.dart';
 import 'package:puesto_flutter/main.dart' as app;
 
+import 'e2e_sesion.dart';
+
 /// Suscripción y Legal (Parte A de app/docs/suscripcion-legal-propuesta.md):
-/// la píldora existe sólo para el Dueño y mientras Torre no publica
-/// /api/v1/suscripcion el panel muestra el estado honesto de "no disponible
-/// todavía" (404) sin parecer un error de red. Cuando Torre implemente el
-/// endpoint, el mismo flujo debe mostrar el resumen y la prueba negativa de
-/// roles pasa a esperar 403.
+/// la píldora existe sólo para el Dueño y el panel muestra el resumen real de
+/// `/api/v1/suscripcion` (implementado en F1-M8; el puesto DEV está linkeado a
+/// Torre). Un token de vendedor recibe 403 `rol_no_permitido`.
 ///
-/// Requiere el backend corriendo en 8080 contra Neon DEV:
+/// Requiere backend con /api/v1/suscripcion contra Neon DEV:
 ///   flutter test integration_test/admin_suscripcion_test.dart -d windows \
 ///     --dart-define=API_BASE_URL=http://127.0.0.1:8080
 /// (desde el emulador Android: -d emulator-5554 y API_BASE_URL=10.0.2.2:8080)
@@ -32,18 +32,13 @@ const _password =
 
 final _http = http.Client();
 
-Future<String> _signIn(String email) async {
-  final res = await _http.post(
-    Uri.parse('${AppConfig.apiBaseUrl}/api/auth/sign-in/email'),
-    headers: {
-      'content-type': 'application/json',
-      'origin': AppConfig.authOrigin,
-    },
-    body: jsonEncode({'email': email, 'password': _password}),
-  );
-  expect(res.statusCode, 200, reason: 'sign-in $email: ${res.body}');
-  return (jsonDecode(res.body) as Map<String, dynamic>)['token'] as String;
-}
+Future<String> _signIn(String email) => signInConReintentos(
+      _http,
+      Uri.parse('${AppConfig.apiBaseUrl}/api/auth/sign-in/email'),
+      {'content-type': 'application/json', 'origin': AppConfig.authOrigin},
+      jsonEncode({'email': email, 'password': _password}),
+      motivo: 'sign-in $email',
+    );
 
 Future<void> _esperar(
   WidgetTester tester,
@@ -83,12 +78,10 @@ Future<void> _login(WidgetTester tester, String email) async {
   await _esperar(tester, find.byKey(const Key('login_email')));
   await tester.enterText(find.byKey(const Key('login_email')), email);
   await tester.enterText(find.byKey(const Key('login_password')), _password);
-  await tester.tap(find.byKey(const Key('login_submit')));
-  await tester.pump();
   if (email == _emailDueno) {
-    await _esperar(tester, find.byKey(const Key('dashboard_lista')));
+    await tocaLoginHasta(tester, find.byKey(const Key('dashboard_lista')));
   } else {
-    await _esperar(tester, find.byKey(const Key('catalogo_lista')));
+    await tocaLoginHasta(tester, find.byKey(const Key('catalogo_lista')));
   }
 }
 
@@ -99,7 +92,7 @@ void main() {
     await const FlutterSecureStorage().deleteAll();
   });
 
-  testWidgets('Suscripción: píldora solo del Dueño y estado honesto sin backend',
+  testWidgets('Suscripción: píldora solo del Dueño y resumen real del puesto',
       (tester) async {
     await _signIn(_emailDueno);
     await _signIn(_emailVenta);
@@ -108,16 +101,12 @@ void main() {
     await tester.pump();
     await _login(tester, _emailDueno);
 
-    // ---- Dueño: la sección existe y hoy muestra el 404 honesto ----
+    // ---- Dueño: la sección existe y muestra el resumen real de la API ----
     await _tocarPildora(tester, 'Suscripción');
-    await _esperar(tester, find.byKey(const Key('suscripcion_no_disponible')));
-    expect(find.text('La suscripción no está disponible todavía.'),
-        findsOneWidget);
-
-    // Reintentar vuelve a consultar: sigue el mismo estado mientras el
-    // endpoint no exista (404, no error de red).
-    await tester.tap(find.text('Reintentar'));
-    await _esperar(tester, find.byKey(const Key('suscripcion_no_disponible')));
+    await _esperar(tester, find.byKey(const Key('suscripcion_lista')));
+    expect(find.textContaining('Plan: '), findsOneWidget);
+    expect(find.byKey(const Key('suscripcion_ver_contrato')), findsOneWidget);
+    expect(find.byKey(const Key('suscripcion_ver_historial')), findsOneWidget);
 
     // ---- Vendedor: la píldora no existe para su rol ----
     await tester.tap(find.byKey(const Key('logout_button')));
@@ -126,9 +115,7 @@ void main() {
     await _login(tester, _emailVenta);
     expect(find.text('Suscripción'), findsNothing);
 
-    // Prueba negativa HTTP: con token de vendedor el endpoint no responde
-    // 200. Hoy (sin Torre) es 404 de ruta inexistente; al implementarse
-    // debe pasar a 403 rol_no_permitido.
+    // Prueba negativa HTTP: con token de vendedor el endpoint responde 403.
     final tokenVenta = await _signIn(_emailVenta);
     final res = await _http.get(
       Uri.parse('${AppConfig.apiBaseUrl}/api/v1/suscripcion'),
@@ -137,7 +124,8 @@ void main() {
         'authorization': 'Bearer $tokenVenta',
       },
     );
-    expect(res.statusCode, isNot(200),
+    expect(res.statusCode, 403,
         reason: 'vendedor no debe leer la suscripción: ${res.body}');
+    expect(res.body, contains('rol_no_permitido'));
   });
 }

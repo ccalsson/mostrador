@@ -10,6 +10,8 @@ import 'package:puesto_flutter/core/config/app_config.dart';
 import 'package:puesto_flutter/features/admin/remito_detalle_pane.dart';
 import 'package:puesto_flutter/main.dart' as app;
 
+import 'e2e_sesion.dart';
+
 const _emailDueno = String.fromEnvironment(
   'E2E_ADMIN_EMAIL',
   defaultValue: 'dueno@frutasroman.com',
@@ -23,18 +25,13 @@ const _proveedor = String.fromEnvironment(
 
 final _http = http.Client();
 
-Future<String> _signIn(String email) async {
-  final res = await _http.post(
-    Uri.parse('${AppConfig.apiBaseUrl}/api/auth/sign-in/email'),
-    headers: {
-      'content-type': 'application/json',
-      'origin': AppConfig.authOrigin,
-    },
-    body: jsonEncode({'email': email, 'password': _password}),
-  );
-  expect(res.statusCode, 200, reason: 'sign-in $email: ${res.body}');
-  return (jsonDecode(res.body) as Map<String, dynamic>)['token'] as String;
-}
+Future<String> _signIn(String email) => signInConReintentos(
+      _http,
+      Uri.parse('${AppConfig.apiBaseUrl}/api/auth/sign-in/email'),
+      {'content-type': 'application/json', 'origin': AppConfig.authOrigin},
+      jsonEncode({'email': email, 'password': _password}),
+      motivo: 'sign-in $email',
+    );
 
 Future<void> _esperar(
   WidgetTester tester,
@@ -55,13 +52,75 @@ String? _proveedorSeleccionado(WidgetTester tester) {
   return tester.state<FormFieldState<String>>(finder.first).value;
 }
 
+/// El menú del desplegable está abierto cuando sus ítems aparecen onstage en
+/// el overlay: con el campo cerrado y sin selección, el IndexedStack interno
+/// mantiene los mismos widgets offstage y el finder no los ve.
+bool _menuProveedorAbierto() =>
+    find.byType(DropdownMenuItem<String>).evaluate().isNotEmpty;
+
+/// El DropdownButton interno tiene opciones recién cuando /proveedores
+/// respondió (`DropdownButtonFormField` no expone `items`).
+bool _proveedorItemsCargados(WidgetTester tester) {
+  final dd = find.descendant(
+    of: find.byKey(const Key('admin_remito_proveedor')),
+    matching: find.byType(DropdownButton<String>),
+  );
+  if (dd.evaluate().isEmpty) return false;
+  final items = tester.widget<DropdownButton<String>>(dd.first).items;
+  return items != null && items.isNotEmpty;
+}
+
+/// Selecciona [_proveedor] en el desplegable. En desktop el toque sobre el
+/// overlay del menú no es confiable (a veces cae en el barrier y lo cierra),
+/// así que reintenta abrir + tocar el ítem (que primero asegura visible) y
+/// cae a teclado; nunca pulsa escape, que cerraría el diálogo entero.
+Future<void> _elegirProveedor(WidgetTester tester) async {
+  final campo = find.byKey(const Key('admin_remito_proveedor'));
+
+  // El desplegable recién tiene opciones cuando /proveedores responde.
+  final fin = DateTime.now().add(const Duration(seconds: 30));
+  while (DateTime.now().isBefore(fin) && !_proveedorItemsCargados(tester)) {
+    await tester.pump(const Duration(milliseconds: 250));
+  }
+
+  for (var intento = 0;
+      intento < 4 && _proveedorSeleccionado(tester) == null;
+      intento++) {
+    await tester.ensureVisible(campo);
+    await tester.pumpAndSettle();
+    await tester.tap(campo, warnIfMissed: false);
+    await tester.pumpAndSettle();
+    if (!_menuProveedorAbierto()) continue;
+
+    final item = find.ancestor(
+      of: find.text(_proveedor),
+      matching: find.byType(DropdownMenuItem<String>),
+    );
+    if (item.evaluate().isEmpty) continue;
+    await tester.ensureVisible(item.last);
+    await tester.pumpAndSettle();
+    await tester.tap(item.last, warnIfMissed: false);
+    await tester.pumpAndSettle();
+    if (_proveedorSeleccionado(tester) != null) return;
+
+    // Plan B: teclado sobre el menú abierto (el ítem responde a Enter).
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+  }
+  expect(
+    _proveedorSeleccionado(tester),
+    isNotNull,
+    reason: 'No se pudo seleccionar "$_proveedor" en el desplegable',
+  );
+}
+
 Future<void> _login(WidgetTester tester, String email) async {
   await _esperar(tester, find.byKey(const Key('login_email')));
   await tester.enterText(find.byKey(const Key('login_email')), email);
   await tester.enterText(find.byKey(const Key('login_password')), _password);
-  await tester.tap(find.byKey(const Key('login_submit')));
-  await tester.pump();
-  await _esperar(tester, find.byKey(const Key('dashboard_lista')));
+  await tocaLoginHasta(tester, find.byKey(const Key('dashboard_lista')));
 }
 
 /// El menú de secciones es una fila horizontal de píldoras: en pantallas
@@ -105,34 +164,7 @@ void main() {
     await tester.pump();
     await _esperar(tester, find.text('Ingreso de mercadería'));
 
-    await tester.ensureVisible(find.byKey(const Key('admin_remito_proveedor')));
-    await tester.pump();
-    await tester.tap(find.byKey(const Key('admin_remito_proveedor')));
-    await tester.pumpAndSettle();
-    await _esperar(tester, find.text(_proveedor));
-    await tester.tap(find.text(_proveedor).last, warnIfMissed: false);
-    await tester.pumpAndSettle();
-    if (_proveedorSeleccionado(tester) == null) {
-      // El toque directo no siempre alcanza el overlay del menú en desktop:
-      // reabrir y navegar con teclado.
-      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
-      await tester.pumpAndSettle();
-      await tester.tap(
-        find.byKey(const Key('admin_remito_proveedor')),
-        warnIfMissed: false,
-      );
-      await tester.pumpAndSettle();
-      await _esperar(tester, find.text(_proveedor));
-      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
-      await tester.pumpAndSettle();
-      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
-      await tester.pumpAndSettle();
-    }
-    expect(
-      _proveedorSeleccionado(tester),
-      isNotNull,
-      reason: 'No se pudo seleccionar "$_proveedor" en el desplegable',
-    );
+    await _elegirProveedor(tester);
 
     await tester.enterText(
       find.byKey(const Key('admin_remito_linea_0')),

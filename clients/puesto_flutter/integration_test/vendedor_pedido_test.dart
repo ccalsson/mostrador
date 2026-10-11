@@ -10,6 +10,8 @@ import 'package:puesto_flutter/services/auth_service.dart';
 import 'package:puesto_flutter/services/catalogo_service.dart';
 import 'package:puesto_flutter/services/pedidos_service.dart';
 
+import 'e2e_sesion.dart';
+
 /// Fase 3.1 — vendedor: pedido normal, idempotencia por `clientUuid` y detalle.
 ///
 /// Requiere el backend corriendo contra Neon DEV. Android:
@@ -65,10 +67,8 @@ Future<String> _vendedorCreaPedido(WidgetTester tester) async {
   await _esperar(tester, find.byKey(const Key('login_email')));
   await tester.enterText(find.byKey(const Key('login_email')), _email);
   await tester.enterText(find.byKey(const Key('login_password')), _password);
-  await tester.tap(find.byKey(const Key('login_submit')));
-  await tester.pump();
+  await tocaLoginHasta(tester, find.byKey(const Key('catalogo_lista')));
 
-  await _esperar(tester, find.byKey(const Key('catalogo_lista')));
   await _esperar(tester, _porPrefijoClave('agregar_'));
 
   final agregar = _porPrefijoClave('agregar_').first;

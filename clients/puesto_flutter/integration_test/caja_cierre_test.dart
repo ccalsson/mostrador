@@ -10,6 +10,8 @@ import 'package:puesto_flutter/core/format.dart';
 import 'package:puesto_flutter/core/ids.dart';
 import 'package:puesto_flutter/main.dart' as app;
 
+import 'e2e_sesion.dart';
+
 /// Fase 4.2.2 — cierre de caja (Windows): el diálogo envía el total contado a
 /// `POST /api/v1/caja/cerrar`; el backend recalcula el esperado, cierra el
 /// turno, alerta si hay diferencia y abre un turno nuevo que la vista muestra
@@ -30,18 +32,13 @@ const _password = String.fromEnvironment('E2E_PASSWORD', defaultValue: 'roman202
 final _http = http.Client();
 
 /// Sign-in de Better Auth para fixtures; exige `Origin` (trusted origin).
-Future<String> _signIn(String email) async {
-  final res = await _http.post(
-    Uri.parse('${AppConfig.apiBaseUrl}/api/auth/sign-in/email'),
-    headers: {
-      'content-type': 'application/json',
-      'origin': AppConfig.authOrigin,
-    },
-    body: jsonEncode({'email': email, 'password': _password}),
-  );
-  expect(res.statusCode, 200, reason: 'sign-in $email: ${res.body}');
-  return (jsonDecode(res.body) as Map<String, dynamic>)['token'] as String;
-}
+Future<String> _signIn(String email) => signInConReintentos(
+      _http,
+      Uri.parse('${AppConfig.apiBaseUrl}/api/auth/sign-in/email'),
+      {'content-type': 'application/json', 'origin': AppConfig.authOrigin},
+      jsonEncode({'email': email, 'password': _password}),
+      motivo: 'sign-in $email',
+    );
 
 Future<Map<String, dynamic>> _getJson(String path, String token) async {
   final res = await _http.get(
@@ -116,9 +113,7 @@ Future<void> _loginYIrAEstadoDeCaja(WidgetTester tester) async {
   await _esperar(tester, find.byKey(const Key('login_email')));
   await tester.enterText(find.byKey(const Key('login_email')), _emailCaja);
   await tester.enterText(find.byKey(const Key('login_password')), _password);
-  await tester.tap(find.byKey(const Key('login_submit')));
-  await tester.pump();
-  await _esperar(tester, find.byKey(const Key('catalogo_lista')));
+  await tocaLoginHasta(tester, find.byKey(const Key('catalogo_lista')));
 
   // El chip de rol del header también dice "Caja": la píldora se acota al
   // menú horizontal de secciones.

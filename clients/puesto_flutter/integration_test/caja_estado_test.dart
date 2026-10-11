@@ -10,6 +10,8 @@ import 'package:puesto_flutter/core/format.dart';
 import 'package:puesto_flutter/core/ids.dart';
 import 'package:puesto_flutter/main.dart' as app;
 
+import 'e2e_sesion.dart';
+
 /// Fase 4.2.1 — estado y movimientos de caja (Windows): la vista "Estado de
 /// caja" muestra el turno real (`GET /api/v1/caja`) y el refresco trae los
 /// cobros nuevos. Sin mocks: la UI se compara contra un snapshot del mismo
@@ -30,18 +32,13 @@ const _password = String.fromEnvironment('E2E_PASSWORD', defaultValue: 'roman202
 final _http = http.Client();
 
 /// Sign-in de Better Auth para fixtures; exige `Origin` (trusted origin).
-Future<String> _signIn(String email) async {
-  final res = await _http.post(
-    Uri.parse('${AppConfig.apiBaseUrl}/api/auth/sign-in/email'),
-    headers: {
-      'content-type': 'application/json',
-      'origin': AppConfig.authOrigin,
-    },
-    body: jsonEncode({'email': email, 'password': _password}),
-  );
-  expect(res.statusCode, 200, reason: 'sign-in $email: ${res.body}');
-  return (jsonDecode(res.body) as Map<String, dynamic>)['token'] as String;
-}
+Future<String> _signIn(String email) => signInConReintentos(
+      _http,
+      Uri.parse('${AppConfig.apiBaseUrl}/api/auth/sign-in/email'),
+      {'content-type': 'application/json', 'origin': AppConfig.authOrigin},
+      jsonEncode({'email': email, 'password': _password}),
+      motivo: 'sign-in $email',
+    );
 
 Future<Map<String, dynamic>> _getJson(String path, String token) async {
   final res = await _http.get(
@@ -125,9 +122,7 @@ Future<void> _loginYIrAEstadoDeCaja(WidgetTester tester) async {
   await _esperar(tester, find.byKey(const Key('login_email')));
   await tester.enterText(find.byKey(const Key('login_email')), _emailCaja);
   await tester.enterText(find.byKey(const Key('login_password')), _password);
-  await tester.tap(find.byKey(const Key('login_submit')));
-  await tester.pump();
-  await _esperar(tester, find.byKey(const Key('catalogo_lista')));
+  await tocaLoginHasta(tester, find.byKey(const Key('catalogo_lista')));
 
   // El chip de rol del header también dice "Caja": la píldora se acota al
   // menú horizontal de secciones.
@@ -254,7 +249,9 @@ void main() {
 
     expect((estado2['ultimos'] as List).first['id'], cobroId2,
         reason: 'el cobro más reciente va primero');
-    await _asegurarUiCoincideConBackend(tester, estado2);
+    // Con la lista al tope el cobro nuevo está a la vista: se verifica su monto
+    // acá, antes de recorrer la lista, porque el recorrido puede dejarlo fuera
+    // del viewport y los ítems perezosos se descartan.
     expect(
       find.descendant(
         of: find.byKey(Key('caja_mov_fila_$cobroId2')),
@@ -264,6 +261,7 @@ void main() {
       findsOneWidget,
       reason: 'el cobro nuevo se muestra con el monto real del backend',
     );
+    await _asegurarUiCoincideConBackend(tester, estado2);
 
     // §7 permisos: el backend rechaza al rol no autorizado (sin mock).
     final (statusVendedor, bodyVendedor) = await _getRaw('/api/v1/caja', tokenVenta);

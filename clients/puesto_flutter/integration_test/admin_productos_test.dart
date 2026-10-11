@@ -9,6 +9,8 @@ import 'package:puesto_flutter/core/config/app_config.dart';
 import 'package:puesto_flutter/core/format.dart';
 import 'package:puesto_flutter/main.dart' as app;
 
+import 'e2e_sesion.dart';
+
 /// Fase 5.1 — admin de productos/stock/alertas (Windows): alta, alerta de
 /// stock bajo, ajuste/merma, edición y baja lógica desde el tablero del
 /// Dueño. Sin mocks: backend real + Neon DEV. Deja un producto "TEST E2E …"
@@ -30,18 +32,13 @@ const _password =
 
 final _http = http.Client();
 
-Future<String> _signIn(String email) async {
-  final res = await _http.post(
-    Uri.parse('${AppConfig.apiBaseUrl}/api/auth/sign-in/email'),
-    headers: {
-      'content-type': 'application/json',
-      'origin': AppConfig.authOrigin,
-    },
-    body: jsonEncode({'email': email, 'password': _password}),
-  );
-  expect(res.statusCode, 200, reason: 'sign-in $email: ${res.body}');
-  return (jsonDecode(res.body) as Map<String, dynamic>)['token'] as String;
-}
+Future<String> _signIn(String email) => signInConReintentos(
+      _http,
+      Uri.parse('${AppConfig.apiBaseUrl}/api/auth/sign-in/email'),
+      {'content-type': 'application/json', 'origin': AppConfig.authOrigin},
+      jsonEncode({'email': email, 'password': _password}),
+      motivo: 'sign-in $email',
+    );
 
 Future<Map<String, dynamic>> _getJson(String path, String token) async {
   final res = await _http.get(
@@ -149,10 +146,8 @@ Future<void> _login(WidgetTester tester, String email) async {
   await _esperar(tester, find.byKey(const Key('login_email')));
   await tester.enterText(find.byKey(const Key('login_email')), email);
   await tester.enterText(find.byKey(const Key('login_password')), _password);
-  await tester.tap(find.byKey(const Key('login_submit')));
-  await tester.pump();
   // El admin aterriza en el Dashboard (commit del shell admin).
-  await _esperar(tester, find.byKey(const Key('dashboard_lista')));
+  await tocaLoginHasta(tester, find.byKey(const Key('dashboard_lista')));
 }
 
 Future<void> _buscarProducto(WidgetTester tester, String nombre, String id) async {

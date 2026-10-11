@@ -4,6 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:puesto_flutter/main.dart' as app;
 
+import 'e2e_sesion.dart';
+
 /// Vertical slice de Fase 2: login → catálogo → logout contra el backend DEV.
 ///
 /// Requiere el backend corriendo (`npm run dev` en `app/`) y un usuario demo.
@@ -44,10 +46,7 @@ void main() {
     await _esperar(tester, find.byKey(const Key('login_email')));
     await tester.enterText(find.byKey(const Key('login_email')), _email);
     await tester.enterText(find.byKey(const Key('login_password')), _password);
-    await tester.tap(find.byKey(const Key('login_submit')));
-    await tester.pump();
-
-    await _esperar(tester, find.byKey(const Key('catalogo_lista')));
+    await tocaLoginHasta(tester, find.byKey(const Key('catalogo_lista')));
     expect(find.byType(ListTile), findsWidgets);
 
     await tester.tap(find.byKey(const Key('logout_button')));
@@ -61,9 +60,9 @@ void main() {
     await _esperar(tester, find.byKey(const Key('login_email')));
     await tester.enterText(find.byKey(const Key('login_email')), 'nadie@frutasroman.com');
     await tester.enterText(find.byKey(const Key('login_password')), 'clave-mala');
-    await tester.tap(find.byKey(const Key('login_submit')));
-    await tester.pump();
-
-    await _esperar(tester, find.text('Correo o contraseña incorrectos.'));
+    await tocaLoginHasta(
+      tester,
+      find.text('Correo o contraseña incorrectos.'),
+    );
   });
 }
