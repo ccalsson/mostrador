@@ -70,8 +70,8 @@ fijar la IP de la PC.
 ### Windows (Caja/Admin)
 
 1. Copiar `Mostrador-Windows-0.2.0-dev.zip` a la PC.
-2. **Descomprimir el zip** en cualquier carpeta. Adentro hay un `Instalar.cmd`
-   y la carpeta `Mostrador\`.
+2. **Descomprimir el zip** en cualquier carpeta. Adentro hay un `Instalar.cmd`,
+   un `Desinstalar.cmd` y la carpeta `Mostrador\`.
 3. Doble clic en `Instalar.cmd`: copia la app a `%LOCALAPPDATA%\Mostrador` y
    crea el acceso directo **Mostrador** en el Escritorio y en el menú Inicio.
 4. Abrir desde ese acceso directo y loguearse.
@@ -102,9 +102,9 @@ fijar la IP de la PC.
 - **Android:** instalar el APK nuevo encima del anterior; no se pierden datos
   (el login queda guardado). Si falla, desinstalar e instalar de nuevo.
 - **Windows:** descomprimir el zip nuevo y ejecutar `Instalar.cmd` otra vez;
-  pisa la versión anterior sin tocar nada más. Para desinstalar:
-  `Desinstalar.cmd` dentro de `%LOCALAPPDATA%\Mostrador`, o borrar esa carpeta
-  y los accesos directos.
+  pisa la versión anterior sin tocar nada más. Para desinstalar: ejecutar
+  `Desinstalar.cmd` (el del zip o el que queda en `%LOCALAPPDATA%\Mostrador`);
+  borra la app, los accesos directos y se limpia solo.
 
 ## Recompilar apuntando a otra URL
 
