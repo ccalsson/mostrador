@@ -12,6 +12,7 @@ import '../admin/auditoria_pane.dart';
 import '../admin/clientes_pane.dart';
 import '../admin/dashboard_pane.dart';
 import '../admin/productos_pane.dart';
+import '../admin/proveedores_pane.dart';
 import '../admin/remitos_pane.dart';
 import '../admin/suscripcion_pane.dart';
 import '../admin/usuarios_pane.dart';
@@ -23,8 +24,8 @@ import '../pedidos/pedidos_pane.dart';
 /// Shell del puesto: barra superior leaf-2 con la identidad del tenant y un
 /// menú horizontal de píldoras para las secciones del rol (común a Android y
 /// Windows). El vendedor suma Carrito y Pedidos; el cajero suma Caja; el
-/// Dueño suma Productos, Alertas, Usuarios, Clientes, Remitos, Auditoría y
-/// Suscripción.
+/// Dueño suma Productos, Alertas, Usuarios, Clientes, Proveedores, Remitos,
+/// Auditoría y Suscripción.
 class AdaptiveShell extends ConsumerStatefulWidget {
   const AdaptiveShell({super.key, required this.rol});
 
@@ -60,6 +61,8 @@ const _destinoUsuarios =
     _Destino(Icons.people_outlined, Icons.people, 'Usuarios');
 const _destinoClientes =
     _Destino(Icons.storefront_outlined, Icons.storefront, 'Clientes');
+const _destinoProveedores =
+    _Destino(Icons.local_shipping_outlined, Icons.local_shipping, 'Proveedores');
 const _destinoRemitos =
     _Destino(Icons.local_shipping_outlined, Icons.local_shipping, 'Remitos');
 const _destinoAuditoria =
@@ -89,6 +92,7 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
             _destinoAlertas,
             _destinoUsuarios,
             _destinoClientes,
+            _destinoProveedores,
             _destinoRemitos,
             _destinoAuditoria,
             _destinoSuscripcion,
@@ -108,9 +112,10 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
       (Rol.admin, 3) => const AlertasPane(),
       (Rol.admin, 4) => const UsuariosPane(),
       (Rol.admin, 5) => const ClientesPane(),
-      (Rol.admin, 6) => const RemitosPane(),
-      (Rol.admin, 7) => const AuditoriaPane(),
-      (Rol.admin, 8) => const SuscripcionPane(),
+      (Rol.admin, 6) => const ProveedoresPane(),
+      (Rol.admin, 7) => const RemitosPane(),
+      (Rol.admin, 8) => const AuditoriaPane(),
+      (Rol.admin, 9) => const SuscripcionPane(),
       _ => const _SesionPane(),
     };
   }

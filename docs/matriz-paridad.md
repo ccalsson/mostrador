@@ -51,7 +51,7 @@ Columnas: **Web** = repoweb actual · **Win/And** = puesto_flutter (código comp
 | M21 | Remitos alta (csv/foto/manual/pdf + match) | Alta manual/foto; crea por `POST /api/v1/remitos` | ✗ | ✗ | `POST remitos` ✓ (fuentes) | Flutter aún no tiene alta | B5: alta con foto (Android `image_picker`, Windows `file_selector`) | Confirmación genera `entrada_remito`, igual en ambos |
 | M22 | Remitos OCR | `parseRemitoVision` → `POST /api/v1/remitos/ocr` | ✗ | ✗ | `POST remitos/ocr` ✓ (fail-closed 503) | Falta OCR de remito en Flutter | B5: OCR compartido por API en ambas apps | Misma lectura revisable en web y Flutter |
 | M23 | Remitos revisión/confirmación | Detalle, edición de líneas y confirmación por `/api/v1/remitos/*` | ✓ `remitos_service:12-41` | ≡ | ✓ | Paridad de reglas; web y Flutter usan el backend canónico | — | Solo confirmación humana suma stock, igual en ambos |
-| M24 | Proveedores CRUD | ✓ panel CRUD + productos vía `/api/v1/proveedores*` | ✗ (solo nombre en texto del remito) | ✗ | GET/POST/update/productos ✓ | Panel de proveedores ausente en Flutter | B4: panel proveedores | CRUD auditable idéntico |
+| M24 | Proveedores CRUD | ✓ panel CRUD + productos vía `/api/v1/proveedores*` | ✓ directorio, alta/edición/baja lógica y productos en remitos | ≡ | GET/POST/update/productos ✓ | Web y Flutter comparten el directorio y las escrituras auditadas del backend; smoke integrado pendiente | B4 implementado; smoke Web↔API↔Flutter pendiente | CRUD auditable idéntico |
 | M25 | Usuarios alta/toggle | list/create/toggle vía `/api/v1/usuarios*` | ✓ (sin edición, igual que web) | ≡ | ✓ | Web y Flutter delegan permisos y escritura al backend | — | Usuario creado entra por rol correcto en ambos |
 | M26 | Auditoría | `listAuditoria` vía `/api/v1/auditoria` (admin) | ✓ sin filtros | ≡ | ✓ | Web y Flutter leen del backend canónico | — | Misma traza visible en ambos |
 | M27 | Dashboard | `dashboardResumen` vía `/api/v1/dashboard` (admin), selector 1/7/30 días | ✓ selector 1/7/30 días | ≡ | ✓ | Web y Flutter leen del backend canónico | — | Mismos montos contra mismos datos |
@@ -112,7 +112,7 @@ Orden estricto; cada ítem cierra con verificación triple (`tsc --noEmit` + `np
 | B1 | Implementado en código: anular pedido pendiente y venta desde Caja con motivo, confirmación, errores del backend visibles y refresco de datos. Anulación de venta facturada requiere completar nota de crédito desde Flutter (B7); falta smoke integrado | Operaciones financieras críticas, backend listo |
 | B2 | Implementado en código: ficha editable completa y registro de pagos CC desde la cuenta, con nota opcional, monto validado, errores del backend visibles e invalidación de saldos/movimientos. Falta smoke integrado Web↔API↔Flutter | Backend listo; M19/M20 |
 | B3 | Implementado en código: pedidos en preparación pueden marcarse listos desde Caja; la respuesta no se simula, se releen detalle y lista, y se muestran errores canónicos. Falta smoke integrado Web↔API↔Flutter | M10/C9; API canónica |
-| B4 | Panel proveedores (M24) | CRUD simple |
+| B4 | Implementado en código: directorio, alta/edición/baja lógica y consulta de productos en remitos desde Flutter; errores del backend visibles. Falta smoke integrado Web↔API↔Flutter | M24; API canónica |
 | B5 | Alta de remitos + OCR con foto (M21/M22; `image_picker` Android, `file_selector` Windows) | La dependencia más pesada de UI |
 | B6 | Reportes productos/historial (M28) + ranking cargadores (M29) | Solo lectura |
 | B7 | ARCA UI (M30): config, habilitar, emitir factura, NC, listado, ver | Extra aprobado |
