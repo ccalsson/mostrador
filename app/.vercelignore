@@ -1,0 +1,9 @@
+# Secretos locales: nunca se suben al deployment (la plataforma inyecta los suyos).
+.env
+.env.*
+
+# Ruido de build/dev que no es parte del bundle remoto.
+node_modules
+screenshots
+artifacts
+attachments
