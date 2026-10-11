@@ -85,7 +85,16 @@ async function request(method, path, { token, body, headers } = {}) {
     init.headers["content-type"] = "application/json";
     init.body = JSON.stringify(body);
   }
-  const response = await fetch(url, init);
+  // En producción Better Auth aplica rate limit (p. ej. /sign-in: 3 por 10s
+  // por IP). El 429 se decide antes de la lógica de negocio, así que
+  // reintentar es seguro; el servidor indica la espera en X-Retry-After.
+  let response;
+  for (let intento = 0; ; intento += 1) {
+    response = await fetch(url, init);
+    if (response.status !== 429 || intento >= 2) break;
+    const espera = Number(response.headers.get("x-retry-after"));
+    await sleep(Number.isFinite(espera) && espera > 0 ? espera * 1000 + 500 : 11_000);
+  }
   const text = await response.text();
   let data;
   try {
@@ -436,7 +445,9 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
     state.morronStock0 = state.morron.stock;
 
     const etag = res.headers.get("etag");
-    assert.equal(etag, `"${version}"`);
+    // Vercel debilita el ETag (W/) al comprimir la respuesta; el valor sigue
+    // siendo la versión del catálogo.
+    assert.equal(etag?.replace(/^W\//, ""), `"${version}"`);
 
     const notModified = await api("GET", "/catalogo", {
       token: state.tokens.admin,

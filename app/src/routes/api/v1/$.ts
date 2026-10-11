@@ -333,7 +333,10 @@ const ROUTES: Entry[] = [
       const since = parseSince(url.searchParams.get("since"));
       const catalogo = await syncCatalogoForStaff(staff, since);
       const etag = catalogo.version ? `"${catalogo.version}"` : undefined;
-      if (etag && request.headers.get("if-none-match") === etag) {
+      // RFC 7232: If-None-Match se compara en forma débil (los proxies —
+      // Vercel incluido — debilitan el ETag a W/"..." al comprimir).
+      const ifNoneMatch = request.headers.get("if-none-match")?.replace(/^W\//, "");
+      if (etag && ifNoneMatch === etag) {
         return new Response(null, {
           status: 304,
           headers: { "cache-control": "private, max-age=30", etag, vary: "authorization" },
