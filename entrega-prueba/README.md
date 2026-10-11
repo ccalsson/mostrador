@@ -1,6 +1,6 @@
 # Mostrador — builds de prueba contra DEV (NO producción)
 
-Fecha de entrega: 2026-10-11 · Versión app: **0.2.0+2** · Commit: (se completa al publicar)
+Fecha de entrega: 2026-10-11 · Versión app: **0.2.0+2** · Commit: **fc3b463**
 
 ## Qué es esto
 
