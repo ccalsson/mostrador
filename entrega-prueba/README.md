@@ -15,6 +15,9 @@ base de datos sigue siendo **Neon DEV** (descartable).
   pública en la nube (`https://mostrador-api.vercel.app`, deployment de
   Vercel) conectada a la misma Neon DEV. La PC puede estar apagada.
 - **Nuevo: APK de Mercado Al Toque** (1.0.0), también contra la API pública.
+- **Nuevo: instalador Windows de un solo archivo**:
+  `Mostrador-Windows-0.2.0-dev.exe` se autoextrae e instala solo (además del
+  zip de siempre).
 - Todo lo de la entrega 0.2.0 del mismo día se mantiene: remitos (alta manual;
   OCR no habilitado en DEV), reportes, proveedores, edición de clientes y
   pagos de cuenta corriente, anulaciones de pedidos/ventas, y Caja marcando
@@ -55,6 +58,19 @@ base de datos sigue siendo **Neon DEV** (descartable).
 4. El icono queda en el lanzador como cualquier app.
 
 ### Windows (Caja/Admin)
+
+**Opción de un solo archivo (más simple):**
+
+1. Copiar `Mostrador-Windows-0.2.0-dev.exe` a la PC.
+2. Doble clic: se descomprime solo, instala la app y crea los accesos directos.
+   Si Windows muestra el aviso azul de **SmartScreen** ("Windows protegió tu
+   PC"), es porque el archivo no tiene firma digital todavía: elegir
+   *Más información → Ejecutar de todas formas*.
+3. Al terminar aparece una ventana que dice `Mostrador instalado en ...`:
+   apretar cualquier tecla para cerrarla.
+4. Abrir **Mostrador** desde el acceso directo del Escritorio y loguearse.
+
+**Alternativa con zip:**
 
 1. Copiar `Mostrador-Windows-0.2.0-dev.zip` a la PC.
 2. **Descomprimir el zip** en cualquier carpeta. Adentro hay un `Instalar.cmd`,
@@ -102,10 +118,10 @@ base de datos sigue siendo **Neon DEV** (descartable).
 
 - **Android:** instalar el APK nuevo encima del anterior; no se pierden datos
   (el login queda guardado). Si falla, desinstalar e instalar de nuevo.
-- **Windows:** descomprimir el zip nuevo y ejecutar `Instalar.cmd` otra vez;
-  pisa la versión anterior sin tocar nada más. Para desinstalar: ejecutar
-  `Desinstalar.cmd` (el del zip o el que queda en `%LOCALAPPDATA%\Mostrador`);
-  borra la app, los accesos directos y se limpia solo.
+- **Windows:** ejecutar de nuevo el `.exe` (o descomprimir el zip nuevo y
+  ejecutar `Instalar.cmd`); pisa la versión anterior sin tocar nada más. Para
+  desinstalar: ejecutar `Desinstalar.cmd` (el del zip o el que queda en
+  `%LOCALAPPDATA%\Mostrador`); borra la app y los accesos directos.
 
 ## Recompilar apuntando a otra URL
 
