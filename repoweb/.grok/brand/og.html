@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<style>
+@font-face {
+  font-family: "Fraunces";
+  src: url("file:///workspace/.grok/fonts/Fraunces.ttf") format("truetype");
+  font-weight: 600;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("file:///workspace/.grok/fonts/IBMPlexSans-500.ttf") format("truetype");
+  font-weight: 500;
+  font-style: normal;
+  font-display: block;
+}
+* { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  width: 1200px;
+  height: 630px;
+  overflow: hidden;
+  background: #1B5E3B;
+}
+.stage { position: relative; width: 1200px; height: 630px; }
+.bg {
+  position: absolute;
+  inset: 0;
+  width: 1200px;
+  height: 630px;
+  object-fit: cover;
+  object-position: center;
+}
+.plaque {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  background: #1B5E3B;
+  border: 3px solid #B5471A;
+  border-radius: 22px;
+  padding: 26px 64px 30px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  box-shadow: 0 14px 36px rgba(26, 22, 18, 0.28);
+}
+.mark { width: 68px; height: 68px; display: block; }
+h1 {
+  font-family: "Fraunces", serif;
+  font-weight: 600;
+  font-size: 126px;
+  line-height: 0.88;
+  letter-spacing: -0.035em;
+  color: #F3EDE1;
+  margin: 14px 0 0;
+  padding: 0;
+  white-space: nowrap;
+}
+.rule {
+  width: 64px;
+  height: 4px;
+  margin-top: 18px;
+  background: #B5471A;
+  border-radius: 2px;
+}
+p {
+  font-family: "IBM Plex Sans", sans-serif;
+  font-weight: 500;
+  font-size: 28px;
+  line-height: 1;
+  color: #F3EDE1;
+  margin: 16px 0 0;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+</style>
+</head>
+<body>
+  <div class="stage">
+    <img class="bg" alt="" src="file:///workspace/artifacts/imagine_images/5fa65d0e-d9b5-426a-bc56-83e2037c8664.jpg">
+    <div class="plaque">
+      <svg class="mark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" aria-hidden="true">
+        <path fill="#F3EDE1" d="M5 22V6h6l5 8 5-8h6v16h-6V16l-5 7-5-7v6H5z"/>
+        <path fill="#B5471A" d="M5 22h6v4H5zm16 0h6v4h-6z"/>
+      </svg>
+      <h1>Mostrador</h1>
+      <div class="rule"></div>
+      <p>tu gestión inteligente</p>
+    </div>
+  </div>
+</body>
+</html>

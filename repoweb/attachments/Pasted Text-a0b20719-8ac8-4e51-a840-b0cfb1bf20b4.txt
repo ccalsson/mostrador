@@ -1,0 +1,29 @@
+Sí, tiene sentido que los slides puedan llevar imagen. En un mercado de frutas y verduras una foto suma mucho más que solo texto.
+
+### Slides concretos para el Trial Pro (21 días)
+
+Estos se mostrarían en el slider del dashboard mientras el puesto está en trial. El objetivo es que vean resultados propios + actividad del mercado y no quieran salir cuando terminen los 21 días.
+
+| # | Contenido principal | Imagen sugerida | Texto / CTA |
+|---|---------------------|-----------------|-------------|
+| 1 | Tus resultados de hoy | Foto de tu puesto o producto estrella | “Hoy generaste **12** tickets · Llevás **47** en el trial” |
+| 2 | Demanda de tus productos | Imagen del producto más buscado | “Tus productos tuvieron **23** búsquedas hoy” |
+| 3 | Ranking del mercado | Foto genérica del mercado o ranking visual | “Estás **3°** del día · El líder lleva 19 tickets” |
+| 4 | Actividad general | Imagen de compradores / app | “**18** compradores activos ahora · **7** puestos vendiendo” |
+| 5 | Countdown del trial | Imagen de “queda tiempo” o logo | “Te quedan **12** días de trial · Seguí sumando” |
+
+### Cómo cargar las imágenes
+
+Opciones prácticas:
+
+- **Imágenes fijas por tipo de slide**: las subís vos una vez desde torre (admin) y se reutilizan.
+- **Imágenes dinámicas**: si el puesto tiene foto de perfil o fotos de productos cargadas, el sistema las usa automáticamente en los slides 1 y 2.
+- **Banner personalizado**: el puesto (o vos) puede subir una imagen promocional que aparezca en un slide extra.
+
+El slider sigue siendo liviano (altura baja, autoplay lento, se puede pausar o minimizar) para que no moleste.
+
+### Variables que alimentan todo
+
+Siguen siendo las mismas que hablamos (`tickets_today`, `searches_my_products`, `ranking_position`, `days_left_trial`, etc.). Solo se les agrega el campo `image_url` opcional por slide.
+
+¿Querés que deje los textos finales listos para copiar (versión corta de cada slide) o preferís que primero definamos de dónde salen las imágenes (torre, fotos del puesto, o ambas)?

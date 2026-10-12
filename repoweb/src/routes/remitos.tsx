@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { crearRemito, listRemitos, parseRemitoVision } from "@/lib/fn";
+import { crearRemito, listRemitos } from "@/lib/fn";
 import { listarProveedores } from "@/lib/portal-fn";
 import { dayLabel } from "@/lib/money";
 
@@ -21,11 +21,26 @@ function FacturarPage() {
   );
 }
 
+function parseRemito(text: string) {
+  const skip = /cuit|fecha|remito|total|iva|subtotal|cliente|direcci[oó]n|domicilio|tel[eé]fono/i;
+  return text
+    .split(/\n/)
+    .map((l) => l.replace(/\s+/g, " ").trim())
+    .filter((l) => l.length > 2 && !skip.test(l))
+    .map((l) => {
+      const fin = l.match(/^(.{3,}?)\s+(\d+(?:[.,]\d+)?)$/);
+      if (fin) return { descripcion: fin[1].replace(/[|$]/g, "").trim(), cantidad: fin[2].replace(",", ".") };
+      const inicio = l.match(/^(\d+(?:[.,]\d+)?)\s+(.{3,})$/);
+      if (inicio) return { descripcion: inicio[2].replace(/[|$]/g, "").trim(), cantidad: inicio[1].replace(",", ".") };
+      return { descripcion: l, cantidad: "1" };
+    })
+    .filter((l) => l.descripcion.length > 1)
+    .slice(0, 30);
+}
+
 async function leerFoto(
   file: File,
-  proveedores: { id: string; nombre: string; activo: boolean }[],
   setLineas: (v: { descripcion: string; cantidad: string }[]) => void,
-  setProveedorId: (id: string) => void,
   setFoto: (v: string) => void,
   setArchivo: (v: string) => void,
   setFuente: (v: "foto") => void,
@@ -36,39 +51,19 @@ async function leerFoto(
   setArchivo(file.name);
   setFuente("foto");
   try {
-    const imageDataUrl = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onerror = () => reject(reader.error ?? new Error("No pude leer el archivo de imagen."));
-      reader.onload = () =>
-        typeof reader.result === "string" ? resolve(reader.result) : reject(new Error("Formato de imagen inválido."));
-      reader.readAsDataURL(file);
-    });
-    const separator = imageDataUrl.indexOf(",");
-    if (separator < 0) throw new Error("Formato de imagen inválido.");
-    const lectura = await parseRemitoVision({
-      data: { imageBase64: imageDataUrl.slice(separator + 1), mimeType: file.type },
-    });
-    const parsed = lectura.lineas.map((linea) => ({
-      descripcion: linea.descripcion,
-      cantidad: String(linea.cantidad),
-    }));
-    if (lectura.proveedor) {
-      const nombreLeido = lectura.proveedor.trim().toLocaleLowerCase();
-      const proveedor = proveedores.find((actual) => actual.activo && actual.nombre.trim().toLocaleLowerCase() === nombreLeido);
-      if (proveedor) {
-        setProveedorId(proveedor.id);
-      } else {
-        toast.message("No encontré ese proveedor en el directorio. Elegilo manualmente.");
-      }
-    }
+    const { createWorker } = await import("tesseract.js");
+    const worker = await createWorker("spa");
+    const { data } = await worker.recognize(file);
+    await worker.terminate();
+    const parsed = parseRemito(data.text);
     if (parsed.length) {
       setLineas(parsed);
       toast.success(`Leí ${parsed.length} líneas. Revisalas antes de cargar.`);
     } else {
       toast.message("La foto está. No distinguí líneas: completalas abajo.");
     }
-  } catch (error) {
-    toast.error(error instanceof Error ? error.message : "No pude leer la foto. Cargá las líneas a mano.");
+  } catch {
+    toast.error("No pude leer el texto. La foto queda y cargás las líneas a mano.");
   } finally {
     setLeyendo(false);
   }
@@ -117,14 +112,14 @@ function Ingreso() {
         <input
           className="sr-only"
           type="file"
-          accept="image/jpeg,image/png,image/webp"
+          accept="image/*"
           capture="environment"
           disabled={leyendo}
           onChange={(e) => {
             const file = e.target.files?.[0];
             e.target.value = "";
             if (!file) return;
-            void leerFoto(file, activos, setLineas, setProveedorId, setFoto, setArchivo, setFuente, setLeyendo);
+            void leerFoto(file, setLineas, setFoto, setArchivo, setFuente, setLeyendo);
           }}
         />
       </label>

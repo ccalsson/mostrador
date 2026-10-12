@@ -19,7 +19,7 @@ test("tenant, plan, add-on, precio, fundador, contrato, hash, aislamiento y audi
   assert.equal(Number(plan.rows[0].monthly_price), 45000);
   assert.equal(Number(plan.rows[0].setup_price), 0);
   const base = await db.query("select setup_usd, recurring_usd from torre.saas_products where slug = 'mostrador-base'");
-  assert.equal(Number(base.rows[0].setup_usd), 975);
+  assert.equal(Number(base.rows[0].setup_usd), 1000);
   assert.equal(Number(base.rows[0].recurring_usd), 100);
   const presencia = await db.query("select recurring_usd from torre.saas_products where slug = 'mercado-presencia'");
   assert.equal(Number(presencia.rows[0].recurring_usd), 32);

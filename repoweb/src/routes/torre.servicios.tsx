@@ -43,7 +43,6 @@ function Page() {
   const [currency, setCurrency] = useState<"USD" | "ARS">("USD");
   const [quantity, setQuantity] = useState("1");
   const [notes, setNotes] = useState("");
-  const [contentRef, setContentRef] = useState("");
   const chosen = tenantId || tenants.data?.[0]?.id || "";
   const servicios = useQuery({
     queryKey: ["torre-servicios", chosen],
@@ -88,15 +87,14 @@ function Page() {
         ))}
       </ul>
       <h2 className="mt-4 font-medium">Contratar</h2>
-      <p className="mt-1 max-w-2xl text-xs text-muted">El precio de catálogo se muestra para elegir. El importe de la línea lo fija el servidor. Una sucursal extra se da de alta en Sucursales. Una comisión no es un abono.</p>
+      <p className="mt-1 max-w-2xl text-xs text-muted">El precio de catálogo se muestra para elegir. El importe de la línea lo fija el servidor. Publicidad solo habilita el espacio: el dueño publica el banner en Mostrador.</p>
       <div className="mt-2 grid max-w-xl gap-2 sm:grid-cols-2">
         <SelectField label="Moneda del contrato" value={currency} onChange={(value) => setCurrency(value === "ARS" ? "ARS" : "USD")} options={[{ value: "USD", label: "USD" }, { value: "ARS", label: "ARS" }]} />
         <Field label="Cantidad" value={quantity} onChange={setQuantity} type="number" />
         <Field label="Notas" value={notes} onChange={setNotes} />
-        <Field label="Referencia del aviso" value={contentRef} onChange={setContentRef} />
       </div>
       <ul className="mt-2 space-y-2">
-        {(products.data ?? []).filter((p) => p.status === "active").map((p) => (
+        {(products.data ?? []).filter((p) => p.status === "active" && p.kind !== "commission").map((p) => (
           <li key={p.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line bg-surface px-3 py-2 text-sm">
             <span>
               <span className="font-medium">{p.name}</span>
@@ -118,7 +116,7 @@ function Page() {
                       quantity: Number(quantity) || 1,
                       start: new Date().toISOString().slice(0, 10),
                       notes,
-                      contentRef,
+                      contentRef: "",
                     },
                   })
                     .then((res) => {

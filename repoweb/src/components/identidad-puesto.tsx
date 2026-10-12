@@ -14,17 +14,16 @@ export function IdentidadPuesto() {
   const [membrete, setMembrete] = useState("");
   const [pie, setPie] = useState("");
   const [fondo, setFondo] = useState<string | null>(null);
-  const [listo, setListo] = useState(false);
+  const [abierta, setAbierta] = useState(false);
 
   useEffect(() => {
-    if (!marca.data || listo) return;
+    if (!marca.data || !abierta) return;
     setNombre(marca.data.nombre);
     setBajada(marca.data.bajada);
     setMembrete(marca.data.membrete);
     setPie(marca.data.pieTicket);
     setFondo(marca.data.fondo);
-    setListo(true);
-  }, [marca.data, listo]);
+  }, [marca.data, abierta]);
 
   const guardar = useMutation({
     mutationFn: () => guardarMarca({ data: { nombre, bajada, membrete, pieTicket: pie, fondo } }),
@@ -39,10 +38,15 @@ export function IdentidadPuesto() {
   if (me.data?.tipo !== "staff" || me.data.staff.rol !== "admin") return null;
 
   return (
-    <section className="mb-4 max-w-3xl rounded-lg border border-line border-t-2 border-t-leaf bg-surface p-4">
+    <section className="mb-4 max-w-3xl">
+      <button type="button" className="text-sm text-leaf" onClick={() => setAbierta((v) => !v)}>
+        {abierta ? "Cerrar identidad del puesto" : "Editar identidad del puesto"}
+      </button>
+      {abierta ? (
+    <div className="mt-2 rounded-lg border border-line border-t-2 border-t-leaf bg-surface p-4">
       <h2 className="font-display text-lg font-semibold">Identidad del puesto</h2>
       <p className="mt-1 text-sm text-muted">
-        Cada puesto edita su nombre, el membrete y el fondo de la pantalla inactiva. No se comparte con otro puesto.
+        Este nombre es el de este negocio. No se mezcla con otro puesto. Otra computadora del mismo negocio entra con un usuario de este puesto. La dirección de la red no separa el negocio.
       </p>
       <form
         className="mt-3 grid gap-2 sm:grid-cols-2"
@@ -107,6 +111,8 @@ export function IdentidadPuesto() {
           </Button>
         </div>
       </form>
+    </div>
+      ) : null}
     </section>
   );
 }

@@ -4,6 +4,7 @@ import { type ReactNode } from "react";
 import { signOut } from "@/lib/auth/client";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { torreYo } from "@/lib/torre-fn";
+import { pedidosAddon } from "@/lib/torre/control-fn";
 import { cn } from "@/lib/cn";
 
 const NAV = [
@@ -20,6 +21,7 @@ const NAV = [
   { section: "Comercial", to: "/torre/finanzas", label: "Finanzas" },
   { section: "Legal", to: "/torre/legal", label: "Documentos y contratos" },
   { section: "Legal", to: "/torre/procesadores", label: "Procesadores" },
+  { section: "Operación", to: "/torre/mercado", label: "Mostrador y Mercado" },
   { section: "Auditoría", to: "/torre/auditoria", label: "Eventos" },
   { section: "Plataforma", to: "/torre/apps", label: "Aplicaciones" },
   { section: "Plataforma", to: "/torre/versiones", label: "Versiones" },
@@ -35,6 +37,13 @@ export function TorreShell({ title, children }: { title: string; children: React
     enabled: Boolean(user),
     retry: false,
   });
+  const pedidos = useQuery({
+    queryKey: ["torre-pedidos-addon"],
+    queryFn: () => pedidosAddon(),
+    enabled: Boolean(user) && !yo.isError,
+    refetchInterval: 60_000,
+  });
+  const avisos = pedidos.data?.length ?? 0;
   const path = useRouterState({ select: (s) => s.location.pathname });
 
   if (isPending || (user && yo.isPending)) {
@@ -86,6 +95,9 @@ export function TorreShell({ title, children }: { title: string; children: React
                   )}
                 >
                   {item.label}
+                  {item.to === "/torre" && avisos > 0 ? (
+                    <span className="ml-2 inline-flex min-w-5 justify-center rounded-full bg-[#e3c56a] px-1.5 text-[11px] font-medium text-[#14110e]">{avisos}</span>
+                  ) : null}
                 </Link>
               </div>
             );
@@ -94,6 +106,12 @@ export function TorreShell({ title, children }: { title: string; children: React
       </aside>
       <main className="min-w-0 px-4 py-4 sm:px-6">
         <h1 className="mb-4 font-display text-2xl font-semibold">{title}</h1>
+        {avisos > 0 && path !== "/torre" ? (
+          <p className="mb-4 rounded-md bg-warn-bg px-3 py-2 text-sm text-terra">
+            {avisos === 1 ? "Hay un add-on esperando habilitación." : `Hay ${avisos} add-ons esperando habilitación.`}{" "}
+            <Link to="/torre" className="font-medium underline">Ver en el tablero</Link>
+          </p>
+        ) : null}
         {children}
       </main>
     </div>

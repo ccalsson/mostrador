@@ -63,20 +63,20 @@
 
 html.dark {
   color-scheme: dark;
-  --color-paper: #14110e;
-  --color-paper-2: #241e18;
-  --color-surface: #1c1814;
-  --color-ink: #f3ede1;
-  --color-ink-soft: #ddd2c3;
-  --color-muted: #b3a394;
-  --color-line: #3d342c;
-  --color-leaf: #3fa36e;
-  --color-leaf-2: #0e3324;
-  --color-leaf-fg: #f4efe4;
+  --color-paper: #0e1412;
+  --color-paper-2: #151c19;
+  --color-surface: #1b2421;
+  --color-ink: #f4f7f5;
+  --color-ink-soft: #d5ddd8;
+  --color-muted: #93a099;
+  --color-line: #2c3833;
+  --color-leaf: #3ddc84;
+  --color-leaf-2: #101816;
+  --color-leaf-fg: #f4f7f5;
   --color-terra: #e17a45;
-  --color-ok: #8fd4ae;
+  --color-ok: #3ddc84;
   --color-warn-bg: #3a261e;
-  --color-ok-bg: #1a3328;
+  --color-ok-bg: #143024;
   --color-naranja: #e39245;
   --color-ambar: #e3c56a;
   --color-alerta: #e07078;

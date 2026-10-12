@@ -5,11 +5,15 @@ import {
   ClipboardList,
   FileText,
   LayoutDashboard,
+  Megaphone,
+  Package,
+  ChevronDown,
   LogOut,
   Receipt,
   Scale,
   ScrollText,
   ShoppingBag,
+  Smartphone,
   Truck,
   UserRound,
   Users,
@@ -19,24 +23,56 @@ import {
 import { type ReactNode, useEffect, useState } from "react";
 import { UserButton } from "@/lib/auth/gates";
 import { TemaBoton } from "@/components/tema-boton";
+import { PuertaLegal } from "@/components/puerta-legal";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
-import { getMarca, quienSoy } from "@/lib/fn";
+import { quienSoy } from "@/lib/fn";
 import { cn } from "@/lib/cn";
 import { ROL_LABEL, type Rol } from "@/lib/types";
 import { RedirectToSignIn } from "@/lib/auth/gates";
 
-const NAV: { to: string; label: string; icon: typeof LayoutDashboard; roles: Rol[] }[] = [
-  { to: "/dashboard", label: "Tablero", icon: LayoutDashboard, roles: ["admin"] },
-  { to: "/caja", label: "Caja", icon: ShoppingBag, roles: ["admin", "cajero"] },
-  { to: "/vendedor", label: "Puesto", icon: Scale, roles: ["admin", "vendedor"] },
-  { to: "/productos", label: "Productos", icon: Boxes, roles: ["admin"] },
-  { to: "/proveedores", label: "Proveedores", icon: Truck, roles: ["admin"] },
-  { to: "/clientes", label: "Clientes", icon: UserRound, roles: ["admin"] },
-  { to: "/remitos", label: "Remitos", icon: Receipt, roles: ["admin", "cajero"] },
-  { to: "/arca", label: "ARCA", icon: FileText, roles: ["admin", "cajero"] },
-  { to: "/usuarios", label: "Usuarios", icon: Users, roles: ["admin"] },
-  { to: "/contrato", label: "Contrato", icon: ScrollText, roles: ["admin"] },
-  { to: "/auditoria", label: "Auditoría", icon: ClipboardList, roles: ["admin"] },
+const GRUPOS: { id: string; label: string; items: { to: string; label: string; icon: typeof LayoutDashboard; roles: Rol[] }[] }[] = [
+  {
+    id: "operacion",
+    label: "Operación",
+    items: [
+      { to: "/caja", label: "Caja", icon: ShoppingBag, roles: ["admin", "cajero"] },
+      { to: "/vendedor", label: "Puesto", icon: Scale, roles: ["admin", "vendedor"] },
+      { to: "/remitos", label: "Remitos", icon: Receipt, roles: ["admin", "cajero"] },
+      { to: "/arca", label: "ARCA", icon: FileText, roles: ["admin", "cajero"] },
+    ],
+  },
+  {
+    id: "catalogo",
+    label: "Catálogo",
+    items: [
+      { to: "/productos", label: "Productos", icon: Boxes, roles: ["admin"] },
+      { to: "/proveedores", label: "Proveedores", icon: Truck, roles: ["admin"] },
+      { to: "/clientes", label: "Clientes", icon: UserRound, roles: ["admin"] },
+      { to: "/clientes-app", label: "De la app", icon: Smartphone, roles: ["admin"] },
+    ],
+  },
+  {
+    id: "admin",
+    label: "Administración",
+    items: [
+      { to: "/addons", label: "Add-ons", icon: Package, roles: ["admin"] },
+      { to: "/usuarios", label: "Usuarios", icon: Users, roles: ["admin"] },
+      { to: "/contrato", label: "Contrato", icon: ScrollText, roles: ["admin"] },
+    ],
+  },
+  {
+    id: "marketing",
+    label: "Marketing",
+    items: [{ to: "/marketing", label: "Marketing", icon: Megaphone, roles: ["admin"] }],
+  },
+  {
+    id: "informes",
+    label: "Informes",
+    items: [
+      { to: "/dashboard", label: "Tablero", icon: LayoutDashboard, roles: ["admin"] },
+      { to: "/auditoria", label: "Auditoría", icon: ClipboardList, roles: ["admin"] },
+    ],
+  },
 ];
 
 export function AppShell({ children, title }: { children: ReactNode; title?: string }) {
@@ -46,9 +82,9 @@ export function AppShell({ children, title }: { children: ReactNode; title?: str
     queryFn: () => quienSoy(),
     enabled: Boolean(user),
   });
-  const marca = useQuery({ queryKey: ["marca"], queryFn: () => getMarca(), staleTime: 60_000 });
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const [online, setOnline] = useState(true);
+  const [menu, setMenu] = useState<string | null>(null);
 
   useEffect(() => {
     const on = () => setOnline(navigator.onLine);
@@ -61,19 +97,23 @@ export function AppShell({ children, title }: { children: ReactNode; title?: str
     };
   }, []);
 
+  useEffect(() => {
+    setMenu(null);
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!menu) return;
+    const cerrar = () => setMenu(null);
+    window.addEventListener("pointerdown", cerrar);
+    return () => window.removeEventListener("pointerdown", cerrar);
+  }, [menu]);
+
   if (isPending) {
-    const fondo = marca.data?.fondo;
     return (
-      <div
-        className="grid min-h-dvh place-items-center bg-leaf-2 bg-cover bg-center text-leaf-fg"
-        style={fondo ? { backgroundImage: `linear-gradient(rgba(22,36,26,0.72), rgba(22,36,26,0.82)), url(${fondo})` } : undefined}
-      >
+      <div className="grid min-h-dvh place-items-center bg-leaf-2 text-leaf-fg">
         <div className="px-6 text-center">
-          <p className="font-display text-3xl font-semibold">{marca.data?.nombre ?? "Mostrador"}</p>
-          <p className="mt-1 text-sm text-leaf-fg/70">{marca.data?.bajada ?? "Mostrador"}</p>
-          {marca.data?.membrete ? (
-            <p className="mx-auto mt-2 max-w-sm whitespace-pre-line text-xs text-leaf-fg/60">{marca.data.membrete}</p>
-          ) : null}
+          <p className="font-display text-3xl font-semibold">Mostrador</p>
+          <p className="mt-1 text-sm text-leaf-fg/70">tu gestión inteligente</p>
         </div>
       </div>
     );
@@ -104,21 +144,20 @@ export function AppShell({ children, title }: { children: ReactNode; title?: str
   }
 
   const staff = me.data.staff;
-  const puesto = me.data.tenant;
-  const items = NAV.filter((n) => staff.rol === "admin" || n.roles.includes(staff.rol));
+  const grupos = GRUPOS.map((grupo) => ({
+    ...grupo,
+    items: grupo.items.filter((item) => staff.rol === "admin" || item.roles.includes(staff.rol)),
+  })).filter((grupo) => grupo.items.length > 0);
 
   return (
-    <div className="min-h-dvh bg-paper text-ink">
+    <div className="min-h-dvh overflow-x-hidden bg-paper text-ink">
       <header className="sticky top-0 z-30 border-b border-leaf-2 bg-leaf-2 text-leaf-fg">
         <div className="mx-auto flex max-w-[1400px] items-center gap-2 px-3 py-1.5 sm:gap-3 sm:px-5 sm:py-2">
           <Link to="/" className="min-w-0 shrink-0">
             <span className="block max-w-40 truncate font-display text-sm font-semibold leading-tight tracking-tight sm:max-w-56 sm:text-lg">
-              {puesto.nombre}
+              Mostrador
             </span>
-            <span className="block truncate text-[11px] text-ambar sm:text-xs">{puesto.bajada || "Mostrador"}</span>
-            {puesto.membrete ? (
-              <span className="block max-w-40 truncate text-[10px] text-leaf-fg/60 sm:max-w-56">{puesto.membrete.replace(/\s+/g, " ")}</span>
-            ) : null}
+            <span className="block truncate text-[11px] text-ambar sm:text-xs">tu gestión inteligente</span>
           </Link>
           <div className="relative z-10 ml-auto flex shrink-0 items-center gap-2 bg-leaf-2 pl-1">
             <span
@@ -137,24 +176,86 @@ export function AppShell({ children, title }: { children: ReactNode; title?: str
             <UserButton />
           </div>
         </div>
-        <nav className="flex w-full min-w-0 gap-1 overflow-x-auto border-t border-white/10 px-2 py-1">
-          {items.map((item) => {
-            const Icon = item.icon;
-            const active = pathname === item.to || pathname.startsWith(`${item.to}/`);
+        <nav
+          className="relative flex w-full min-w-0 flex-wrap gap-1 border-t border-white/10 px-2 py-1"
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          {grupos.map((grupo, index) => {
+            const activo = grupo.items.some((item) => pathname === item.to || pathname.startsWith(`${item.to}/`));
+            const abierto = menu === grupo.id;
+            const alBorde = index >= grupos.length - 2;
             return (
-              <Link
-                key={item.to}
-                to={item.to}
-                className={cn(
-                  "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-[10px] px-2.5 text-xs sm:text-sm",
-                  active ? "bg-terra text-white" : "text-leaf-fg/80",
-                )}
-              >
-                <Icon className="size-4" />
-                {item.label}
-              </Link>
+              <div key={grupo.id} className="relative">
+                <button
+                  type="button"
+                  aria-expanded={abierto}
+                  className={cn(
+                    "inline-flex h-9 items-center gap-1 rounded-[10px] px-2.5 text-xs sm:text-sm",
+                    activo || abierto ? "bg-terra text-white" : "text-leaf-fg/80",
+                  )}
+                  onClick={() => setMenu(abierto ? null : grupo.id)}
+                >
+                  {grupo.label}
+                  <ChevronDown className={cn("size-3.5", abierto && "rotate-180")} />
+                </button>
+                {abierto ? (
+                  <div
+                    className={cn(
+                      "absolute top-full z-40 mt-1 hidden min-w-44 rounded-lg border border-line bg-surface py-1 text-ink shadow-lg sm:block",
+                      alBorde ? "right-0" : "left-0",
+                    )}
+                  >
+                    {grupo.items.map((item) => {
+                      const Icon = item.icon;
+                      const marcado = pathname === item.to || pathname.startsWith(`${item.to}/`);
+                      return (
+                        <Link
+                          key={item.to}
+                          to={item.to}
+                          className={cn(
+                            "flex h-10 items-center gap-2 px-3 text-sm",
+                            marcado ? "bg-leaf/10 font-medium text-leaf" : "text-ink",
+                          )}
+                          onClick={() => setMenu(null)}
+                        >
+                          <Icon className="size-4" />
+                          {item.label}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </div>
             );
           })}
+          {menu ? (
+            <div className="basis-full sm:hidden">
+              {grupos
+                .filter((grupo) => grupo.id === menu)
+                .map((grupo) => (
+                  <div key={grupo.id} className="mt-1 overflow-hidden rounded-lg border border-line bg-surface py-1 text-ink">
+                    {grupo.items.map((item) => {
+                      const Icon = item.icon;
+                      const marcado = pathname === item.to || pathname.startsWith(`${item.to}/`);
+                      return (
+                        <Link
+                          key={item.to}
+                          to={item.to}
+                          className={cn(
+                            "flex h-10 items-center gap-2 px-3 text-sm",
+                            marcado ? "bg-leaf/10 font-medium text-leaf" : "text-ink",
+                          )}
+                          onClick={() => setMenu(null)}
+                        >
+                          <Icon className="size-4" />
+                          {item.label}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                ))}
+            </div>
+          ) : null}
         </nav>
       </header>
       <main className="mx-auto max-w-[1400px] px-3 py-3 sm:px-5 sm:py-6">
@@ -164,7 +265,7 @@ export function AppShell({ children, title }: { children: ReactNode; title?: str
             {title}
           </h1>
         ) : null}
-        {children}
+        <PuertaLegal modo="mostrador">{children}</PuertaLegal>
       </main>
       <a
         href="/login"

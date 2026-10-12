@@ -1,0 +1,8 @@
+Abrí esta carpeta en Android Studio y dale Run. Es otra app, no la de Mercado.
+
+En la primera pantalla, Servidor es la web publicada, sin barra al final.
+Ejemplo: https://tu-app.grok.me
+
+Entrá con el correo que ya abre la Torre en la web. El teléfono habla con /api/torre/v1. No abre la base.
+
+Activá Escuchar. El teléfono queda en segundo plano y avisa cuando un puesto pide un add-on o cuando hay algo para resolver. Tocá el aviso y habilitá desde la lista. Si cerrás la app a la fuerza, la escucha se corta: volvé a abrirla.

@@ -60,7 +60,7 @@ insert into torre.saas_products (
     'prod_base', 'Mostrador Base', 'mostrador-base',
     'Dueño, cajero, vendedor, stock, caja, reportes, auditoría y 1 sucursal.',
     'base_product', 'app_mostrador', 'recurring', 'monthly',
-    975, 100, null, 'puesto', '{"includedBranches":1,"family":"mostrador"}'::jsonb
+    1000, 100, null, 'puesto', '{"includedBranches":1,"family":"mostrador"}'::jsonb
   ),
   (
     'prod_sucursal', 'Sucursal extra', 'sucursal-extra',

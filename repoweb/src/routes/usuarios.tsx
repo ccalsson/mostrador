@@ -6,7 +6,7 @@ import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { createUsuario, listUsuarios, quienSoy, toggleUsuario } from "@/lib/fn";
+import { cambiarClaveUsuario, createUsuario, listUsuarios, quienSoy, toggleUsuario } from "@/lib/fn";
 import { ROL_LABEL, type Rol } from "@/lib/types";
 
 export const Route = createFileRoute("/usuarios")({ component: UsuariosPage });
@@ -16,13 +16,22 @@ function UsuariosPage() {
   const users = useQuery({ queryKey: ["usuarios"], queryFn: () => listUsuarios() });
   const yo = useQuery({ queryKey: ["quien"], queryFn: () => quienSoy() });
   const miId = yo.data?.tipo === "staff" ? yo.data.staff.id : null;
-  const [form, setForm] = useState({ nombre: "", email: "", password: "roman2026", rol: "vendedor" as Rol });
+  const [form, setForm] = useState({ nombre: "", email: "", password: "", rol: "vendedor" as Rol });
+  const [clave, setClave] = useState<{ id: string; password: string } | null>(null);
   const crear = useMutation({
     mutationFn: () => createUsuario({ data: form }),
     onSuccess: () => {
       toast.success("Usuario creado");
-      setForm({ nombre: "", email: "", password: "roman2026", rol: "vendedor" });
+      setForm({ nombre: "", email: "", password: "", rol: "vendedor" });
       void qc.invalidateQueries({ queryKey: ["usuarios"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const claveNueva = useMutation({
+    mutationFn: (input: { id: string; password: string }) => cambiarClaveUsuario({ data: input }),
+    onSuccess: () => {
+      toast.success("Contraseña actualizada");
+      setClave(null);
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -59,6 +68,20 @@ function UsuariosPage() {
                 <Badge tone={u.activo ? "ok" : "muted"}>{u.activo ? "Activo" : "Baja"}</Badge>
               </div>
               <div className="text-right md:px-2 md:py-1.5">
+                {clave?.id === u.id ? (
+                  <form
+                    className="flex items-center justify-end gap-1"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      claveNueva.mutate(clave);
+                    }}
+                  >
+                    <Input className="h-9 w-28" type="password" autoComplete="new-password" value={clave.password} onChange={(e) => setClave({ id: u.id, password: e.target.value })} required minLength={8} />
+                    <Button size="sm" type="submit" disabled={claveNueva.isPending}>Guardar</Button>
+                  </form>
+                ) : (
+                  <Button variant="secondary" size="sm" onClick={() => setClave({ id: u.id, password: "" })}>Contraseña</Button>
+                )}
                 {u.id === miId ? (
                   <span className="px-1 text-xs text-muted">Tu cuenta</span>
                 ) : (
@@ -96,7 +119,7 @@ function UsuariosPage() {
           </label>
           <label className="mt-3 block text-sm font-medium">
             Contraseña
-            <Input className="mt-1" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required />
+            <Input className="mt-1" type="password" autoComplete="new-password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required minLength={8} />
           </label>
           <label className="mt-3 block text-sm font-medium">
             Rol

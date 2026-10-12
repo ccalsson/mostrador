@@ -1,4 +1,5 @@
 import { createMiddleware, createServerFn } from "@tanstack/react-start";
+import { hashPassword } from "better-auth/crypto";
 import { auditar } from "@/lib/torre/audit";
 import { transicionSuscripcion } from "@/lib/torre/comercial";
 import { aplicarPagoALinea } from "@/lib/torre/reglas";
@@ -498,6 +499,8 @@ export const saveTenant = createServerFn({ method: "POST" })
     planId: string;
     installedVersion: string;
     operationalTenantRef: string;
+    ownerEmail?: string;
+    ownerPassword?: string;
   }) => input)
   .handler(async ({ context, data }) => {
     const email = await requireTorre(context.userId);
@@ -508,23 +511,57 @@ export const saveTenant = createServerFn({ method: "POST" })
     const sql = await getSql();
     const id = data.id || newId("ten");
     const plan = data.planId || null;
+    let operationalRef = data.operationalTenantRef.trim() || null;
     if (data.id) {
       await sql`
         update torre.saas_tenants set
           app_id = ${data.appId}, client_id = ${data.clientId}, name = ${data.name.trim()},
           slug = ${data.slug.trim()}, status = ${data.status}, plan_id = ${plan},
           installed_version = ${data.installedVersion.trim() || null},
-          operational_tenant_ref = ${data.operationalTenantRef.trim() || null},
+          operational_tenant_ref = ${operationalRef},
           updated_at = now()
         where id = ${data.id}
       `;
     } else {
+      const ownerEmail = (data.ownerEmail ?? "").trim().toLowerCase();
+      const ownerPassword = data.ownerPassword ?? "";
+      if (!ownerEmail.includes("@") || ownerPassword.length < 8) {
+        throw new Error("El dueño entra con un mail y una contraseña de al menos 8 caracteres.");
+      }
+      const taken = await sql<{ id: string }>`select id from "user" where lower(email) = ${ownerEmail} limit 1`;
+      if (taken[0]) throw new Error("Ese mail ya tiene cuenta.");
+      const puestoId = newId("ten");
+      const userId = newId("usr").replace("usr_", "");
+      const now = new Date().toISOString();
+      const hash = await hashPassword(ownerPassword);
+      await sql`
+        insert into tenants (id, nombre, config)
+        values (${puestoId}, ${data.name.trim()}, ${JSON.stringify({})}::jsonb)
+      `;
+      await sql`
+        insert into ticket_seq (tenant_id, ultimo)
+        values (${puestoId}, ${0})
+        on conflict (tenant_id) do nothing
+      `;
+      await sql`
+        insert into "user" (id, name, email, "emailVerified", "createdAt", "updatedAt")
+        values (${userId}, ${data.name.trim()}, ${ownerEmail}, ${true}, ${now}::timestamptz, ${now}::timestamptz)
+      `;
+      await sql`
+        insert into account (id, "accountId", "providerId", "userId", password, "createdAt", "updatedAt")
+        values (${newId("acc").replace("acc_", "")}, ${ownerEmail}, ${"credential"}, ${userId}, ${hash}, ${now}::timestamptz, ${now}::timestamptz)
+      `;
+      await sql`
+        insert into staff (id, tenant_id, user_id, nombre, email, rol, activo)
+        values (${newId("stf")}, ${puestoId}, ${userId}, ${data.name.trim()}, ${ownerEmail}, ${"admin"}, ${true})
+      `;
+      operationalRef = puestoId;
       await sql`
         insert into torre.saas_tenants (
           id, app_id, client_id, name, slug, status, plan_id, installed_version, operational_tenant_ref
         ) values (
           ${id}, ${data.appId}, ${data.clientId}, ${data.name.trim()}, ${data.slug.trim()}, ${data.status},
-          ${plan}, ${data.installedVersion.trim() || null}, ${data.operationalTenantRef.trim() || null}
+          ${plan}, ${data.installedVersion.trim() || null}, ${operationalRef}
         )
       `;
     }
@@ -662,9 +699,12 @@ export const listPayments = createServerFn({ method: "GET" })
       notes: string;
       kind: string;
       currency: string;
+      medio: string | null;
+      comprobante_nombre: string | null;
     }>`
       select p.id, p.client_id, c.name as client_name, p.subscription_id, p.amount,
-             p.payment_date, p.concept, p.status, p.notes, p.kind, p.currency
+             p.payment_date, p.concept, p.status, p.notes, p.kind, p.currency,
+             p.medio, p.comprobante_nombre
       from torre.saas_payments p
       join torre.saas_clients c on c.id = p.client_id
       order by p.payment_date desc
@@ -681,6 +721,8 @@ export const listPayments = createServerFn({ method: "GET" })
       notes: r.notes,
       kind: r.kind,
       currency: r.currency,
+      medio: r.medio,
+      comprobanteNombre: r.comprobante_nombre,
     }));
   });
 

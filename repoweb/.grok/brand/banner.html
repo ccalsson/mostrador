@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<style>
+@font-face {
+  font-family: "Fraunces";
+  src: url("file:///workspace/.grok/fonts/Fraunces.ttf") format("truetype");
+  font-weight: 600;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("file:///workspace/.grok/fonts/IBMPlexSans-500.ttf") format("truetype");
+  font-weight: 500;
+  font-style: normal;
+  font-display: block;
+}
+* { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  width: 1200px;
+  height: 264px;
+  overflow: hidden;
+  background: #F3EDE1;
+}
+.stage { position: relative; width: 1200px; height: 264px; }
+.bg {
+  position: absolute;
+  inset: 0;
+  width: 1200px;
+  height: 264px;
+  object-fit: cover;
+  object-position: center;
+}
+.lockup {
+  position: absolute;
+  left: 36px;
+  top: 22px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: #F3EDE1;
+  border: 2px solid #B5471A;
+  border-radius: 16px;
+  padding: 12px 22px 14px 14px;
+}
+.mark { width: 52px; height: 52px; display: block; flex: none; }
+.words { display: flex; flex-direction: column; align-items: flex-start; }
+h1 {
+  font-family: "Fraunces", serif;
+  font-weight: 600;
+  font-size: 48px;
+  line-height: 0.9;
+  letter-spacing: -0.03em;
+  color: #1B5E3B;
+  margin: 0;
+  padding: 0;
+  white-space: nowrap;
+}
+.rule {
+  width: 48px;
+  height: 3px;
+  margin-top: 7px;
+  background: #B5471A;
+  border-radius: 2px;
+}
+p {
+  font-family: "IBM Plex Sans", sans-serif;
+  font-weight: 500;
+  font-size: 18px;
+  line-height: 1;
+  color: #1B5E3B;
+  margin: 7px 0 0;
+  letter-spacing: 0.005em;
+  white-space: nowrap;
+}
+</style>
+</head>
+<body>
+  <div class="stage">
+    <img class="bg" alt="" src="file:///workspace/artifacts/imagine_images/2d7375c2-2eea-405e-9d0f-ba61bd1aa749.jpg">
+    <div class="lockup">
+      <svg class="mark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" aria-hidden="true">
+        <rect width="32" height="32" rx="6" fill="#1B5E3B"/>
+        <path fill="#F3EDE1" d="M5 22V6h6l5 8 5-8h6v16h-6V16l-5 7-5-7v6H5z"/>
+        <path fill="#B5471A" d="M5 22h6v4H5zm16 0h6v4h-6z"/>
+      </svg>
+      <div class="words">
+        <h1>Mostrador</h1>
+        <div class="rule"></div>
+        <p>tu gestión inteligente</p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

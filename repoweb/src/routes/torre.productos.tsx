@@ -6,7 +6,8 @@ import { Field, SelectField, TorreShell } from "@/components/torre-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { listApps } from "@/lib/torre-fn";
-import { listProducts, saveProduct } from "@/lib/torre/control-fn";
+import { listProducts, saveProduct, leerMedioPago } from "@/lib/torre/control-fn";
+import { textoArs } from "@/lib/torre/reglas";
 
 export const Route = createFileRoute("/torre/productos")({ component: Page });
 
@@ -51,12 +52,16 @@ const FREC = [
   { value: "yearly", label: "Anual" },
 ];
 
-function catalogo(p: { setupUsd: number | null; setupArs: number | null; recurringUsd: number | null; recurringArs: number | null; onceUsd: number | null; onceArs: number | null }) {
-  const partes = [
-    p.setupUsd == null && p.setupArs == null ? "" : `impl. ${[p.setupUsd == null ? "" : `USD ${p.setupUsd}`, p.setupArs == null ? "" : `ARS ${p.setupArs}`].filter(Boolean).join(" / ")}`,
-    p.recurringUsd == null && p.recurringArs == null ? "" : `abono ${[p.recurringUsd == null ? "" : `USD ${p.recurringUsd}`, p.recurringArs == null ? "" : `ARS ${p.recurringArs}`].filter(Boolean).join(" / ")}`,
-    p.onceUsd == null && p.onceArs == null ? "" : `único ${[p.onceUsd == null ? "" : `USD ${p.onceUsd}`, p.onceArs == null ? "" : `ARS ${p.onceArs}`].filter(Boolean).join(" / ")}`,
-  ].filter(Boolean);
+function catalogo(
+  p: { setupUsd: number | null; recurringUsd: number | null; onceUsd: number | null },
+  venta: number | null,
+) {
+  const par = (titulo: string, usd: number | null) => {
+    if (usd == null) return "";
+    const pesos = textoArs(usd, venta);
+    return `${titulo} USD ${usd}${pesos ? ` · ${pesos}` : ""}`;
+  };
+  const partes = [par("impl.", p.setupUsd), par("abono", p.recurringUsd), par("único", p.onceUsd)].filter(Boolean);
   return partes.join(" · ") || "sin precio";
 }
 
@@ -72,6 +77,8 @@ function pista(configJson: string) {
 function Page() {
   const qc = useQueryClient();
   const lista = useQuery({ queryKey: ["torre-productos"], queryFn: () => listProducts() });
+  const cambio = useQuery({ queryKey: ["torre-medio"], queryFn: () => leerMedioPago() });
+  const venta = cambio.data?.dolar?.venta ?? null;
   const apps = useQuery({ queryKey: ["torre-apps"], queryFn: () => listApps() });
   const [sel, setSel] = useState<string | "nuevo" | null>(null);
   const actual = sel && sel !== "nuevo" ? (lista.data ?? []).find((p) => p.id === sel) : null;
@@ -97,7 +104,11 @@ function Page() {
     : VACIO;
   return (
     <TorreShell title="Productos">
-      <p className="mb-3 text-sm text-muted">Catálogo comercial. Cambiar un precio no reescribe contratos ya firmados.</p>
+      <p className="mb-3 text-sm text-muted">
+        Catálogo en dólares. El peso sale del mismo oficial que ve el mostrador
+        {cambio.data?.dolar ? ` (${cambio.data.dolar.source} ${cambio.data.dolar.venta}).` : ". Sin cotización, no se convierte."}
+        {" "}Cambiar un precio no reescribe contratos ya firmados.
+      </p>
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <div>
           <Button size="sm" onClick={() => setSel("nuevo")}>Nuevo</Button>
@@ -110,7 +121,7 @@ function Page() {
                     <span className="text-xs text-muted">{TIPOS.find((t) => t.value === p.kind)?.label ?? p.kind} · {p.slug}{pista(p.configJson) ? ` · ${pista(p.configJson)}` : ""}</span>
                   </span>
                   <span className="text-right text-xs">
-                    <span className="block">{catalogo(p)}</span>
+                    <span className="block">{catalogo(p, venta)}</span>
                     <Badge tone={p.status === "active" ? "ok" : "muted"}>{p.status}</Badge>
                   </span>
                 </button>

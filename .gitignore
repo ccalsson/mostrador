@@ -46,6 +46,7 @@ app/screenshots/
 repoweb/screenshots/
 repoweb/spa.traineddata
 app/artifacts/
+repoweb/.tanstack/
 
 # --- Flutter / Dart ---
 **/.dart_tool/

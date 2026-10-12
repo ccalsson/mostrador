@@ -7,7 +7,7 @@ import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { crearPedido, createCliente, listClientes, listPedidos, listProductos, marcarEntregado } from "@/lib/fn";
+import { calificarCompradorMercado, crearPedido, createCliente, listClientes, listPedidos, listProductos, marcarEntregado } from "@/lib/fn";
 import { enqueuePedido, readQueue, removeQueued } from "@/lib/offline-queue";
 import { money } from "@/lib/money";
 import { cn } from "@/lib/cn";
@@ -378,6 +378,22 @@ function VendedorPage() {
                   <Copy className="size-3.5" />
                   Duplicar
                 </Button>
+                <span className="flex gap-1">
+                  {[1, 2, 3, 4, 5].map((estrella) => (
+                    <button
+                      key={estrella}
+                      type="button"
+                      className="h-8 w-8 rounded-md border border-line text-xs"
+                      onClick={() => {
+                        void calificarCompradorMercado({ data: { pedidoId: p.id, estrellas: estrella, comentario: "" } })
+                          .then(() => toast.success("Calificaste al comprador"))
+                          .catch((e: Error) => toast.error(e.message));
+                      }}
+                    >
+                      {estrella}
+                    </button>
+                  ))}
+                </span>
               </div>
             </li>
           ))}

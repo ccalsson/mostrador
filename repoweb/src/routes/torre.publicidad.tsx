@@ -27,7 +27,7 @@ function Page() {
   const catalogo = (productos.data ?? []).filter((p) => p.kind === "advertising" || p.kind === "messaging");
   return (
     <TorreShell title="Publicidad">
-      <p className="mb-3 text-sm text-muted">Torre administra el contrato. Mercado al Toque es quien muestra el aviso. El catálogo sale del servidor y se contrata desde Servicios.</p>
+      <p className="mb-3 text-sm text-muted">Torre habilita el add-on y el espacio. El dueño escribe el banner en Mostrador. Acá no se arma el aviso ni se manda un push.</p>
       <h2 className="mb-2 font-medium">Catálogo publicitario</h2>
       <ul className="mb-4 divide-y divide-line overflow-hidden rounded-lg border border-line bg-surface text-sm">
         {catalogo.map((p) => (

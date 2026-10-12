@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { Field, SelectField, TorreShell } from "@/components/torre-shell";
 import { Button } from "@/components/ui/button";
 import { listApps, listClients, listExpenses, listPayments, listSubscriptions, saveExpense, savePayment } from "@/lib/torre-fn";
-import { listLineas, listProducts } from "@/lib/torre/control-fn";
+import { listLineas } from "@/lib/torre/control-fn";
 
 export const Route = createFileRoute("/torre/finanzas")({ component: Page });
 
@@ -27,28 +27,11 @@ function Page() {
   const subs = useQuery({ queryKey: ["torre-subs"], queryFn: () => listSubscriptions() });
   const apps = useQuery({ queryKey: ["torre-apps"], queryFn: () => listApps() });
   const lineas = useQuery({ queryKey: ["torre-lineas"], queryFn: () => listLineas() });
-  const productos = useQuery({ queryKey: ["torre-productos"], queryFn: () => listProducts() });
-  const comisiones = (productos.data ?? []).filter((p) => p.kind === "commission");
   const [pago, setPago] = useState(false);
   const [gasto, setGasto] = useState(false);
   const hoy = new Date().toISOString().slice(0, 10);
   return (
     <TorreShell title="Finanzas">
-      <section className="mb-4">
-        <h2 className="font-medium">Comisiones de catálogo</h2>
-        <p className="mt-1 max-w-2xl text-xs text-muted">Torre muestra la condición cargada. No calcula un importe de comisión ni cobra solo.</p>
-        <ul className="mt-2 divide-y divide-line overflow-hidden rounded-lg border border-line bg-surface text-sm">
-          {comisiones.map((p) => (
-            <li key={p.id} className="px-3 py-2">
-              <span className="font-medium">{p.name}</span>
-              <span className="ml-2 text-xs text-muted">{p.slug} · {p.status} · {p.billing}</span>
-              <p className="text-xs text-muted">{p.description}</p>
-              <p className="break-all font-mono text-[11px] text-muted">{p.configJson}</p>
-            </li>
-          ))}
-          {comisiones.length === 0 ? <li className="px-3 py-3 text-muted">No hay un producto de comisión en el catálogo.</li> : null}
-        </ul>
-      </section>
       <div className="grid items-start gap-4 lg:grid-cols-2">
         <section>
           <div className="mb-2 flex items-center justify-between">
@@ -75,7 +58,7 @@ function Page() {
               <li key={p.id} className="flex items-center justify-between px-3 py-2">
                 <span>
                   <span className="block font-medium">{p.concept}</span>
-                  <span className="text-xs text-muted">{p.clientName} · {p.paymentDate}</span>
+                  <span className="text-xs text-muted">{p.clientName} · {p.paymentDate}{p.notes ? ` · ${p.notes}` : ""}{p.comprobanteNombre ? ` · ${p.comprobanteNombre}` : ""}</span>
                 </span>
                 <span>
                   <span className="block tabular-nums">{p.currency} {p.amount}</span>

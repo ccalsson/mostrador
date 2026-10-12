@@ -92,6 +92,7 @@ export type Pedido = {
   updatedAt: string;
   formaPago?: FormaPago | null;
   comprobanteNombre?: string | null;
+  origen?: string | null;
   retiro?: { changarin: string; retiradoEn: string } | null;
 };
 

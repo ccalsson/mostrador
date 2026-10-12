@@ -1,9 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+import { toast } from "sonner";
 import { TorreShell } from "@/components/torre-shell";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { dashboardTorre, listPlans } from "@/lib/torre-fn";
-import { listAudit, resumenComercial } from "@/lib/torre/control-fn";
+import { comprobantePago, habilitarPedidoAddon, listAudit, pedidosAddon, resumenComercial } from "@/lib/torre/control-fn";
 
 export const Route = createFileRoute("/torre/")({ component: TorreHome });
 
@@ -14,6 +17,10 @@ function TorreHome() {
   const comercial = useQuery({ queryKey: ["torre-comercial"], queryFn: () => resumenComercial() });
   const auditoria = useQuery({ queryKey: ["torre-audit"], queryFn: () => listAudit() });
   const planes = useQuery({ queryKey: ["torre-planes"], queryFn: () => listPlans() });
+  const pedidos = useQuery({ queryKey: ["torre-pedidos-addon"], queryFn: () => pedidosAddon() });
+  const qc = useQueryClient();
+  const [ocupado, setOcupado] = useState<string | null>(null);
+  const [comprobante, setComprobante] = useState<{ nombre: string; data: string } | null>(null);
   const d = data.data;
   const c = comercial.data;
   const mrr = c ? Object.entries(c.mrr).map(([moneda, valor]) => `${moneda} ${valor}`).join(" · ") || "0" : "…";
@@ -22,6 +29,63 @@ function TorreHome() {
   return (
     <TorreShell title="Tablero">
       {data.error ? <p className="text-sm text-terra">{(data.error as Error).message}</p> : null}
+      <section className="mb-4 rounded-lg border border-line bg-surface p-3">
+        <h2 className="font-medium">Pedidos para habilitar</h2>
+        <p className="mt-1 text-sm text-muted">El dueño del puesto contrata. El servicio no se prende hasta que lo habilités acá. El cobro sigue pendiente.</p>
+        {(pedidos.data ?? []).length === 0 ? <p className="mt-2 text-sm text-muted">No hay pedidos nuevos.</p> : null}
+        <ul className="mt-2 space-y-2">
+          {(pedidos.data ?? []).map((pedido) => (
+            <li key={pedido.id} className="rounded-md bg-warn-bg px-3 py-2 text-sm">
+              <p className="font-medium">{pedido.tenant} pidió {pedido.product}</p>
+              <p className="text-muted">
+                {pedido.currency} {pedido.amount}
+                {pedido.medio === "cuenta" ? " · a cargo en cuenta" : " · transferencia"}
+                {pedido.comprobanteNombre ? ` · ${pedido.comprobanteNombre}` : ""}
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {pedido.tieneComprobante ? (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => {
+                      void comprobantePago({ data: pedido.id })
+                        .then((archivo) => setComprobante(archivo))
+                        .catch((err: Error) => toast.error(err.message));
+                    }}
+                  >
+                    Ver comprobante
+                  </Button>
+                ) : null}
+                <Button
+                  size="sm"
+                  disabled={ocupado === pedido.id}
+                  onClick={() => {
+                    setOcupado(pedido.id);
+                    void habilitarPedidoAddon({ data: pedido.id })
+                      .then(async () => {
+                        toast.success("Add-on habilitado");
+                        await qc.invalidateQueries({ queryKey: ["torre-pedidos-addon"] });
+                        await qc.invalidateQueries({ queryKey: ["torre-comercial"] });
+                      })
+                      .catch((err: Error) => toast.error(err.message))
+                      .finally(() => setOcupado(null));
+                  }}
+                >
+                  Habilitar
+                </Button>
+              </div>
+            </li>
+          ))}
+        </ul>
+        {comprobante?.data.startsWith("data:image/") ? (
+          <img src={comprobante.data} alt={comprobante.nombre} className="mt-3 max-h-80 rounded-md border border-line" />
+        ) : null}
+        {comprobante && !comprobante.data.startsWith("data:image/") ? (
+          <a className="mt-3 inline-block text-sm text-leaf" href={comprobante.data} download={comprobante.nombre}>
+            Bajar {comprobante.nombre}
+          </a>
+        ) : null}
+      </section>
       <div className="grid grid-cols-2 gap-2 lg:grid-cols-3">
         <Kpi label="Aplicaciones activas" value={String(d?.apps ?? 0)} />
         <Kpi label="Clientes activos" value={String(d?.clients ?? 0)} />

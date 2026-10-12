@@ -490,6 +490,15 @@ function CobroPanel({
         <p className="mt-1 text-xs text-muted">
           El cliente eligió {PAGO_LABEL[pedido.formaPago]}.
           {pedido.formaPago === "transferencia" ? " Mirá el comprobante y confirmá." : " Confirmá el pago en el puesto."}
+          {pedido.origen === "mercado_al_toque" && pedido.formaPago === "transferencia"
+            ? " Al cobrar o al empezar a preparar, el cliente puede elegir el cargador."
+            : ""}
+          {pedido.origen === "mercado_al_toque" && pedido.formaPago === "cuenta_corriente"
+            ? " La cuenta ya habilita el cargador. El cargo se anota al cobrar."
+            : ""}
+          {pedido.origen === "mercado_al_toque" && pedido.formaPago === "efectivo"
+            ? " Al cobrar o al empezar a preparar, el cliente puede elegir el cargador."
+            : ""}
         </p>
       ) : null}
       {pedido.formaPago === "transferencia" && pedido.comprobanteNombre ? (

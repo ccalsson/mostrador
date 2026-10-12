@@ -8,6 +8,7 @@ import {
   incluidasPorBase,
   marcarIncluidas,
   precioSnapshot,
+  pesosDeDolar,
   releaseVisible,
   sumarPeriodo,
   totalMensual,
@@ -32,6 +33,9 @@ test("el mensual no cambia si cambia el catálogo: usa el precio guardado", () =
     1540,
   );
   assert.equal(contratado.unit, 100);
+  assert.equal(pesosDeDolar(50, 1000), 52500);
+  assert.equal(pesosDeDolar(13, 1475), 20200);
+  assert.throws(() => pesosDeDolar(50, 0), /dólar/);
   const despues = totalMensual([
     { status: "active", frequency: "monthly", charge: "recurring", currency: "USD", subtotal: 100 },
     { status: "active", frequency: "monthly", charge: "recurring", currency: "USD", subtotal: 25 },

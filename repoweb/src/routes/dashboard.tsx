@@ -2,13 +2,12 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Bar, BarChart, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Package, Receipt, ShoppingBag, Timer } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { ClimaDolar } from "@/components/clima-dolar";
 import { IdentidadPuesto } from "@/components/identidad-puesto";
 import { StockBoard } from "@/components/stock-board";
-import { canalMercado, dashboardResumen, listAlertas, marcarAlertaLeida, rankingCargadores } from "@/lib/fn";
-import { textoImporte } from "@/lib/central/reglas";
-import { textoCondicion } from "@/lib/torre/condiciones";
+import { dashboardResumen, listAlertas, marcarAlertaLeida, rankingCargadores } from "@/lib/fn";
 import { cn } from "@/lib/cn";
 import { clock, money } from "@/lib/money";
 import { ESTADO_LABEL, PAGO_LABEL, type FormaPago, type PedidoEstado } from "@/lib/types";
@@ -51,7 +50,6 @@ function DashboardPage() {
     queryFn: () => listAlertas(),
     refetchInterval: 4000,
   });
-  const canal = useQuery({ queryKey: ["canal-mercado"], queryFn: () => canalMercado() });
   const cargadores = useQuery({ queryKey: ["ranking-cargadores"], queryFn: () => rankingCargadores() });
   const leer = useMutation({
     mutationFn: (id: string) => marcarAlertaLeida({ data: id }),
@@ -185,6 +183,22 @@ function DashboardPage() {
             </div>
           </div>
 
+          {d?.trial ? (
+            <SliderTrial trial={d.trial} />
+          ) : (
+            <SliderTablero
+              tickets={d?.tickets ?? 0}
+              deltaTickets={deltaTickets}
+              rangoLabel={rangoLabel}
+              productos={(d?.top ?? []).slice(0, 4).map((t) => ({ nombre: t.nombre, total: t.total }))}
+              enCola={d?.enCola ?? 0}
+              ventas={money(d?.ventas ?? 0)}
+              ticketPromedio={money(d?.ticketPromedio ?? 0)}
+              onVerCola={() => setVerCola(true)}
+            />
+          )}
+
+          <p className="mb-2 text-sm text-muted">Métricas clave</p>
           <div className="grid grid-cols-2 gap-2 sm:gap-3 xl:grid-cols-4">
             <Kpi
               tono="leaf"
@@ -366,7 +380,7 @@ function DashboardPage() {
           </section>
 
           <div className="mt-4 grid gap-4 md:grid-cols-2">
-            <section className="min-w-0 rounded-lg border border-line border-t-2 border-t-naranja bg-surface p-3 sm:p-4">
+            <section id="movimientos" className="min-w-0 rounded-lg border border-line border-t-2 border-t-naranja bg-surface p-3 sm:p-4">
               <h2 className="font-display text-xl font-semibold">{verCola ? "Cola ahora" : "Movimientos"}</h2>
               {!verCola ? (
                 <input
@@ -455,8 +469,7 @@ function DashboardPage() {
             </section>
           </div>
 
-          <div className="mt-4 grid items-start gap-4 lg:grid-cols-2">
-            <section className="min-w-0 rounded-lg border border-line border-t-2 border-t-ambar bg-surface p-3 sm:p-4">
+          <section className="mt-4 min-w-0 rounded-lg border border-line border-t-2 border-t-ambar bg-surface p-3 sm:p-4">
               <h2 className="font-display text-xl font-semibold">Ranking de cargadores</h2>
               <p className="mt-1 text-xs text-muted">
                 El puntaje lo calcula Mercado con entregas y la calificación del comprador. Acá se muestra, no se recalcula.
@@ -477,50 +490,6 @@ function DashboardPage() {
                 )}
               </ul>
             </section>
-
-            <section className="min-w-0 rounded-lg border border-line border-t-2 border-t-leaf bg-surface p-3 sm:p-4">
-              <h2 className="font-display text-xl font-semibold">Publicidad y servicios</h2>
-              <p className="mt-1 text-xs text-muted">
-                Los avisos y los packs vienen con el plan. Desde el puesto no se publica un aviso nuevo ni se cambia el precio.
-                Publicar el puesto y cada producto en Mercado se hace en Productos, y solo si hay Presencia o Pro.
-              </p>
-              {canal.isPending ? <p className="mt-3 text-sm text-muted">Leyendo el plan…</p> : null}
-              {canal.data ? (
-                <div className="mt-3 space-y-2 text-sm">
-                  <p>{canal.data.presencia ? `Contratado: ${canal.data.tier}.` : "Sin Presencia ni Pro activos."}</p>
-                  <p>{canal.data.cuentaCorriente ? "Cuenta corriente habilitada." : "Cuenta corriente no incluida."}</p>
-                  <p>{textoCondicion(canal.data.comision) ?? "No hay una comisión informada."}</p>
-                  {canal.data.packs.length === 0 ? <p className="text-muted">Sin packs de mensajes vigentes.</p> : null}
-                  <ul className="space-y-1">
-                    {canal.data.packs.map((pack) => (
-                      <li key={pack.product}>
-                        {pack.product}: {pack.remaining} envíos restantes de {pack.quantity}.
-                      </li>
-                    ))}
-                  </ul>
-                  {canal.data.avisos.length === 0 ? (
-                    <p className="text-muted">No hay avisos vigentes para este puesto.</p>
-                  ) : (
-                    <ul className="space-y-1">
-                      {canal.data.avisos.map((aviso) => (
-                        <li key={aviso.id}>
-                          {aviso.placement} · {aviso.startsOn} → {aviso.endsOn} · {textoImporte(aviso.currency, aviso.price)}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                  <div className="flex flex-wrap gap-3 pt-1 text-sm">
-                    <Link to="/contrato" className="font-medium text-leaf">
-                      Ver contrato
-                    </Link>
-                    <Link to="/productos" className="font-medium text-leaf">
-                      Publicar productos
-                    </Link>
-                  </div>
-                </div>
-              ) : null}
-            </section>
-          </div>
       </div>
     </AppShell>
   );
@@ -544,6 +513,256 @@ function diaCorto(iso: string) {
   if (iso.length > 10) return `${iso.slice(11, 13)}h`;
   const parts = iso.split("-");
   return parts.length === 3 ? `${parts[2]}/${parts[1]}` : iso;
+}
+
+function desplazarSlider(el: HTMLDivElement | null, n: number) {
+  const tarjeta = el?.children[n] as HTMLElement | undefined;
+  if (!el || !tarjeta) return;
+  const left = tarjeta.getBoundingClientRect().left - el.getBoundingClientRect().left + el.scrollLeft;
+  el.scrollTo({ left, behavior: "smooth" });
+}
+
+function SliderTrial({
+  trial,
+}: {
+  trial: NonNullable<Awaited<ReturnType<typeof dashboardResumen>>["trial"]>;
+}) {
+  const puesto =
+    trial.puesto == null
+      ? "Hoy todavía no cobraste."
+      : trial.puesto === 1
+        ? `Hoy vas primero, con ${trial.liderTickets} tickets.`
+        : `Estás ${trial.puesto}° del día. El líder lleva ${trial.liderTickets} tickets.`;
+  const slides = [
+    {
+      kicker: "Tus resultados",
+      titulo: `Hoy generaste ${trial.ticketsHoy} tickets`,
+      texto: `Llevás ${trial.ticketsTrial} en el trial.`,
+      imagen: trial.imagenes.resultados,
+    },
+    {
+      kicker: "Tu producto",
+      titulo: trial.producto ? `${trial.producto} es lo que más salió hoy` : "Hoy no hay un producto destacado",
+      texto: "Lo medimos por ventas, no por búsquedas.",
+      imagen: trial.imagenes.producto,
+    },
+    {
+      kicker: "El mercado",
+      titulo: puesto,
+      texto: "El puesto se arma con los cobros de hoy.",
+      imagen: trial.imagenes.ranking,
+    },
+    {
+      kicker: "Actividad",
+      titulo: `${trial.compradores} compradores con pedido hoy`,
+      texto: `${trial.puestos} puestos cobraron hoy.`,
+      imagen: trial.imagenes.actividad,
+    },
+    {
+      kicker: "Trial Pro",
+      titulo: trial.diasRestantes === 1 ? "Te queda 1 día de trial" : `Te quedan ${trial.diasRestantes} días de trial`,
+      texto: "Seguí sumando. Al terminar, Pro se contrata desde Add-ons.",
+      imagen: trial.imagenes.cuenta,
+    },
+  ];
+  const scroller = useRef<HTMLDivElement>(null);
+  const [pagina, setPagina] = useState(0);
+  const [oculto, setOculto] = useState(false);
+  const [pausa, setPausa] = useState(false);
+
+  const ir = (n: number) => {
+    desplazarSlider(scroller.current, n);
+    setPagina(n);
+  };
+
+  useEffect(() => {
+    if (oculto || pausa) return;
+    const id = window.setInterval(() => {
+      setPagina((actual) => {
+        const next = (actual + 1) % slides.length;
+        desplazarSlider(scroller.current, next);
+        return next;
+      });
+    }, 8000);
+    return () => window.clearInterval(id);
+  }, [oculto, pausa, slides.length]);
+
+  if (oculto) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOculto(false)}
+        className="mb-4 flex w-full items-center justify-between rounded-xl border border-line bg-surface px-3 py-2 text-left text-sm"
+      >
+        <span>Trial Pro · {trial.diasRestantes === 1 ? "queda 1 día" : `quedan ${trial.diasRestantes} días`}</span>
+        <span className="text-leaf">Mostrar</span>
+      </button>
+    );
+  }
+
+  return (
+    <div
+      className="mb-4"
+      onPointerEnter={() => setPausa(true)}
+      onPointerLeave={() => setPausa(false)}
+    >
+      <div className="mb-1 flex items-center justify-between text-xs text-muted">
+        <span>Trial Pro</span>
+        <button type="button" className="text-leaf" onClick={() => setOculto(true)}>
+          Minimizar
+        </button>
+      </div>
+      <div
+        ref={scroller}
+        onScroll={() => {
+          const el = scroller.current;
+          if (!el) return;
+          const ancho = el.firstElementChild?.getBoundingClientRect().width ?? el.clientWidth;
+          setPagina(Math.min(slides.length - 1, Math.max(0, Math.round(el.scrollLeft / (ancho + 12)))));
+        }}
+        className="flex snap-x snap-mandatory gap-3 overflow-x-auto scroll-smooth [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      >
+        {slides.map((slide) => (
+          <article
+            key={slide.kicker}
+            className="flex min-h-28 w-[88%] shrink-0 snap-start items-center gap-3 rounded-2xl border border-line bg-surface p-3 sm:w-[48%]"
+          >
+            <div className="min-w-0 flex-1">
+              <p className="text-xs text-leaf">{slide.kicker}</p>
+              <p className="mt-1 font-display text-lg font-semibold leading-tight">{slide.titulo}</p>
+              <p className="mt-1 text-sm text-muted">{slide.texto}</p>
+            </div>
+            {slide.imagen ? (
+              <img src={slide.imagen} alt="" className="size-16 shrink-0 rounded-xl object-cover" />
+            ) : null}
+          </article>
+        ))}
+      </div>
+      <div className="mt-2 flex justify-center gap-1.5">
+        {slides.map((slide, n) => (
+          <button
+            key={slide.kicker}
+            type="button"
+            aria-label={slide.kicker}
+            onClick={() => ir(n)}
+            className={cn("h-1.5 rounded-full", pagina === n ? "w-4 bg-leaf" : "w-1.5 bg-line")}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SliderTablero({
+  tickets,
+  deltaTickets,
+  rangoLabel,
+  productos,
+  enCola,
+  ventas,
+  ticketPromedio,
+  onVerCola,
+}: {
+  tickets: number;
+  deltaTickets: number;
+  rangoLabel: string;
+  productos: { nombre: string; total: number }[];
+  enCola: number;
+  ventas: string;
+  ticketPromedio: string;
+  onVerCola: () => void;
+}) {
+  const scroller = useRef<HTMLDivElement>(null);
+  const [pagina, setPagina] = useState(0);
+  const paginas = 4;
+
+  function alScroll() {
+    const el = scroller.current;
+    if (!el) return;
+    const ancho = el.firstElementChild?.getBoundingClientRect().width ?? el.clientWidth;
+    const hueco = 12;
+    setPagina(Math.min(paginas - 1, Math.max(0, Math.round(el.scrollLeft / (ancho + hueco)))));
+  }
+
+  function ir(n: number) {
+    desplazarSlider(scroller.current, n);
+    setPagina(n);
+  }
+
+  return (
+    <div className="mb-4">
+      <div
+        ref={scroller}
+        onScroll={alScroll}
+        className="flex snap-x snap-mandatory gap-3 overflow-x-auto scroll-smooth pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      >
+        <article className="flex min-h-44 w-[86%] shrink-0 snap-start flex-col rounded-2xl border border-line bg-surface p-4 sm:w-[46%]">
+          <span className="grid size-11 place-items-center rounded-full bg-ok-bg text-leaf">
+            <Receipt className="size-5" />
+          </span>
+          <p className="mt-4 font-display text-2xl font-semibold tracking-tight">{tickets} tickets {rangoLabel}</p>
+          <p className="mt-1 text-sm text-muted">Cobros del puesto en este período.</p>
+          {deltaTickets !== 0 ? (
+            <p className={cn("mt-2 text-sm", deltaTickets > 0 ? "text-ok" : "text-alerta")}>
+              {deltaTickets > 0 ? "↑" : "↓"} {Math.abs(deltaTickets)} vs el período anterior
+            </p>
+          ) : null}
+          <a href="#movimientos" className="mt-auto pt-3 text-sm font-medium text-leaf">
+            Ver movimientos →
+          </a>
+        </article>
+        <article className="min-h-44 w-[86%] shrink-0 snap-start rounded-2xl border border-line bg-surface p-4 sm:w-[46%]">
+          <h2 className="font-medium">Más vendidos</h2>
+          <p className="text-sm text-muted">Del período, por importe.</p>
+          {productos.length === 0 ? (
+            <p className="mt-6 text-sm text-muted">Todavía no hay ventas en este rango.</p>
+          ) : (
+            <ul className="mt-3 grid grid-cols-2 gap-2">
+              {productos.map((p) => (
+                <li key={p.nombre} className="rounded-xl border border-line bg-paper px-2 py-3 text-center">
+                  <Package className="mx-auto size-5 text-leaf" />
+                  <p className="mt-1 truncate text-sm font-medium">{p.nombre}</p>
+                  <p className="text-xs tabular-nums text-muted">{money(p.total)}</p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </article>
+        <article className="flex min-h-44 w-[86%] shrink-0 snap-start flex-col rounded-2xl border border-line bg-surface p-4 sm:w-[46%]">
+          <span className="grid size-11 place-items-center rounded-full bg-ok-bg text-leaf">
+            <Timer className="size-5" />
+          </span>
+          <p className="mt-4 font-display text-2xl font-semibold tracking-tight">{enCola} en cola</p>
+          <p className="mt-1 text-sm text-muted">Pedidos que todavía no se cobraron.</p>
+          <a
+            href="#movimientos"
+            className="mt-auto pt-3 text-sm font-medium text-leaf"
+            onClick={onVerCola}
+          >
+            Ver la cola →
+          </a>
+        </article>
+        <article className="flex min-h-44 w-[86%] shrink-0 snap-start flex-col rounded-2xl border border-line bg-surface p-4 sm:w-[46%]">
+          <span className="grid size-11 place-items-center rounded-full bg-ok-bg text-leaf">
+            <ShoppingBag className="size-5" />
+          </span>
+          <p className="mt-4 font-display text-2xl font-semibold tracking-tight">{ventas}</p>
+          <p className="mt-1 text-sm text-muted">Ventas de {rangoLabel}. Ticket promedio {ticketPromedio}.</p>
+        </article>
+      </div>
+      <div className="mt-2 flex justify-center gap-1.5">
+        {Array.from({ length: paginas }, (_, n) => (
+          <button
+            key={n}
+            type="button"
+            aria-label={`Tarjeta ${n + 1}`}
+            onClick={() => ir(n)}
+            className={cn("h-1.5 rounded-full", pagina === n ? "w-4 bg-leaf" : "w-1.5 bg-line")}
+          />
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function elegirDesdeChart(state: { activeLabel?: unknown } | null, elegirDia: (dia: string) => void) {

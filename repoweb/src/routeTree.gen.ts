@@ -10,14 +10,17 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AddonsRouteImport } from './routes/addons'
 import { Route as ArcaRouteImport } from './routes/arca'
 import { Route as AuditoriaRouteImport } from './routes/auditoria'
 import { Route as CajaRouteImport } from './routes/caja'
 import { Route as CierreRouteImport } from './routes/cierre'
 import { Route as ClientesRouteImport } from './routes/clientes'
+import { Route as ClientesAppRouteImport } from './routes/clientes-app'
 import { Route as ContratoRouteImport } from './routes/contrato'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as MarketingRouteImport } from './routes/marketing'
 import { Route as MercadoRouteImport } from './routes/mercado'
 import { Route as PortalRouteImport } from './routes/portal'
 import { Route as ProductosRouteImport } from './routes/productos'
@@ -40,6 +43,7 @@ import { Route as TorreDeploymentsRouteImport } from './routes/torre.deployments
 import { Route as TorreFinanzasRouteImport } from './routes/torre.finanzas'
 import { Route as TorreLegalRouteImport } from './routes/torre.legal'
 import { Route as TorreLoginRouteImport } from './routes/torre.login'
+import { Route as TorreMercadoRouteImport } from './routes/torre.mercado'
 import { Route as TorrePlanesRouteImport } from './routes/torre.planes'
 import { Route as TorreProcesadoresRouteImport } from './routes/torre.procesadores'
 import { Route as TorreProductosRouteImport } from './routes/torre.productos'
@@ -53,11 +57,17 @@ import { Route as TorreVersionesRouteImport } from './routes/torre.versiones'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiCentralV1SplatRouteImport } from './routes/api/central/v1/$'
 import { Route as ApiMercadoV1SplatRouteImport } from './routes/api/mercado/v1/$'
+import { Route as ApiTorreV1SplatRouteImport } from './routes/api/torre/v1/$'
 import { Route as ApiReleasesAppPlatformManifestRouteImport } from './routes/api/releases/$app/$platform/manifest'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AddonsRoute = AddonsRouteImport.update({
+  id: '/addons',
+  path: '/addons',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ArcaRoute = ArcaRouteImport.update({
@@ -85,6 +95,11 @@ const ClientesRoute = ClientesRouteImport.update({
   path: '/clientes',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ClientesAppRoute = ClientesAppRouteImport.update({
+  id: '/clientes-app',
+  path: '/clientes-app',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ContratoRoute = ContratoRouteImport.update({
   id: '/contrato',
   path: '/contrato',
@@ -98,6 +113,11 @@ const DashboardRoute = DashboardRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MarketingRoute = MarketingRouteImport.update({
+  id: '/marketing',
+  path: '/marketing',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MercadoRoute = MercadoRouteImport.update({
@@ -210,6 +230,11 @@ const TorreLoginRoute = TorreLoginRouteImport.update({
   path: '/login',
   getParentRoute: () => TorreRoute,
 } as any)
+const TorreMercadoRoute = TorreMercadoRouteImport.update({
+  id: '/mercado',
+  path: '/mercado',
+  getParentRoute: () => TorreRoute,
+} as any)
 const TorrePlanesRoute = TorrePlanesRouteImport.update({
   id: '/planes',
   path: '/planes',
@@ -275,6 +300,11 @@ const ApiMercadoV1SplatRoute = ApiMercadoV1SplatRouteImport.update({
   path: '/api/mercado/v1/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiTorreV1SplatRoute = ApiTorreV1SplatRouteImport.update({
+  id: '/api/torre/v1/$',
+  path: '/api/torre/v1/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiReleasesAppPlatformManifestRoute =
   ApiReleasesAppPlatformManifestRouteImport.update({
     id: '/api/releases/$app/$platform/manifest',
@@ -284,14 +314,17 @@ const ApiReleasesAppPlatformManifestRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/addons': typeof AddonsRoute
   '/arca': typeof ArcaRoute
   '/auditoria': typeof AuditoriaRoute
   '/caja': typeof CajaRoute
   '/cierre': typeof CierreRoute
   '/clientes': typeof ClientesRoute
+  '/clientes-app': typeof ClientesAppRoute
   '/contrato': typeof ContratoRoute
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
+  '/marketing': typeof MarketingRoute
   '/mercado': typeof MercadoRoute
   '/portal': typeof PortalRoute
   '/productos': typeof ProductosRoute
@@ -313,6 +346,7 @@ export interface FileRoutesByFullPath {
   '/torre/finanzas': typeof TorreFinanzasRoute
   '/torre/legal': typeof TorreLegalRoute
   '/torre/login': typeof TorreLoginRoute
+  '/torre/mercado': typeof TorreMercadoRoute
   '/torre/planes': typeof TorrePlanesRoute
   '/torre/procesadores': typeof TorreProcesadoresRoute
   '/torre/productos': typeof TorreProductosRoute
@@ -327,18 +361,22 @@ export interface FileRoutesByFullPath {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/central/v1/$': typeof ApiCentralV1SplatRoute
   '/api/mercado/v1/$': typeof ApiMercadoV1SplatRoute
+  '/api/torre/v1/$': typeof ApiTorreV1SplatRoute
   '/api/releases/$app/$platform/manifest': typeof ApiReleasesAppPlatformManifestRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/addons': typeof AddonsRoute
   '/arca': typeof ArcaRoute
   '/auditoria': typeof AuditoriaRoute
   '/caja': typeof CajaRoute
   '/cierre': typeof CierreRoute
   '/clientes': typeof ClientesRoute
+  '/clientes-app': typeof ClientesAppRoute
   '/contrato': typeof ContratoRoute
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
+  '/marketing': typeof MarketingRoute
   '/mercado': typeof MercadoRoute
   '/portal': typeof PortalRoute
   '/productos': typeof ProductosRoute
@@ -359,6 +397,7 @@ export interface FileRoutesByTo {
   '/torre/finanzas': typeof TorreFinanzasRoute
   '/torre/legal': typeof TorreLegalRoute
   '/torre/login': typeof TorreLoginRoute
+  '/torre/mercado': typeof TorreMercadoRoute
   '/torre/planes': typeof TorrePlanesRoute
   '/torre/procesadores': typeof TorreProcesadoresRoute
   '/torre/productos': typeof TorreProductosRoute
@@ -373,19 +412,23 @@ export interface FileRoutesByTo {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/central/v1/$': typeof ApiCentralV1SplatRoute
   '/api/mercado/v1/$': typeof ApiMercadoV1SplatRoute
+  '/api/torre/v1/$': typeof ApiTorreV1SplatRoute
   '/api/releases/$app/$platform/manifest': typeof ApiReleasesAppPlatformManifestRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/addons': typeof AddonsRoute
   '/arca': typeof ArcaRoute
   '/auditoria': typeof AuditoriaRoute
   '/caja': typeof CajaRoute
   '/cierre': typeof CierreRoute
   '/clientes': typeof ClientesRoute
+  '/clientes-app': typeof ClientesAppRoute
   '/contrato': typeof ContratoRoute
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
+  '/marketing': typeof MarketingRoute
   '/mercado': typeof MercadoRoute
   '/portal': typeof PortalRoute
   '/productos': typeof ProductosRoute
@@ -407,6 +450,7 @@ export interface FileRoutesById {
   '/torre/finanzas': typeof TorreFinanzasRoute
   '/torre/legal': typeof TorreLegalRoute
   '/torre/login': typeof TorreLoginRoute
+  '/torre/mercado': typeof TorreMercadoRoute
   '/torre/planes': typeof TorrePlanesRoute
   '/torre/procesadores': typeof TorreProcesadoresRoute
   '/torre/productos': typeof TorreProductosRoute
@@ -421,20 +465,24 @@ export interface FileRoutesById {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/central/v1/$': typeof ApiCentralV1SplatRoute
   '/api/mercado/v1/$': typeof ApiMercadoV1SplatRoute
+  '/api/torre/v1/$': typeof ApiTorreV1SplatRoute
   '/api/releases/$app/$platform/manifest': typeof ApiReleasesAppPlatformManifestRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/addons'
     | '/arca'
     | '/auditoria'
     | '/caja'
     | '/cierre'
     | '/clientes'
+    | '/clientes-app'
     | '/contrato'
     | '/dashboard'
     | '/login'
+    | '/marketing'
     | '/mercado'
     | '/portal'
     | '/productos'
@@ -456,6 +504,7 @@ export interface FileRouteTypes {
     | '/torre/finanzas'
     | '/torre/legal'
     | '/torre/login'
+    | '/torre/mercado'
     | '/torre/planes'
     | '/torre/procesadores'
     | '/torre/productos'
@@ -470,18 +519,22 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/api/central/v1/$'
     | '/api/mercado/v1/$'
+    | '/api/torre/v1/$'
     | '/api/releases/$app/$platform/manifest'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/addons'
     | '/arca'
     | '/auditoria'
     | '/caja'
     | '/cierre'
     | '/clientes'
+    | '/clientes-app'
     | '/contrato'
     | '/dashboard'
     | '/login'
+    | '/marketing'
     | '/mercado'
     | '/portal'
     | '/productos'
@@ -502,6 +555,7 @@ export interface FileRouteTypes {
     | '/torre/finanzas'
     | '/torre/legal'
     | '/torre/login'
+    | '/torre/mercado'
     | '/torre/planes'
     | '/torre/procesadores'
     | '/torre/productos'
@@ -516,18 +570,22 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/api/central/v1/$'
     | '/api/mercado/v1/$'
+    | '/api/torre/v1/$'
     | '/api/releases/$app/$platform/manifest'
   id:
     | '__root__'
     | '/'
+    | '/addons'
     | '/arca'
     | '/auditoria'
     | '/caja'
     | '/cierre'
     | '/clientes'
+    | '/clientes-app'
     | '/contrato'
     | '/dashboard'
     | '/login'
+    | '/marketing'
     | '/mercado'
     | '/portal'
     | '/productos'
@@ -549,6 +607,7 @@ export interface FileRouteTypes {
     | '/torre/finanzas'
     | '/torre/legal'
     | '/torre/login'
+    | '/torre/mercado'
     | '/torre/planes'
     | '/torre/procesadores'
     | '/torre/productos'
@@ -563,19 +622,23 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/api/central/v1/$'
     | '/api/mercado/v1/$'
+    | '/api/torre/v1/$'
     | '/api/releases/$app/$platform/manifest'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AddonsRoute: typeof AddonsRoute
   ArcaRoute: typeof ArcaRoute
   AuditoriaRoute: typeof AuditoriaRoute
   CajaRoute: typeof CajaRoute
   CierreRoute: typeof CierreRoute
   ClientesRoute: typeof ClientesRoute
+  ClientesAppRoute: typeof ClientesAppRoute
   ContratoRoute: typeof ContratoRoute
   DashboardRoute: typeof DashboardRoute
   LoginRoute: typeof LoginRoute
+  MarketingRoute: typeof MarketingRoute
   MercadoRoute: typeof MercadoRoute
   PortalRoute: typeof PortalRoute
   ProductosRoute: typeof ProductosRoute
@@ -591,6 +654,7 @@ export interface RootRouteChildren {
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiCentralV1SplatRoute: typeof ApiCentralV1SplatRoute
   ApiMercadoV1SplatRoute: typeof ApiMercadoV1SplatRoute
+  ApiTorreV1SplatRoute: typeof ApiTorreV1SplatRoute
   ApiReleasesAppPlatformManifestRoute: typeof ApiReleasesAppPlatformManifestRoute
 }
 
@@ -601,6 +665,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/addons': {
+      id: '/addons'
+      path: '/addons'
+      fullPath: '/addons'
+      preLoaderRoute: typeof AddonsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/arca': {
@@ -638,6 +709,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ClientesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/clientes-app': {
+      id: '/clientes-app'
+      path: '/clientes-app'
+      fullPath: '/clientes-app'
+      preLoaderRoute: typeof ClientesAppRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/contrato': {
       id: '/contrato'
       path: '/contrato'
@@ -657,6 +735,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/marketing': {
+      id: '/marketing'
+      path: '/marketing'
+      fullPath: '/marketing'
+      preLoaderRoute: typeof MarketingRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/mercado': {
@@ -813,6 +898,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TorreLoginRouteImport
       parentRoute: typeof TorreRoute
     }
+    '/torre/mercado': {
+      id: '/torre/mercado'
+      path: '/mercado'
+      fullPath: '/torre/mercado'
+      preLoaderRoute: typeof TorreMercadoRouteImport
+      parentRoute: typeof TorreRoute
+    }
     '/torre/planes': {
       id: '/torre/planes'
       path: '/planes'
@@ -904,6 +996,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiMercadoV1SplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/torre/v1/$': {
+      id: '/api/torre/v1/$'
+      path: '/api/torre/v1/$'
+      fullPath: '/api/torre/v1/$'
+      preLoaderRoute: typeof ApiTorreV1SplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/releases/$app/$platform/manifest': {
       id: '/api/releases/$app/$platform/manifest'
       path: '/api/releases/$app/$platform/manifest'
@@ -934,6 +1033,7 @@ interface TorreRouteChildren {
   TorreFinanzasRoute: typeof TorreFinanzasRoute
   TorreLegalRoute: typeof TorreLegalRoute
   TorreLoginRoute: typeof TorreLoginRoute
+  TorreMercadoRoute: typeof TorreMercadoRoute
   TorrePlanesRoute: typeof TorrePlanesRoute
   TorreProcesadoresRoute: typeof TorreProcesadoresRoute
   TorreProductosRoute: typeof TorreProductosRoute
@@ -956,6 +1056,7 @@ const TorreRouteChildren: TorreRouteChildren = {
   TorreFinanzasRoute: TorreFinanzasRoute,
   TorreLegalRoute: TorreLegalRoute,
   TorreLoginRoute: TorreLoginRoute,
+  TorreMercadoRoute: TorreMercadoRoute,
   TorrePlanesRoute: TorrePlanesRoute,
   TorreProcesadoresRoute: TorreProcesadoresRoute,
   TorreProductosRoute: TorreProductosRoute,
@@ -973,14 +1074,17 @@ const TorreRouteWithChildren = TorreRoute._addFileChildren(TorreRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AddonsRoute: AddonsRoute,
   ArcaRoute: ArcaRoute,
   AuditoriaRoute: AuditoriaRoute,
   CajaRoute: CajaRoute,
   CierreRoute: CierreRoute,
   ClientesRoute: ClientesRoute,
+  ClientesAppRoute: ClientesAppRoute,
   ContratoRoute: ContratoRoute,
   DashboardRoute: DashboardRoute,
   LoginRoute: LoginRoute,
+  MarketingRoute: MarketingRoute,
   MercadoRoute: MercadoRoute,
   PortalRoute: PortalRoute,
   ProductosRoute: ProductosRoute,
@@ -996,6 +1100,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiCentralV1SplatRoute: ApiCentralV1SplatRoute,
   ApiMercadoV1SplatRoute: ApiMercadoV1SplatRoute,
+  ApiTorreV1SplatRoute: ApiTorreV1SplatRoute,
   ApiReleasesAppPlatformManifestRoute: ApiReleasesAppPlatformManifestRoute,
 }
 export const routeTree = rootRouteImport

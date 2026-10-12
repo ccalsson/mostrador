@@ -1,0 +1,10 @@
+Abrí esta carpeta en Android Studio y dale Run.
+
+El servidor ya está fijo en la app: https://mostrador.grok.me
+El cliente no lo ve ni lo escribe. Comprador y cargador usan la misma dirección.
+
+El teléfono habla con /api/mercado/v1 de esa web. No abre la base.
+
+Google entra en el teléfono: Continuar con Google abre la cuenta de Google y vuelve a la app.
+Eso usa la web publicada. Hay que publicar la web una vez para que el botón encuentre la entrada.
+El resto —comprador, cargador, pagar, comprobante, pedidos y calificaciones— es el mismo circuito.

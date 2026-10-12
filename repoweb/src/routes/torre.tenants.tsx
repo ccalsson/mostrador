@@ -19,6 +19,8 @@ const VACIO = {
   planId: "",
   installedVersion: "",
   operationalTenantRef: "",
+  ownerEmail: "",
+  ownerPassword: "",
 };
 
 function Page() {
@@ -44,6 +46,8 @@ function Page() {
         planId: actual.planId,
         installedVersion: actual.installedVersion,
         operationalTenantRef: actual.operationalTenantRef,
+        ownerEmail: "",
+        ownerPassword: "",
       }
     : { ...VACIO, appId: apps.data?.[0]?.id ?? "", clientId: clientes.data?.[0]?.id ?? "" };
 
@@ -139,7 +143,18 @@ function Forma({
       <SelectField label="Estado" value={form.status} onChange={(status) => setForm({ ...form, status })} options={[{ value: "active", label: "Activo" }, { value: "inactive", label: "Inactivo" }]} />
       <Field label="Versión instalada" value={form.installedVersion} onChange={(installedVersion) => setForm({ ...form, installedVersion })} />
       <Field label="Referencia operativa" value={form.operationalTenantRef} onChange={(operationalTenantRef) => setForm({ ...form, operationalTenantRef })} />
-      <p className="mt-1 text-xs text-muted">Solo texto. No es una clave hacia las tablas del puesto.</p>
+      {!onOff ? (
+        <>
+          <Field label="Mail del dueño" value={form.ownerEmail} onChange={(ownerEmail) => setForm({ ...form, ownerEmail })} />
+          <label className="mt-2 block text-xs text-muted">
+            Contraseña del dueño
+            <Input className="mt-1" type="password" autoComplete="new-password" value={form.ownerPassword} onChange={(e) => setForm({ ...form, ownerPassword: e.target.value })} required minLength={8} />
+          </label>
+          <p className="mt-1 text-xs text-muted">Con ese mail entra a Mostrador. Después, en Usuarios, crea al vendedor y al cajero.</p>
+        </>
+      ) : (
+        <p className="mt-1 text-xs text-muted">La contraseña del puesto la cambia el dueño, no Torre.</p>
+      )}
       <Button type="submit" className="mt-3 w-full" disabled={busy}>Guardar</Button>
       {onOff ? (
         <Button type="button" variant="secondary" className="mt-2 w-full" onClick={() => void onOff().catch((err: Error) => toast.error(err.message))}>

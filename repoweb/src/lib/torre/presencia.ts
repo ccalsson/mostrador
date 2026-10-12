@@ -1,4 +1,5 @@
 import { getSql } from "@/lib/db";
+import { TENANT_ID } from "@/lib/catalog";
 import { num } from "@/lib/money";
 import {
   apareceEnMercado,
@@ -7,6 +8,7 @@ import {
   tierContratado,
   type LineaMercado,
 } from "@/lib/torre/condiciones";
+import { armarBanner, leerBanners, type PlantillaId } from "@/lib/mercado/plantillas";
 
 function configText(value: unknown, key: string) {
   let record = value;
@@ -22,7 +24,14 @@ function configText(value: unknown, key: string) {
   return typeof raw === "string" ? raw : null;
 }
 
+export function invalidarLineas() {
+  lineasCache = null;
+}
+
+let lineasCache: { at: number; mapa: Map<string, LineaMercado[]> } | null = null;
+
 export async function lineasPorPuesto() {
+  if (lineasCache && Date.now() - lineasCache.at < 20_000) return lineasCache.mapa;
   const sql = await getSql();
   const rows = await sql<{
     ref: string;
@@ -48,7 +57,99 @@ export async function lineasPorPuesto() {
     });
     mapa.set(row.ref, lista);
   }
+  lineasCache = { at: Date.now(), mapa };
   return mapa;
+}
+
+export async function sincronizarPresenciaPublicada() {
+  const sql = await getSql();
+  const faltan = await sql<{ tenant_id: string; subscription_id: string }>`
+    select t.id as tenant_id, s.id as subscription_id
+    from tenants t
+    join torre.saas_tenants st on st.operational_tenant_ref = t.id and st.status = 'active'
+    join torre.saas_subscriptions s on s.tenant_id = st.id and s.status = 'active'
+    where coalesce(t.config, '{}'::jsonb)->>'mercadoAlToque' = 'true'
+      and not exists (
+        select 1
+        from torre.saas_subscription_lines l
+        join torre.saas_products p on p.id = l.product_id
+        where l.subscription_id = s.id
+          and l.status = 'active'
+          and coalesce(p.config, '{}'::jsonb)->>'family' = 'mercado'
+          and coalesce(p.config, '{}'::jsonb)->>'tier' in ('presencia', 'pro')
+      )
+  `;
+  if (faltan.length === 0) return;
+  const precio = await sql<{ recurring_usd: unknown }>`
+    select recurring_usd from torre.saas_products where id = 'prod_presencia' limit 1
+  `;
+  const unit = num(precio[0]?.recurring_usd);
+  if (!(unit > 0)) return;
+  const hoy = new Date().toISOString().slice(0, 10);
+  for (const row of faltan) {
+    await sql`
+      insert into torre.saas_subscription_lines (
+        id, subscription_id, product_id, quantity, unit_price, currency, frequency, charge, subtotal, starts_on, status, notes
+      ) values (
+        ${`lin_presencia_${row.tenant_id}`}, ${row.subscription_id}, ${"prod_presencia"}, ${1}, ${unit}, ${"USD"},
+        ${"monthly"}, ${"recurring"}, ${unit}, ${hoy}::date, ${"active"}, ${"Presencia mínima"}
+      )
+      on conflict (id) do update
+        set status = 'active', subscription_id = excluded.subscription_id, unit_price = excluded.unit_price, subtotal = excluded.subtotal
+    `;
+  }
+  invalidarLineas();
+}
+
+/** El puesto de prueba tiene que poder habilitar cuenta corriente. Pro la incluye; Presencia no. */
+async function asegurarProDePrueba(operationalTenantId: string) {
+  if (operationalTenantId !== TENANT_ID) return;
+  const sql = await getSql();
+  const tenants = await sql<{ subscription_id: string }>`
+    select s.id as subscription_id
+    from torre.saas_tenants t
+    join torre.saas_subscriptions s on s.tenant_id = t.id and s.status = 'active'
+    where t.operational_tenant_ref = ${operationalTenantId} and t.status = 'active'
+    limit 1
+  `;
+  const subscriptionId = tenants[0]?.subscription_id;
+  if (!subscriptionId) return;
+  const ya = await sql<{ id: string }>`
+    select l.id
+    from torre.saas_subscription_lines l
+    join torre.saas_products p on p.id = l.product_id
+    where l.subscription_id = ${subscriptionId}
+      and l.status = 'active'
+      and coalesce(p.config, '{}'::jsonb)->>'tier' = 'pro'
+    limit 1
+  `;
+  if (ya[0]) return;
+  const precio = await sql<{ recurring_usd: unknown }>`
+    select recurring_usd from torre.saas_products where id = 'prod_pro' limit 1
+  `;
+  const unit = num(precio[0]?.recurring_usd);
+  if (!(unit > 0)) return;
+  const hoy = new Date().toISOString().slice(0, 10);
+  await sql`
+    update torre.saas_subscription_lines l
+    set status = 'ended', updated_at = now()
+    from torre.saas_products p
+    where l.product_id = p.id
+      and l.subscription_id = ${subscriptionId}
+      and l.status = 'active'
+      and coalesce(p.config, '{}'::jsonb)->>'tier' = 'presencia'
+  `;
+  await sql`
+    insert into torre.saas_subscription_lines (
+      id, subscription_id, product_id, quantity, unit_price, currency, frequency, charge, subtotal, starts_on, status, notes
+    ) values (
+      ${`lin_pro_${operationalTenantId}`}, ${subscriptionId}, ${"prod_pro"}, ${1}, ${unit}, ${"USD"},
+      ${"monthly"}, ${"recurring"}, ${unit}, ${hoy}::date, ${"active"}, ${"Pro de prueba"}
+    )
+    on conflict (id) do update
+      set status = 'active', subscription_id = excluded.subscription_id, unit_price = excluded.unit_price, subtotal = excluded.subtotal
+  `;
+  invalidarLineas();
 }
 
 export async function tierDePuesto(operationalTenantId: string) {
@@ -127,6 +228,50 @@ export async function avisosDe(operationalTenantId?: string) {
   }));
 }
 
+export async function bannersPublicados() {
+  const avisos = await avisosDe();
+  if (avisos.length === 0) return [];
+  const sql = await getSql();
+  const tenants = [...new Set(avisos.map((aviso) => aviso.tenantId))];
+  const configs = await sql<{ id: string; config: unknown }>`
+    select id, config from tenants where id = any(${tenants}::text[])
+  `;
+  const porTenant = new Map(configs.map((row) => [row.id, leerBanners(row.config)]));
+  const elegidos = avisos.flatMap((aviso) => {
+    const banner = porTenant.get(aviso.tenantId)?.find((item) => item.adId === aviso.id);
+    return banner ? [{ aviso, banner }] : [];
+  });
+  const productos = [...new Set(elegidos.flatMap((item) => (item.banner.productoId ? [item.banner.productoId] : [])))];
+  const fichas = productos.length
+    ? await sql<{ id: string; nombre: string; unidad_label: string; precio: unknown }>`
+        select id, nombre, unidad_label, precio
+        from productos
+        where id = any(${productos}::text[]) and activo = true and publicado_online = true
+      `
+    : [];
+  const porProducto = new Map(fichas.map((row) => [row.id, row]));
+  return elegidos.flatMap(({ aviso, banner }) => {
+    const producto = banner.productoId ? porProducto.get(banner.productoId) : undefined;
+    const texto = armarBanner({
+      plantilla: banner.plantilla,
+      puesto: aviso.tenantNombre,
+      producto: producto ? { nombre: producto.nombre, unidadLabel: producto.unidad_label } : null,
+      frase: banner.frase,
+    });
+    if (!texto) return [];
+    return [{
+      id: aviso.id,
+      tenantNombre: aviso.tenantNombre,
+      plantilla: banner.plantilla as PlantillaId,
+      titulo: texto.titulo,
+      detalle: texto.detalle,
+      precio: banner.plantilla === "precio" && producto ? num(producto.precio) : null,
+      unidadLabel: producto?.unidad_label ?? null,
+      endsOn: aviso.endsOn,
+    }];
+  });
+}
+
 export async function packsDe(operationalTenantId: string) {
   const sql = await getSql();
   const rows = await sql<{ name: string; quantity: number; consumed: number; status: string }>`
@@ -146,6 +291,7 @@ export async function packsDe(operationalTenantId: string) {
 }
 
 export async function condicionOperativa(operationalTenantId: string) {
+  if (operationalTenantId) await asegurarProDePrueba(operationalTenantId);
   const tier = operationalTenantId ? await tierDePuesto(operationalTenantId) : null;
   const [comision, packs, avisos] = operationalTenantId
     ? await Promise.all([comisionDePuesto(operationalTenantId), packsDe(operationalTenantId), avisosDe(operationalTenantId)])

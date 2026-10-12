@@ -80,6 +80,7 @@ function ClientesPage() {
                     </span>
                   </span>
                   <Badge tone={c.activo ? "ok" : "muted"}>{c.activo ? "Activo" : "Baja"}</Badge>
+                  {c.userId ? <Badge tone="muted">App</Badge> : null}
                 </button>
                 <Button
                   variant={c.activo ? "danger" : "secondary"}

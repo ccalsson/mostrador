@@ -9,28 +9,15 @@ import {
   TENANT_PIE,
 } from "@/lib/catalog";
 import { getSql } from "@/lib/db";
+import { sincronizarPresenciaPublicada } from "@/lib/torre/presencia";
 import { newId, slugId } from "@/lib/ids";
 import { num } from "@/lib/money";
-import type { Staff } from "@/lib/types";
+import type { Rol, Staff } from "@/lib/types";
 import { loadStaffByUserId } from "./context";
 
 const g = globalThis as typeof globalThis & {
   __mostradorBoot__?: Promise<void>;
 };
-
-/** Cuenta autenticada sin acceso al mostrador (cliente, dada de baja o sin alta). */
-export class SinAccesoError extends Error {
-  readonly status = 403;
-  constructor(message: string) {
-    super(message);
-    this.name = "SinAccesoError";
-  }
-}
-
-/** El seed/demo sólo corre en DEV con SEED_DEMO=true. */
-function seedDemoEnabled(): boolean {
-  return (process.env.SEED_DEMO ?? "").trim().toLowerCase() === "true";
-}
 
 async function seedAuthUser(email: string, password: string, name: string) {
   const sql = await getSql();
@@ -82,9 +69,8 @@ async function seedCore() {
     on conflict (tenant_id) do nothing
   `;
 
-  if (!seedDemoEnabled()) return;
-
   await asegurarCatalogo(sql);
+  await sincronizarPresenciaPublicada();
 
   const cliCount = await sql<{ n: number }>`select count(*)::int as n from clientes where tenant_id = ${TENANT_ID}`;
   if (num(cliCount[0]?.n) === 0) {
@@ -213,13 +199,11 @@ async function asegurarCatalogo(sql: Awaited<ReturnType<typeof getSql>>) {
 async function asegurarCuentaDePrueba() {
   const sql = await getSql();
   const email = PRUEBA_EMAIL;
-  const config = await leerConfigTenant(sql);
-  const claveLista = config.clave12345678 === true;
   const existing = await sql<{ id: string }>`select id from "user" where lower(email) = ${email} limit 1`;
   let userId = existing[0]?.id;
   if (!userId) {
     userId = await insertCredentialUser(email, PRUEBA_PASSWORD, "Claudio Calsson");
-  } else if (!claveLista) {
+  } else {
     const hash = await hashPassword(PRUEBA_PASSWORD);
     const account = await sql<{ id: string }>`
       select id from account where "userId" = ${userId} and "providerId" = ${"credential"} limit 1
@@ -237,12 +221,11 @@ async function asegurarCuentaDePrueba() {
         )
       `;
     }
-    await sql`delete from session where "userId" = ${userId}`;
-    try {
-      await sql`delete from mercado_sesiones where user_id = ${userId}`;
-    } catch {
-      /* el canal todavía no está migrado */
-    }
+    await sql`
+      update "user"
+      set "emailVerified" = true, name = ${"Claudio Calsson"}, "updatedAt" = now()
+      where id = ${userId}
+    `;
   }
   const staff = await sql<{ id: string }>`select id from staff where user_id = ${userId} limit 1`;
   if (!staff[0]) {
@@ -250,8 +233,14 @@ async function asegurarCuentaDePrueba() {
       insert into staff (id, tenant_id, user_id, nombre, email, rol, activo)
       values (${newId("stf")}, ${TENANT_ID}, ${userId}, ${"Claudio Calsson"}, ${email}, ${"admin"}, ${true})
     `;
+  } else {
+    await sql`update staff set rol = ${"admin"}, activo = true, email = ${email} where user_id = ${userId}`;
   }
   try {
+    await sql`
+      insert into torre.saas_access (email) values (${email})
+      on conflict (email) do nothing
+    `;
     const comprador = await sql<{ id: string }>`select id from mercado_compradores where user_id = ${userId} limit 1`;
     if (!comprador[0]) {
       await sql`
@@ -268,20 +257,18 @@ async function asegurarCuentaDePrueba() {
     const cargador = await sql<{ id: string }>`select id from mercado_cargadores where user_id = ${userId} limit 1`;
     if (!cargador[0]) {
       await sql`
-        insert into mercado_cargadores (id, user_id, nombre, disponibilidad)
-        values (${newId("cg")}, ${userId}, ${"Claudio"}, ${"disponible"})
+        insert into mercado_cargadores (id, user_id, nombre, estado, disponibilidad)
+        values (${newId("cg")}, ${userId}, ${"Claudio"}, ${"activo"}, ${"disponible"})
+      `;
+    } else {
+      await sql`
+        update mercado_cargadores
+        set estado = ${"activo"}
+        where user_id = ${userId}
       `;
     }
   } catch {
     /* el canal todavía no está migrado */
-  }
-  if (!claveLista) {
-    await sql.query(
-      `update tenants
-       set config = coalesce(config, '{}'::jsonb) || '{"cuentaPruebaLista": true, "clave12345678": true}'::jsonb
-       where id = $1`,
-      [TENANT_ID],
-    );
   }
 }
 
@@ -300,6 +287,7 @@ async function provisionTorreOwner() {
       await createCredentialUser(email, password, "Claudio Calsson");
       return;
     }
+    if (email === PRUEBA_EMAIL) return;
     const hash = await hashPassword(password);
     const account = await sql<{ id: string }>`
       select id from account
@@ -365,23 +353,14 @@ export async function ensureStaffForUser(userId: string): Promise<Staff> {
   const cliente = await sql<{ id: string }>`
     select id from clientes where user_id = ${userId} limit 1
   `;
-  if (cliente[0]) throw new SinAccesoError("Esta cuenta es de un cliente.");
-  const existing = await loadStaffByUserId(userId);
-  if (existing) {
-    await sql`update staff set ultimo_login = now() where id = ${existing.id}`;
-    return existing;
-  }
-  const baja = await sql<{ activo: boolean }>`
-    select activo from staff where user_id = ${userId} limit 1
+  const users = await sql<{ email: string; name: string }>`
+    select email, name from "user" where id = ${userId} limit 1
   `;
-  if (baja[0]) {
-    throw new SinAccesoError("Tu cuenta está dada de baja. Pedile al dueño que te reactive.");
-  }
-  const users = await sql<{ email: string }>`
-    select email from "user" where id = ${userId} limit 1
-  `;
-  const emailKey = (users[0]?.email ?? "").trim().toLowerCase();
-  if (emailKey) {
+  const email = users[0]?.email ?? "";
+  const emailKey = email.trim().toLowerCase();
+  const esPrueba = emailKey === PRUEBA_EMAIL;
+  if (!esPrueba && cliente[0]) throw new Error("Esta cuenta es de un cliente.");
+  if (!esPrueba) {
     try {
       const mercado = await sql<{ id: string }>`
         select id from mercado_compradores where user_id = ${userId}
@@ -389,31 +368,58 @@ export async function ensureStaffForUser(userId: string): Promise<Staff> {
         select id from mercado_cargadores where user_id = ${userId}
         limit 1
       `;
-      if (mercado[0]) throw new SinAccesoError("Esta cuenta es de Mercado al Toque.");
+      if (mercado[0]) throw new Error("Esta cuenta es de Mercado al Toque.");
     } catch (err) {
-      if (err instanceof SinAccesoError) throw err;
+      if (err instanceof Error && err.message === "Esta cuenta es de Mercado al Toque.") throw err;
       const code = (err as { code?: string }).code;
       if (code !== "42P01" && code !== "3F000") throw err;
     }
-    try {
-      const acceso = await sql<{ email: string }>`
-        select email from torre.saas_access where lower(email) = ${emailKey} limit 1
-      `;
-      if (acceso[0]) throw new SinAccesoError("Esta cuenta no es del puesto.");
-    } catch (err) {
-      if (err instanceof SinAccesoError) throw err;
-      const code = (err as { code?: string }).code;
-      if (code !== "42P01" && code !== "3F000") throw err;
+    if (emailKey) {
+      try {
+        const acceso = await sql<{ email: string }>`
+          select email from torre.saas_access where lower(email) = ${emailKey} limit 1
+        `;
+        if (acceso[0]) throw new Error("Esta cuenta no es del puesto.");
+      } catch (err) {
+        if (err instanceof Error && err.message === "Esta cuenta no es del puesto.") throw err;
+        const code = (err as { code?: string }).code;
+        if (code !== "42P01" && code !== "3F000") throw err;
+      }
     }
   }
-  throw new SinAccesoError(
-    "Tu cuenta no tiene acceso al mostrador. Pedile al dueño que te dé de alta en Usuarios.",
-  );
+  const existing = await loadStaffByUserId(userId);
+  if (existing) {
+    await sql`update staff set ultimo_login = now() where id = ${existing.id}`;
+    return existing;
+  }
+  const demo = DEMO_USERS.find((u) => u.email === emailKey);
+  const rol: Rol = demo?.rol ?? "admin";
+  const nombre = demo?.nombre ?? users[0]?.name ?? "Dueño";
+  const id = newId("stf");
+  let tenantId = TENANT_ID;
+  if (!demo) {
+    tenantId = newId("ten");
+    await sql`
+      insert into tenants (id, nombre, config)
+      values (${tenantId}, ${"Mostrador"}, ${JSON.stringify({})}::jsonb)
+    `;
+    await sql`
+      insert into ticket_seq (tenant_id, ultimo)
+      values (${tenantId}, ${0})
+      on conflict (tenant_id) do nothing
+    `;
+  }
+  await sql`
+    insert into staff (id, tenant_id, user_id, nombre, email, rol, activo, ultimo_login)
+    values (${id}, ${tenantId}, ${userId}, ${nombre}, ${email || `${userId}@puesto.local`}, ${rol}, ${true}, now())
+  `;
+  const staff = await loadStaffByUserId(userId);
+  if (!staff) throw new Error("No se pudo dar de alta el usuario.");
+  return staff;
 }
 
 export async function seedDemoAccounts() {
   await ensureBootstrapped();
-  if (!seedDemoEnabled()) return [];
   return DEMO_USERS.map((u) => ({
     email: u.email,
     password: u.password,

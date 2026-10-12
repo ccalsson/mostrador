@@ -22,26 +22,26 @@ function leerConfig(raw: unknown): MarcaConfig {
   return {};
 }
 
-export async function getMarcaCompleta(): Promise<Marca> {
+export async function getMarcaCompleta(tenantId: string = TENANT_ID): Promise<Marca> {
   const sql = await getSql();
   const rows = await sql<{ id: string; nombre: string; config: unknown }>`
-    select id, nombre, config from tenants where id = ${TENANT_ID}
+    select id, nombre, config from tenants where id = ${tenantId}
   `;
   const row = rows[0];
   const config = leerConfig(row?.config);
   const fondo = typeof config.fondo === "string" && config.fondo.startsWith("data:image/") ? config.fondo : null;
   return {
-    id: row?.id ?? TENANT_ID,
-    nombre: row?.nombre ?? TENANT_NOMBRE,
-    bajada: config.bajada?.trim() || "Mercado Central",
+    id: row?.id ?? tenantId,
+    nombre: row?.nombre ?? (tenantId === TENANT_ID ? TENANT_NOMBRE : "Mostrador"),
+    bajada: config.bajada?.trim() || "",
     membrete: config.membrete?.trim() || "",
-    pieTicket: config.pieTicket?.trim() || TENANT_PIE,
+    pieTicket: config.pieTicket?.trim() || (tenantId === TENANT_ID ? TENANT_PIE : ""),
     fondo,
   };
 }
 
-export async function getTenant(): Promise<Tenant> {
-  const { fondo: _fondo, ...tenant } = await getMarcaCompleta();
+export async function getTenant(tenantId: string = TENANT_ID): Promise<Tenant> {
+  const { fondo: _fondo, ...tenant } = await getMarcaCompleta(tenantId);
   return tenant;
 }
 
@@ -139,13 +139,14 @@ export async function loadPedido(pedidoId: string, tenantId: string): Promise<Pe
     nota: string | null;
     forma_pago: Pedido["formaPago"];
     comprobante_nombre: string | null;
+    origen: string | null;
     created_at: string;
     updated_at: string;
     changarin: string | null;
     retirado_en: string | null;
   }>`
     select p.id, p.client_uuid, p.vendedor_id, s.nombre as vendedor_nombre,
-           p.cliente_id, p.cliente_nombre, p.estado, p.nota, p.forma_pago, p.comprobante_nombre,
+           p.cliente_id, p.cliente_nombre, p.estado, p.nota, p.forma_pago, p.comprobante_nombre, p.origen,
            p.created_at::text as created_at, p.updated_at::text as updated_at,
            g.nombre as changarin, rp.picked_up_at::text as retirado_en
     from pedidos p
@@ -171,6 +172,7 @@ export async function loadPedido(pedidoId: string, tenantId: string): Promise<Pe
     nota: p.nota,
     formaPago: p.forma_pago ?? null,
     comprobanteNombre: p.comprobante_nombre,
+    origen: p.origen,
     items,
     total,
     createdAt: p.created_at,

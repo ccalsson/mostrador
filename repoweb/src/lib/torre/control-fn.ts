@@ -10,11 +10,14 @@ import {
   incluidasPorBase,
   marcarIncluidas,
   precioSnapshot,
+  pesosDeDolar,
   totalMensual,
   cmpVer,
   type ReleaseRow,
 } from "@/lib/torre/reglas";
 import { exigirAccion } from "@/lib/torre/roles";
+import { cobroDeAddon, seOfrece } from "@/lib/torre/addon-reglas";
+import { invalidarLineas } from "@/lib/torre/presencia";
 import { getSql } from "@/lib/db";
 import { newId } from "@/lib/ids";
 import { num } from "@/lib/money";
@@ -96,6 +99,39 @@ async function fxVigente(sql: Awaited<ReturnType<typeof getSql>>) {
   const row = rows[0];
   if (!row) return null;
   return { id: row.id, source: row.source, asOf: day(row.as_of), usdArs: num(row.usd_ars) };
+}
+
+async function dolarParaCobro(sql: Awaited<ReturnType<typeof getSql>>) {
+  try {
+    const res = await fetch("https://dolarapi.com/v1/dolares/oficial", { signal: AbortSignal.timeout(4000) });
+    if (res.ok) {
+      const data = (await res.json()) as { venta?: number };
+      if (typeof data.venta === "number" && data.venta > 0) {
+        return { usdArs: data.venta, source: "oficial", id: null as string | null };
+      }
+    }
+  } catch {
+    // Si el oficial no responde, se usa el último tipo cargado en Torre.
+  }
+  const guardado = await fxVigente(sql);
+  if (!guardado || !(guardado.usdArs > 0)) return null;
+  return { usdArs: guardado.usdArs, source: guardado.source, id: guardado.id };
+}
+
+async function leerMedio(sql: Awaited<ReturnType<typeof getSql>>) {
+  const rows = await sql<{ alias: string; cbu: string }>`
+    select alias, cbu from torre.saas_medios_pago where id = 'transferencia' limit 1
+  `;
+  return { alias: rows[0]?.alias?.trim() ?? "", cbu: rows[0]?.cbu?.trim() ?? "" };
+}
+
+export async function contextoCobro() {
+  const sql = await getSql();
+  const dolar = await dolarParaCobro(sql);
+  return {
+    dolar: dolar ? { venta: dolar.usdArs, source: dolar.source } : null,
+    medio: await leerMedio(sql),
+  };
 }
 
 async function leerProducto(sql: Awaited<ReturnType<typeof getSql>>, id: string) {
@@ -339,6 +375,32 @@ export const saveFx = createServerFn({ method: "POST" })
     return { id };
   });
 
+export const leerMedioPago = createServerFn({ method: "GET" })
+  .middleware([torreGuard])
+  .handler(async ({ context }) => {
+    await requireTorre(context.userId);
+    return contextoCobro();
+  });
+
+export const guardarMedioPago = createServerFn({ method: "POST" })
+  .middleware([torreGuard])
+  .validator((input: { alias: string; cbu: string }) => input)
+  .handler(async ({ context, data }) => {
+    const email = await requireTorre(context.userId);
+    await exigirAccion(email, "comercial");
+    const alias = data.alias.trim().slice(0, 50);
+    const cbu = data.cbu.replace(/\s/g, "");
+    if (cbu && !/^\d{22}$/.test(cbu)) throw new Error("El CBU tiene 22 números.");
+    const sql = await getSql();
+    await sql`
+      insert into torre.saas_medios_pago (id, alias, cbu)
+      values ('transferencia', ${alias}, ${cbu})
+      on conflict (id) do update set alias = excluded.alias, cbu = excluded.cbu, updated_at = now()
+    `;
+    await auditar(email, "actualizar_medio_pago", "medio_pago", "transferencia", { alias, cbu: cbu ? "cargado" : "vacio" });
+    return { alias, cbu };
+  });
+
 export const listBranches = createServerFn({ method: "GET" })
   .middleware([torreGuard])
   .handler(async ({ context }) => {
@@ -531,7 +593,7 @@ type ContratarInput = {
   contentRef: string;
 };
 
-async function contratarEn(email: string, data: ContratarInput) {
+export async function contratarEn(email: string, data: ContratarInput) {
   if (!CURRENCIES.includes(data.currency)) throw new Error("Moneda inválida.");
     const sql = await getSql();
     const product = await leerProducto(sql, data.productId);
@@ -612,7 +674,7 @@ async function contratarEn(email: string, data: ContratarInput) {
         ) values (
           ${newId("ad")}, ${product.id}, ${data.tenantId}, ${lineId}, ${String(product.config.placement ?? "home")},
           ${start}::date, ${ends ?? addDays(start, 7)}::date, ${subtotal}, ${data.currency}, 'scheduled',
-          ${data.contentRef.trim()}, ${data.notes.trim()}
+          ${""}, ${data.notes.trim()}
         )
       `;
     }
@@ -644,6 +706,240 @@ async function contratarEn(email: string, data: ContratarInput) {
       adjustments: ajustes.inserted,
     };
 }
+
+const OFRECIDOS = { has: seOfrece };
+
+export async function cotizarProducto(productId: string, currency: "USD" | "ARS") {
+  if (currency !== "USD" && currency !== "ARS") throw new Error("Moneda inválida.");
+  const sql = await getSql();
+  const product = await leerProducto(sql, productId);
+  if (!product || product.status !== "active" || !OFRECIDOS.has(product.kind)) {
+    throw new Error("Ese producto no se contrata desde el puesto.");
+  }
+  const fx = await fxVigente(sql);
+  const snap = precioSnapshot(product, currency, "recurring", fx?.usdArs ?? null);
+  const once = product.billing === "once" || product.frequency === "once";
+  let setup: number | null = null;
+  if (!once && (product.setupUsd != null || product.setupArs != null)) {
+    const alta = precioSnapshot(product, currency, "setup", fx?.usdArs ?? null);
+    if (alta.unit > 0) setup = alta.unit;
+  }
+  return {
+    productId: product.id,
+    name: product.name,
+    description: product.description,
+    kind: product.kind,
+    unitLabel: product.unitLabel,
+    currency,
+    unit: snap.unit,
+    setup,
+    total: Math.round((snap.unit + (setup ?? 0)) * 100) / 100,
+    frequency: once ? "una vez" : product.frequency === "yearly" ? "por año" : "por mes",
+  };
+}
+
+export async function cotizarCobro(productId: string) {
+  const usd = await cotizarProducto(productId, "USD");
+  const cobro = await contextoCobro();
+  const dolar = cobro.dolar;
+  const ars = dolar
+    ? {
+        unit: pesosDeDolar(usd.unit, dolar.venta),
+        setup: usd.setup == null ? null : pesosDeDolar(usd.setup, dolar.venta),
+        total: pesosDeDolar(usd.total, dolar.venta),
+        venta: dolar.venta,
+        source: dolar.source,
+      }
+    : null;
+  return { ...usd, usd: { unit: usd.unit, setup: usd.setup, total: usd.total }, ars, medio: cobro.medio };
+}
+
+export async function contratarDesdePuesto(
+  email: string,
+  operationalTenantId: string,
+  productId: string,
+  medio: "transferencia" | "cuenta",
+  comprobante?: { nombre: string; data: string },
+) {
+  if (medio !== "transferencia" && medio !== "cuenta") throw new Error("El pago es transferencia o cuenta.");
+  const quote = await cotizarCobro(productId);
+  if (comprobante && comprobante.data.length > 900_000) throw new Error("El comprobante es muy pesado. Bajalo de 700 KB.");
+  const cobro = cobroDeAddon({
+    medio,
+    usd: quote.usd.total,
+    ars: quote.ars?.total ?? null,
+    comprobante: Boolean(comprobante?.data),
+  });
+  const sql = await getSql();
+  const tenants = await sql<{ id: string; client_id: string }>`
+    select id, client_id from torre.saas_tenants
+    where operational_tenant_ref = ${operationalTenantId} and status = 'active'
+    limit 1
+  `;
+  if (!tenants[0]) throw new Error("Este puesto no está dado de alta para contratar.");
+  const ya = await sql<{ id: string }>`
+    select l.id
+    from torre.saas_subscription_lines l
+    join torre.saas_subscriptions s on s.id = l.subscription_id
+    where s.tenant_id = ${tenants[0].id}
+      and l.product_id = ${productId}
+      and l.status = 'active'
+      and l.charge = 'recurring'
+    limit 1
+  `;
+  const unaVez = quote.frequency === "una vez";
+  if (ya[0] && !unaVez) throw new Error("Ese servicio ya está contratado.");
+  const pedido = await sql<{ id: string }>`
+    select id from torre.saas_payments
+    where tenant_id = ${tenants[0].id}
+      and product_id = ${productId}
+      and status = 'pending'
+      and line_id is null
+    limit 1
+  `;
+  if (pedido[0]) throw new Error("Ese pedido ya está en Torre, esperando habilitación.");
+  const payId = newId("pay");
+  const kind = quote.kind === "advertising" ? "publicidad" : quote.kind === "messaging" ? "push" : "addon";
+  const amount = cobro.amount;
+  const currency = cobro.currency;
+  const venta = medio === "transferencia" ? quote.ars!.venta : null;
+  await sql`
+    insert into torre.saas_payments (
+      id, client_id, subscription_id, amount, payment_date, concept, status, notes,
+      tenant_id, product_id, line_id, kind, currency, fx_rate, fx_rate_id,
+      medio, comprobante_nombre, comprobante_data
+    ) values (
+      ${payId}, ${tenants[0].client_id}, ${null}, ${amount},
+      ${new Date().toISOString().slice(0, 10)}::date,
+      ${quote.name}, 'pending', ${medio === "cuenta" ? "A cargo en cuenta. Aceptó precio y condiciones." : "Transferencia con comprobante. Aceptó precio y condiciones."},
+      ${tenants[0].id}, ${productId}, ${null}, ${kind}, ${currency},
+      ${venta}, ${null},
+      ${medio}, ${medio === "transferencia" ? comprobante?.nombre?.trim().slice(0, 120) || "comprobante" : null},
+      ${medio === "transferencia" ? comprobante?.data ?? null : null}
+    )
+  `;
+  await auditar(email, "pedir_addon", "payment", payId, {
+    tenantId: tenants[0].id,
+    productId,
+    medio,
+    currency,
+    amount,
+  });
+  return {
+    paymentId: payId,
+    lineId: "",
+    medio,
+    currency,
+    amount,
+    venta,
+  };
+}
+
+export const pedidosAddon = createServerFn({ method: "GET" })
+  .middleware([torreGuard])
+  .handler(async ({ context }) => {
+    await requireTorre(context.userId);
+    const sql = await getSql();
+    const rows = await sql<{
+      id: string;
+      tenant: string;
+      product: string;
+      amount: unknown;
+      currency: string;
+      medio: string | null;
+      notes: string;
+      comprobante_nombre: string | null;
+      tiene_comprobante: boolean;
+      created_at: string;
+    }>`
+      select p.id, t.name as tenant, pr.name as product, p.amount, p.currency, p.medio, p.notes,
+             p.comprobante_nombre,
+             (p.comprobante_data is not null and p.comprobante_data <> '') as tiene_comprobante,
+             p.created_at::text as created_at
+      from torre.saas_payments p
+      join torre.saas_tenants t on t.id = p.tenant_id
+      join torre.saas_products pr on pr.id = p.product_id
+      where p.status = 'pending' and p.line_id is null and p.kind in ('addon', 'publicidad', 'push')
+      order by p.created_at desc
+    `;
+    return rows.map((row) => ({
+      id: row.id,
+      tenant: row.tenant,
+      product: row.product,
+      amount: num(row.amount),
+      currency: row.currency,
+      medio: row.medio ?? "",
+      notes: row.notes,
+      comprobanteNombre: row.comprobante_nombre ?? "",
+      tieneComprobante: row.tiene_comprobante,
+      at: row.created_at,
+    }));
+  });
+
+export const comprobantePago = createServerFn({ method: "POST" })
+  .middleware([torreGuard])
+  .validator((id: string) => id)
+  .handler(async ({ context, data }) => {
+    await requireTorre(context.userId);
+    const sql = await getSql();
+    const rows = await sql<{ comprobante_nombre: string | null; comprobante_data: string | null }>`
+      select comprobante_nombre, comprobante_data
+      from torre.saas_payments
+      where id = ${data} and status = 'pending'
+      limit 1
+    `;
+    const row = rows[0];
+    if (!row?.comprobante_data?.startsWith("data:")) throw new Error("Ese pedido no tiene comprobante.");
+    return { nombre: row.comprobante_nombre ?? "comprobante", data: row.comprobante_data };
+  });
+
+export async function habilitarPedido(email: string, paymentId: string) {
+  await exigirAccion(email, "comercial");
+  const sql = await getSql();
+  const rows = await sql<{
+    id: string;
+    tenant_id: string;
+    product_id: string;
+    notes: string;
+    kind: string;
+  }>`
+    select id, tenant_id, product_id, notes, kind
+    from torre.saas_payments
+    where id = ${paymentId} and status = 'pending' and line_id is null
+      and kind in ('addon', 'publicidad', 'push')
+    limit 1
+  `;
+  const pago = rows[0];
+  if (!pago?.tenant_id || !pago.product_id) throw new Error("Ese pedido ya no está para habilitar.");
+  const creado = await contratarEn(email, {
+    tenantId: pago.tenant_id,
+    productId: pago.product_id,
+    currency: "USD",
+    quantity: 1,
+    start: new Date().toISOString().slice(0, 10),
+    notes: pago.notes,
+    contentRef: "",
+  });
+  const line = await sql<{ subscription_id: string }>`
+    select subscription_id from torre.saas_subscription_lines where id = ${creado.id} limit 1
+  `;
+  await sql`
+    update torre.saas_payments
+    set line_id = ${creado.id}, subscription_id = ${line[0]?.subscription_id ?? null}
+    where id = ${pago.id} and line_id is null
+  `;
+  await auditar(email, "habilitar_addon", "payment", pago.id, { lineId: creado.id, kind: pago.kind });
+  invalidarLineas();
+  return { lineId: creado.id };
+}
+
+export const habilitarPedidoAddon = createServerFn({ method: "POST" })
+  .middleware([torreGuard])
+  .validator((id: string) => id)
+  .handler(async ({ context, data }) => {
+    const email = await requireTorre(context.userId);
+    return habilitarPedido(email, data);
+  });
 
 export const contratarProducto = createServerFn({ method: "POST" })
   .middleware([torreGuard])

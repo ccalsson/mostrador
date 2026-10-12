@@ -101,6 +101,21 @@ export function precioSnapshot(
   return pick(product.recurringUsd, product.recurringArs);
 }
 
+/** Pesos a transferir: oficial × 1,05, para arriba al próximo $100. El redondeo puede pasar apenas el 5%. */
+export function pesosDeDolar(usd: number, venta: number) {
+  if (!(usd >= 0) || !(venta > 0)) throw new Error("No hay dólar para convertir.");
+  const conMargen = usd * venta * 1.05;
+  if (conMargen === 0) return 0;
+  return Math.ceil(conMargen / 100) * 100;
+}
+
+const arsVisible = new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 });
+
+export function textoArs(usd: number | null, venta: number | null) {
+  if (usd == null || venta == null || !(venta > 0)) return null;
+  return arsVisible.format(Math.round(pesosDeDolar(usd, venta)));
+}
+
 export type ReleaseTarget = {
   scope: string;
   tenantId: string | null;

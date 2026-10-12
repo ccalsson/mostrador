@@ -16,7 +16,7 @@ export const Route = createRootRoute({
       { title: APP_NAME },
       {
         name: "description",
-        content: "ERP para Frutas Román, el Jujeño — Mercado Central.",
+        content: "Mostrador, tu gestión inteligente.",
       },
       { name: "theme-color", content: "#1B5E3B" },
     ],

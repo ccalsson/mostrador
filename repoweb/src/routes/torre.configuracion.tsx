@@ -1,12 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { TorreShell } from "@/components/torre-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { addAccess, listAccess, removeAccess } from "@/lib/torre-fn";
-import { listFx, saveFx } from "@/lib/torre/control-fn";
+import { listFx, saveFx, leerMedioPago, guardarMedioPago } from "@/lib/torre/control-fn";
 
 export const Route = createFileRoute("/torre/configuracion")({ component: Page });
 
@@ -14,6 +14,16 @@ function Page() {
   const qc = useQueryClient();
   const lista = useQuery({ queryKey: ["torre-acceso"], queryFn: () => listAccess() });
   const cambios = useQuery({ queryKey: ["torre-fx"], queryFn: () => listFx() });
+  const medio = useQuery({ queryKey: ["torre-medio"], queryFn: () => leerMedioPago() });
+  const [alias, setAlias] = useState("");
+  const [cbu, setCbu] = useState("");
+  const [medioCargado, setMedioCargado] = useState(false);
+  useEffect(() => {
+    if (!medio.data || medioCargado) return;
+    setAlias(medio.data.medio.alias);
+    setCbu(medio.data.medio.cbu);
+    setMedioCargado(true);
+  }, [medio.data, medioCargado]);
   const [email, setEmail] = useState("");
   const [rol, setRol] = useState("soporte");
   const [fuente, setFuente] = useState("dólar oficial vendedor Banco Nación");
@@ -45,6 +55,31 @@ function Page() {
           <Input value={valor} onChange={(e) => setValor(e.target.value)} placeholder="ARS por USD" required />
           <Button type="submit">Guardar</Button>
         </form>
+      </section>
+      <section className="mb-6">
+        <h2 className="font-medium">Medios de pago</h2>
+        <p className="mt-1 text-sm text-muted">
+          {medio.data?.medio?.alias || medio.data?.medio?.cbu
+            ? `Transferencia: ${[medio.data.medio.alias ? `alias ${medio.data.medio.alias}` : "", medio.data.medio.cbu ? `CBU ${medio.data.medio.cbu}` : ""].filter(Boolean).join(" · ")}. El puesto lo ve al contratar.`
+            : "Todavía no hay alias ni CBU. Sin eso el puesto no sabe a dónde transferir."}
+        </p>
+        <form
+          className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr_auto]"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void guardarMedioPago({ data: { alias, cbu } })
+              .then(async () => {
+                toast.success("Medio de pago guardado");
+                await qc.invalidateQueries({ queryKey: ["torre-medio"] });
+              })
+              .catch((err: Error) => toast.error(err.message));
+          }}
+        >
+          <Input value={alias} onChange={(e) => setAlias(e.target.value)} placeholder="Alias" />
+          <Input value={cbu} onChange={(e) => setCbu(e.target.value)} placeholder="CBU, 22 números" inputMode="numeric" />
+          <Button type="submit">Guardar</Button>
+        </form>
+        <p className="mt-2 text-xs text-muted">La tarjeta queda para más adelante.</p>
       </section>
       <p className="mb-3 text-sm text-muted">Solo estas cuentas pueden abrir la Torre. El puesto no entra.</p>
       <form

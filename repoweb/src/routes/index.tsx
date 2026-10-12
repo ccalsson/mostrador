@@ -18,8 +18,8 @@ function Home() {
     return (
       <div className="grid min-h-dvh place-items-center bg-paper">
         <div className="text-center">
-          <p className="font-display text-3xl font-semibold">Frutas Román, el Jujeño</p>
-          <p className="mt-1 text-sm text-muted">Mostrador</p>
+          <p className="font-display text-3xl font-semibold">Mostrador</p>
+          <p className="mt-1 text-sm text-muted">tu gestión inteligente</p>
         </div>
       </div>
     );
