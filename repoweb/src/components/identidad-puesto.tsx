@@ -38,7 +38,7 @@ export function IdentidadPuesto() {
   if (me.data?.tipo !== "staff" || me.data.staff.rol !== "admin") return null;
 
   return (
-    <section className="mb-4 max-w-3xl">
+    <section className="mt-2">
       <button type="button" className="text-sm text-leaf" onClick={() => setAbierta((v) => !v)}>
         {abierta ? "Cerrar identidad del puesto" : "Editar identidad del puesto"}
       </button>

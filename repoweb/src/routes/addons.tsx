@@ -154,14 +154,14 @@ function Checkout({ producto, onVolver }: { producto: Producto; onVolver: () => 
       <div className="mt-4 grid grid-cols-2 gap-2">
         <button
           type="button"
-          className={medio === "transferencia" ? "h-11 rounded-md bg-leaf px-3 text-sm text-white" : "h-11 rounded-md border border-line px-3 text-sm"}
+          className={medio === "transferencia" ? "h-11 rounded-md bg-btn px-3 text-sm text-btn-fg" : "h-11 rounded-md border border-line px-3 text-sm"}
           onClick={() => setMedio("transferencia")}
         >
           Transferencia
         </button>
         <button
           type="button"
-          className={medio === "cuenta" ? "h-11 rounded-md bg-leaf px-3 text-sm text-white" : "h-11 rounded-md border border-line px-3 text-sm"}
+          className={medio === "cuenta" ? "h-11 rounded-md bg-btn px-3 text-sm text-btn-fg" : "h-11 rounded-md border border-line px-3 text-sm"}
           onClick={() => setMedio("cuenta")}
         >
           A cargo en cuenta

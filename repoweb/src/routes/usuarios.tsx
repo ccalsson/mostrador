@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cambiarClaveUsuario, createUsuario, listUsuarios, quienSoy, toggleUsuario } from "@/lib/fn";
+import { habilitarCambioSucursal } from "@/lib/sucursales-puesto";
 import { ROL_LABEL, type Rol } from "@/lib/types";
 
 export const Route = createFileRoute("/usuarios")({ component: UsuariosPage });
@@ -33,6 +34,11 @@ function UsuariosPage() {
       toast.success("Contraseña actualizada");
       setClave(null);
     },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const pasar = useMutation({
+    mutationFn: (input: { staffId: string; puedeCambiar: boolean }) => habilitarCambioSucursal({ data: input }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["usuarios"] }),
     onError: (e: Error) => toast.error(e.message),
   });
   const tog = useMutation({
@@ -68,6 +74,11 @@ function UsuariosPage() {
                 <Badge tone={u.activo ? "ok" : "muted"}>{u.activo ? "Activo" : "Baja"}</Badge>
               </div>
               <div className="text-right md:px-2 md:py-1.5">
+                {u.rol !== "admin" ? (
+                  <button type="button" className="mr-2 text-xs text-leaf" onClick={() => pasar.mutate({ staffId: u.id, puedeCambiar: !u.puede_cambiar })}>
+                    {u.puede_cambiar ? "Puede cambiar" : "Fijo en una"}
+                  </button>
+                ) : null}
                 {clave?.id === u.id ? (
                   <form
                     className="flex items-center justify-end gap-1"

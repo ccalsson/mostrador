@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Mercado al Toque</string>
+    <string name="turnstile_site_key"></string>
 </resources>

@@ -21,7 +21,7 @@ export function AppErrorComponent({ error }: ErrorComponentProps) {
       </p>
       <button
         type="button"
-        className="mt-1 h-11 rounded-md bg-leaf px-4 text-sm font-medium text-leaf-fg"
+        className="mt-1 h-11 rounded-md bg-btn px-4 text-sm font-medium text-btn-fg"
         onClick={() => window.location.reload()}
       >
         Recargar

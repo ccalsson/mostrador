@@ -153,7 +153,7 @@ export function StockBoard() {
   }
 
   return (
-    <section className="mt-4 rounded-lg border border-line border-t-2 border-t-leaf bg-surface p-3 sm:p-4">
+    <section className="rounded-lg border border-line border-t-2 border-t-leaf bg-surface p-3 sm:p-4">
       <div className="flex flex-wrap items-center gap-2">
         <div className="min-w-0">
           <h2 className="font-display text-xl font-semibold">Stock</h2>
@@ -221,11 +221,11 @@ export function StockBoard() {
         </form>
       ) : null}
 
-      <div className="mt-3 max-h-72 overflow-auto">
+      <div className="mt-3 max-h-[min(68vh,40rem)] min-h-[22rem] overflow-auto">
         {celdas.length === 0 ? (
           <p className="py-6 text-sm text-muted">No hay productos para mostrar.</p>
         ) : (
-          <ul className="grid grid-cols-[repeat(auto-fill,minmax(6.5rem,1fr))] gap-1.5">
+          <ul className="grid grid-cols-[repeat(auto-fill,minmax(8.5rem,1fr))] gap-2">
             {celdas.map((p) => {
               const n = nivel(p.stock, p.stockMinimo);
               const confirmando = quitarId === p.id;
@@ -233,7 +233,7 @@ export function StockBoard() {
                 <li key={p.id} data-prod={p.id}>
                   <article
                     className={cn(
-                      "flex h-16 items-stretch gap-1 rounded-md border bg-paper p-1",
+                      "flex h-20 items-stretch gap-1 rounded-md border bg-paper p-1.5",
                       n.tono === "out" ? "border-alerta/50" : "border-line",
                       arrastrando === p.id && "border-leaf",
                     )}

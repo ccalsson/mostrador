@@ -29,6 +29,7 @@ data class Estado(
     val telefono: String = "",
     val pais: String = "AR",
     val documento: String = "",
+    val captcha: String = "",
     val error: String? = null,
     val aviso: String? = null,
     val ocupado: Boolean = false,
@@ -135,6 +136,7 @@ class MercadoVm(app: Application) : AndroidViewModel(app) {
     fun telefono(v: String) = edit { copy(telefono = v) }
     fun pais(v: String) = edit { copy(pais = v) }
     fun documento(v: String) = edit { copy(documento = v) }
+    fun captcha(v: String) = edit { copy(captcha = v) }
     fun busca(v: String) = edit { copy(busca = v) }
     fun refrescar() = correr {
         if (_e.value.perfil == "cargador") cargarRecorridos() else cargarPedidos()
@@ -146,9 +148,15 @@ class MercadoVm(app: Application) : AndroidViewModel(app) {
 
     fun ingresar() = correr {
         val e = _e.value
-        val data = if (e.alta && e.como == "cargador") red().registrarCargador(e.nombre, e.email, e.password, e.telefono)
-        else if (e.alta) red().registrarComprador(e.nombre, e.email, e.password, e.telefono, e.pais, e.documento)
+        val data = if (e.alta && e.como == "cargador") red().registrarCargador(e.nombre, e.email, e.password, e.telefono, e.captcha)
+        else if (e.alta) red().registrarComprador(e.nombre, e.email, e.password, e.telefono, e.pais, e.documento, e.captcha)
         else red().ingresar(e.email, e.password, e.como)
+        if (e.alta && (data.optBoolean("pendiente") || data.txt("token").isBlank())) {
+            val aviso = data.txt("aviso").ifBlank { "Confirmá el correo antes de entrar." }
+            val enlace = data.txt("enlace")
+            edit { copy(aviso = if (enlace.isBlank()) aviso else "$aviso $enlace", alta = true) }
+            return@correr
+        }
         val token = data.txt("token")
         val perfil = if (e.alta) e.como else data.txt("perfil").ifBlank { e.como }
         prefs.edit().putString("token", token).putString("perfil", perfil).apply()

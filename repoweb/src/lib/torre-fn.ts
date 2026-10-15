@@ -157,6 +157,15 @@ export const dashboardTorre = createServerFn({ method: "GET" })
     `;
     const income = num(counts[0]?.income);
     const expenses = num(counts[0]?.expenses);
+    const serie = await sql<{ dia: string; usd: unknown; ars: unknown }>`
+      select to_char(d::date, 'YYYY-MM-DD') as dia,
+             coalesce(sum(p.amount) filter (where p.currency = 'USD' and p.status = 'paid'), 0) as usd,
+             coalesce(sum(p.amount) filter (where p.currency = 'ARS' and p.status = 'paid'), 0) as ars
+      from generate_series(current_date - 29, current_date, interval '1 day') as d
+      left join torre.saas_payments p on p.payment_date = d::date
+      group by d::date
+      order by d::date
+    `;
     const alertas: { tipo: string; texto: string }[] = [];
     for (const row of atrasados) {
       if (!row.current) continue;
@@ -181,6 +190,7 @@ export const dashboardTorre = createServerFn({ method: "GET" })
       expenses,
       margin: income - expenses,
       aplicaciones: apps,
+      serie: serie.map((row) => ({ dia: row.dia, usd: num(row.usd), ars: num(row.ars) })),
       alertas,
     };
   });
@@ -277,6 +287,101 @@ export const listClients = createServerFn({ method: "GET" })
       notes: r.notes,
       status: r.status,
     }));
+  });
+
+export const estadisticasCliente = createServerFn({ method: "GET" })
+  .middleware([torreGuard])
+  .validator((input: { clientId?: string; dias?: number } | undefined) => {
+    const clientId = input?.clientId?.trim() ?? "";
+    if (!clientId) throw new Error("Falta el cliente.");
+    const dias = input?.dias === 1 || input?.dias === 30 ? input.dias : 7;
+    return { clientId, dias };
+  })
+  .handler(async ({ context, data }) => {
+    await requireTorre(context.userId);
+    const sql = await getSql();
+    const dias = data.dias;
+    const clientId = data.clientId;
+
+    const negocios = await sql.query<{ nombre: string; app: string; estado: string; version: string | null }>(
+      `select t.name as nombre, a.name as app, t.status as estado, t.installed_version as version
+       from torre.saas_tenants t
+       join torre.saas_apps a on a.id = t.app_id
+       where t.client_id = $1
+       order by lower(t.name)`,
+      [clientId],
+    );
+
+    const abono = await sql.query<{ currency: string; monto: unknown }>(
+      `select l.currency, coalesce(sum(l.subtotal), 0) as monto
+       from torre.saas_subscription_lines l
+       join torre.saas_subscriptions s on s.id = l.subscription_id
+       where s.client_id = $1 and l.status = 'active' and l.frequency = 'monthly' and l.charge = 'recurring'
+       group by l.currency
+       order by l.currency`,
+      [clientId],
+    );
+
+    const pagos = await sql.query<{ currency: string; estado: string; n: number; monto: unknown }>(
+      `select currency, status as estado, count(*)::int as n, coalesce(sum(amount), 0) as monto
+       from torre.saas_payments
+       where client_id = $1
+         and payment_date >= current_date - ($2::int - 1)
+       group by currency, status`,
+      [clientId, dias],
+    );
+
+    const serie = await sql.query<{ dia: string; usd: unknown; ars: unknown }>(
+      `select to_char(d::date, 'YYYY-MM-DD') as dia,
+              coalesce(sum(p.amount) filter (where p.currency = 'USD' and p.status = 'paid'), 0) as usd,
+              coalesce(sum(p.amount) filter (where p.currency = 'ARS' and p.status = 'paid'), 0) as ars
+       from generate_series(current_date - ($2::int - 1), current_date, interval '1 day') as d
+       left join torre.saas_payments p on p.payment_date = d::date and p.client_id = $1
+       group by d::date
+       order by d::date`,
+      [clientId, dias],
+    );
+
+    const operacion = await sql.query<{ origen: string; estado: string; n: number; monto: unknown }>(
+      `select case when p.origen = 'mercado_al_toque' then 'mercado' else 'mostrador' end as origen,
+              p.estado,
+              count(*)::int as n,
+              coalesce(sum((select sum(i.cantidad * i.precio_unitario) from pedido_items i where i.pedido_id = p.id)), 0) as monto
+       from pedidos p
+       where p.created_at::date >= current_date - ($2::int - 1)
+         and p.tenant_id in (
+           select operational_tenant_ref from torre.saas_tenants
+           where client_id = $1 and operational_tenant_ref is not null
+         )
+       group by origen, p.estado`,
+      [clientId, dias],
+    );
+
+    const medios = await sql.query<{ forma: string; n: number; monto: unknown }>(
+      `select c.forma_pago as forma,
+              count(*) filter (where c.anulado = false)::int as n,
+              coalesce(sum(c.monto) filter (where c.anulado = false), 0) as monto
+       from cobros c
+       where c.anulado = false
+         and c.created_at::date >= current_date - ($2::int - 1)
+         and c.tenant_id in (
+           select operational_tenant_ref from torre.saas_tenants
+           where client_id = $1 and operational_tenant_ref is not null
+         )
+       group by c.forma_pago
+       order by sum(c.monto) desc nulls last`,
+      [clientId, dias],
+    );
+
+    return {
+      dias,
+      negocios: negocios.map((row) => ({ nombre: row.nombre, app: row.app, estado: row.estado, version: row.version ?? "" })),
+      abono: abono.map((row) => ({ currency: row.currency, monto: num(row.monto) })),
+      pagos: pagos.map((row) => ({ currency: row.currency, estado: row.estado, n: num(row.n), monto: num(row.monto) })),
+      serie: serie.map((row) => ({ dia: row.dia, usd: num(row.usd), ars: num(row.ars) })),
+      operacion: operacion.map((row) => ({ origen: row.origen, estado: row.estado, n: num(row.n), monto: num(row.monto) })),
+      medios: medios.map((row) => ({ forma: row.forma, n: num(row.n), monto: num(row.monto) })),
+    };
   });
 
 export const saveClient = createServerFn({ method: "POST" })

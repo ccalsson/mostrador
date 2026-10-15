@@ -6,6 +6,9 @@ import { newId } from "@/lib/ids";
 import { num } from "@/lib/money";
 import { reservarLineas, soltarReserva } from "@/lib/server/stock";
 import { createCredentialUser, ensureBootstrapped, PRUEBA_EMAIL } from "@/lib/server/bootstrap";
+import { pedirConfirmacion } from "@/lib/seguridad/confirmar";
+import { claveAceptable, correoAceptable } from "@/lib/seguridad/correo";
+import { cupoFirme } from "@/lib/seguridad/cupo-db";
 import { permiteCuentaCorriente, tierContratado } from "@/lib/torre/condiciones";
 import { estrellasValidas, perfilCargador, puedeCruzar } from "@/lib/mercado/cruces";
 import { bannersPublicados, lineasPorPuesto, puedeAparecer, sincronizarPresenciaPublicada } from "@/lib/torre/presencia";
@@ -162,11 +165,13 @@ export async function registrarComprador(input: {
   tipoDocumento: string;
   numeroDocumento: string;
 }) {
-  const email = input.email.trim().toLowerCase();
+  const correo = correoAceptable(input.email);
+  if (!correo.ok) throw new MercadoError(correo.motivo);
+  const clave = claveAceptable(input.password, correo.email);
+  if (!clave.ok) throw new MercadoError(clave.motivo);
+  const email = correo.email;
   const nombre = input.nombre.trim();
-  if (!nombre || !email || input.password.length < 8) {
-    throw new MercadoError("Completá nombre, email y una clave de al menos 8 caracteres.");
-  }
+  if (!nombre) throw new MercadoError("Completá el nombre.");
   const numero = input.numeroDocumento.trim();
   const conDocumento = numero.length > 0;
   if (conDocumento && (!["AR", "PY"].includes(input.pais) || !["DNI", "CI_PY"].includes(input.tipoDocumento))) {
@@ -175,7 +180,7 @@ export async function registrarComprador(input: {
   const db = await sql();
   const staff = await db<{ id: string }>`select id from staff where lower(email) = ${email} limit 1`;
   if (staff[0]) throw new MercadoError("Ese correo es del puesto. Usá otro.");
-  const userId = await createCredentialUser(email, input.password, nombre);
+  const userId = await createCredentialUser(email, input.password, nombre, false);
   const id = newId("mc");
   await db`
     insert into mercado_compradores (
@@ -186,18 +191,18 @@ export async function registrarComprador(input: {
       ${nombre}, ${input.telefono.trim() || null}, ${"pendiente"}
     )
   `;
-  const token = await emitirSesion(userId, "comprador");
-  const comprador = await compradorDe(userId);
-  if (!comprador) throw new MercadoError("No se pudo crear el comprador.", 500);
-  return { token, perfil: "comprador" as const, comprador: await publicoComprador(email, comprador) };
+  const confirmacion = await pedirConfirmacion(email);
+  return { pendiente: true as const, aviso: confirmacion.aviso, enlace: confirmacion.enlace };
 }
 
 export async function registrarCargador(input: { nombre: string; email: string; password: string; telefono: string }) {
-  const email = input.email.trim().toLowerCase();
+  const correo = correoAceptable(input.email);
+  if (!correo.ok) throw new MercadoError(correo.motivo);
+  const clave = claveAceptable(input.password, correo.email);
+  if (!clave.ok) throw new MercadoError(clave.motivo);
+  const email = correo.email;
   const nombre = input.nombre.trim();
-  if (!nombre || !email || input.password.length < 8) {
-    throw new MercadoError("Completá nombre, email y una clave de al menos 8 caracteres.");
-  }
+  if (!nombre) throw new MercadoError("Completá el nombre.");
   const db = await sql();
   const staff = await db<{ id: string }>`select id from staff where lower(email) = ${email} limit 1`;
   if (staff[0]) throw new MercadoError("Ese correo es del puesto. Usá otro.");
@@ -213,7 +218,7 @@ export async function registrarCargador(input: { nombre: string; email: string; 
       throw new MercadoError("Ese correo ya existe y la clave no coincide.", 401);
     }
   } else {
-    userId = await createCredentialUser(email, input.password, nombre);
+    userId = await createCredentialUser(email, input.password, nombre, false);
   }
   const ya = await cargadorDe(userId);
   if (!ya) {
@@ -222,14 +227,24 @@ export async function registrarCargador(input: { nombre: string; email: string; 
       values (${newId("cg")}, ${userId}, ${nombre}, ${input.telefono.trim() || null})
     `;
   }
+  const marca = await db<{ emailVerified: boolean }>`select "emailVerified" from "user" where id = ${userId} limit 1`;
+  if (!marca[0]?.emailVerified) {
+    const confirmacion = await pedirConfirmacion(email);
+    return { pendiente: true as const, aviso: confirmacion.aviso, enlace: confirmacion.enlace };
+  }
   const token = await emitirSesion(userId, "cargador");
   return { token, perfil: "cargador" as const, cargador: await resumenCargador(userId) };
 }
 
 export async function ingresar(emailRaw: string, password: string, perfil: Perfil) {
-  const email = emailRaw.trim().toLowerCase();
+  const correo = correoAceptable(emailRaw);
+  const email = correo.ok ? correo.email : emailRaw.trim().toLowerCase().slice(0, 254);
+  const golpe = await cupoFirme(`ingreso-mail:${email}`, 8, 15 * 60 * 1000);
+  if (!golpe.ok) throw new MercadoError("Demasiados intentos. Esperá un momento.", 429);
   const db = await sql();
-  const users = await db<{ id: string }>`select id from "user" where lower(email) = ${email} limit 1`;
+  const users = await db<{ id: string; emailVerified: boolean }>`
+    select id, "emailVerified" from "user" where lower(email) = ${email} limit 1
+  `;
   const user = users[0];
   if (!user) throw new MercadoError("Correo o clave incorrectos.", 401);
   const cuentas = await db<{ password: string | null }>`
@@ -239,6 +254,7 @@ export async function ingresar(emailRaw: string, password: string, perfil: Perfi
   if (!hash || !(await verifyPassword({ hash, password }))) {
     throw new MercadoError("Correo o clave incorrectos.", 401);
   }
+  if (!user.emailVerified) throw new MercadoError("Confirmá el correo antes de entrar.", 403);
   if (perfil === "comprador" && !(await compradorDe(user.id))) {
     throw new MercadoError("Esta cuenta no es de un comprador.", 403);
   }

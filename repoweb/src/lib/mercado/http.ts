@@ -1,19 +1,31 @@
 import { MercadoError, leerSesion } from "@/lib/mercado/servicio";
 import * as mercado from "@/lib/mercado/servicio";
+import { confirmarToken, reenviarSiPendiente } from "@/lib/seguridad/confirmar";
+import { correoAceptable } from "@/lib/seguridad/correo";
+import { ipDe, rechazarCupo } from "@/lib/seguridad/cupo";
+import { cupoFirme } from "@/lib/seguridad/cupo-db";
+import { verificarTurnstile } from "@/lib/seguridad/turnstile";
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "content-type": "application/json; charset=utf-8" },
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store",
+      "x-content-type-options": "nosniff",
+    },
   });
 }
 
-async function cuerpo(request: Request) {
+async function cuerpo(request: Request, tope: number) {
   if (request.method === "GET") return {} as Record<string, unknown>;
+  const anunciado = Number(request.headers.get("content-length") ?? 0);
+  if (anunciado > tope) throw new MercadoError("El envío es demasiado grande.", 413);
   const texto = await request.text();
+  if (texto.length > tope) throw new MercadoError("El envío es demasiado grande.", 413);
   if (!texto) return {} as Record<string, unknown>;
   const data = JSON.parse(texto) as unknown;
-  if (!data || typeof data !== "object") throw new MercadoError("El cuerpo no es válido.");
+  if (!data || typeof data !== "object" || Array.isArray(data)) throw new MercadoError("El cuerpo no es válido.");
   return data as Record<string, unknown>;
 }
 
@@ -28,7 +40,25 @@ function clave(request: Request, data: Record<string, unknown>) {
 export async function handleMercado(request: Request) {
   try {
     const ruta = new URL(request.url).pathname.replace(/^\/api\/mercado\/v1\/?/, "").replace(/\/$/, "");
-    const data = await cuerpo(request);
+    const ip = ipDe(request);
+    const publico = request.method === "GET" && (ruta === "ranking" || ruta === "avisos" || ruta.startsWith("puestos"));
+    const registro = request.method === "POST" && (ruta === "auth/registro" || ruta === "auth/registro-cargador");
+    const ingreso = request.method === "POST" && ruta === "auth/ingreso";
+    const golpe = await cupoFirme(
+      `${registro ? "registro" : ingreso ? "ingreso" : publico ? "lectura" : "uso"}:${ip}`,
+      registro ? 80 : ingreso ? 40 : publico ? 600 : 120,
+      registro ? 60 * 60 * 1000 : ingreso ? 15 * 60 * 1000 : 60 * 1000,
+    );
+    if (!golpe.ok) return rechazarCupo(golpe.reintento);
+    const tope = ruta.includes("comprobante") || ruta === "identidad" || ruta === "cargador/perfil" ? 1_500_000 : 24_000;
+    const data = await cuerpo(request, tope);
+    if (request.method === "POST" && (ruta === "auth/registro" || ruta === "auth/registro-cargador") && texto(data, "website")) {
+      return json({ pendiente: true, aviso: "Si el correo es válido, te llega un enlace para confirmarlo." }, 201);
+    }
+    if (registro) {
+      const humano = await verificarTurnstile(texto(data, "captcha"), ip);
+      if (!humano.ok) return json({ message: humano.motivo }, 400);
+    }
     if (request.method === "POST" && ruta === "auth/registro") {
       return json(
         await mercado.registrarComprador({
@@ -57,6 +87,14 @@ export async function handleMercado(request: Request) {
     if (request.method === "POST" && ruta === "auth/ingreso") {
       const perfil = texto(data, "perfil") === "cargador" ? "cargador" : "comprador";
       return json(await mercado.ingresar(texto(data, "email"), texto(data, "password"), perfil));
+    }
+    if (request.method === "POST" && ruta === "auth/confirmar") {
+      return json(await confirmarToken(texto(data, "token")));
+    }
+    if (request.method === "POST" && ruta === "auth/reenviar") {
+      const correo = correoAceptable(texto(data, "email"));
+      if (correo.ok) await reenviarSiPendiente(correo.email).catch(() => undefined);
+      return json({ aviso: "Si ese correo está pendiente, le llega otro enlace." });
     }
     if (request.method === "POST" && ruta === "auth/salir") return json(await mercado.salir(request));
     if (request.method === "POST" && ruta === "auth/google") {
@@ -94,7 +132,7 @@ export async function handleMercado(request: Request) {
     const productos = ruta.match(/^puestos\/([^/]+)\/productos$/);
     if (request.method === "GET" && productos) return json(await mercado.productosDe(decodeURIComponent(productos[1])));
     if (request.method === "POST" && ruta === "pedidos") {
-      const items = Array.isArray(data.items) ? data.items : [];
+      const items = Array.isArray(data.items) ? data.items.slice(0, 30) : [];
       return json(
         await mercado.crearPedidos(
           ses,
@@ -103,7 +141,14 @@ export async function handleMercado(request: Request) {
             .filter((item): item is { tenantId: string; productoId: string; cantidad: number } => {
               if (!item || typeof item !== "object") return false;
               const row = item as Record<string, unknown>;
-              return typeof row.tenantId === "string" && typeof row.productoId === "string" && typeof row.cantidad === "number";
+              return (
+                typeof row.tenantId === "string" &&
+                typeof row.productoId === "string" &&
+                typeof row.cantidad === "number" &&
+                Number.isFinite(row.cantidad) &&
+                row.cantidad > 0 &&
+                row.cantidad <= 500
+              );
             })
             .map((item) => ({ tenantId: item.tenantId, productoId: item.productoId, cantidad: item.cantidad })),
           texto(data, "medioPago"),
@@ -126,7 +171,7 @@ export async function handleMercado(request: Request) {
           ses,
           decodeURIComponent(comprobante[1]),
           texto(data, "nombre"),
-          texto(data, "data"),
+          texto(data, "data").slice(0, 1_400_000),
         ),
       );
     }
@@ -205,7 +250,6 @@ export async function handleMercado(request: Request) {
   } catch (error) {
     if (error instanceof MercadoError) return json({ message: error.message }, error.status);
     if (error instanceof SyntaxError) return json({ message: "El cuerpo no es válido." }, 400);
-    const message = error instanceof Error ? error.message : "No se pudo completar.";
-    return json({ message }, 400);
+    return json({ message: "No se pudo completar." }, 500);
   }
 }

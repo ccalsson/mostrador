@@ -6,6 +6,7 @@ import {
   FileText,
   LayoutDashboard,
   Megaphone,
+  NotebookPen,
   Package,
   ChevronDown,
   LogOut,
@@ -69,13 +70,14 @@ const GRUPOS: { id: string; label: string; items: { to: string; label: string; i
     id: "informes",
     label: "Informes",
     items: [
+      { to: "/escritorio", label: "Escritorio", icon: NotebookPen, roles: ["admin"] },
       { to: "/dashboard", label: "Tablero", icon: LayoutDashboard, roles: ["admin"] },
       { to: "/auditoria", label: "Auditoría", icon: ClipboardList, roles: ["admin"] },
     ],
   },
 ];
 
-export function AppShell({ children, title }: { children: ReactNode; title?: string }) {
+export function AppShell({ children, title, ancho }: { children: ReactNode; title?: string; ancho?: "completo" }) {
   const { user, isPending } = useCurrentUserState();
   const me = useQuery({
     queryKey: ["quien"],
@@ -150,120 +152,112 @@ export function AppShell({ children, title }: { children: ReactNode; title?: str
   })).filter((grupo) => grupo.items.length > 0);
 
   return (
-    <div className="min-h-dvh overflow-x-hidden bg-paper text-ink">
-      <header className="sticky top-0 z-30 border-b border-leaf-2 bg-leaf-2 text-leaf-fg">
-        <div className="mx-auto flex max-w-[1400px] items-center gap-2 px-3 py-1.5 sm:gap-3 sm:px-5 sm:py-2">
-          <Link to="/" className="min-w-0 shrink-0">
-            <span className="block max-w-40 truncate font-display text-sm font-semibold leading-tight tracking-tight sm:max-w-56 sm:text-lg">
-              Mostrador
-            </span>
-            <span className="block truncate text-[11px] text-ambar sm:text-xs">tu gestión inteligente</span>
+    <div className="puesto-app min-h-dvh overflow-x-hidden bg-paper text-ink">
+      <header className="sticky top-0 z-30 border-b border-white/10 bg-leaf-2 text-leaf-fg">
+        <div className={cn("mx-auto flex w-full items-center gap-2 px-3 py-1.5 sm:px-4", ancho === "completo" ? "max-w-none" : "max-w-6xl")}>
+          <Link to="/" className="shrink-0 pr-2" onClick={() => setMenu(null)}>
+            <span className="font-display text-base leading-none font-semibold tracking-tight">Mostrador</span>
           </Link>
-          <div className="relative z-10 ml-auto flex shrink-0 items-center gap-2 bg-leaf-2 pl-1">
+          <nav className="flex min-w-0 flex-1 flex-wrap items-center gap-0.5" onPointerDown={(event) => event.stopPropagation()}>
+            {grupos.map((grupo, index) => {
+              const activo = grupo.items.some((item) => pathname === item.to || pathname.startsWith(`${item.to}/`));
+              const abierto = menu === grupo.id;
+              const alBorde = index >= grupos.length - 2;
+              return (
+                <div key={grupo.id} className="relative">
+                  <button
+                    type="button"
+                    aria-expanded={abierto}
+                    className={cn(
+                      "inline-flex h-8 items-center gap-1 rounded-md px-2 text-xs",
+                      activo || abierto ? "bg-white/15 text-leaf-fg" : "text-leaf-fg/70",
+                    )}
+                    onClick={() => setMenu(abierto ? null : grupo.id)}
+                  >
+                    {grupo.label}
+                    <ChevronDown className={cn("size-3 opacity-70", abierto && "rotate-180")} />
+                  </button>
+                  {abierto ? (
+                    <div
+                      className={cn(
+                        "absolute top-full z-40 mt-1 hidden min-w-44 rounded-md border border-line bg-surface py-1 text-ink shadow-lg sm:block",
+                        alBorde ? "right-0" : "left-0",
+                      )}
+                    >
+                      {grupo.items.map((item) => {
+                        const Icon = item.icon;
+                        const marcado = pathname === item.to || pathname.startsWith(`${item.to}/`);
+                        return (
+                          <Link
+                            key={item.to}
+                            to={item.to}
+                            className={cn(
+                              "flex h-8 items-center gap-2 px-2.5 text-sm",
+                              marcado ? "bg-leaf/10 font-medium text-leaf" : "text-ink",
+                            )}
+                            onClick={() => setMenu(null)}
+                          >
+                            <Icon className="size-3.5" />
+                            {item.label}
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+            {menu ? (
+              <div className="basis-full sm:hidden">
+                {grupos
+                  .filter((grupo) => grupo.id === menu)
+                  .map((grupo) => (
+                    <div key={grupo.id} className="mt-1 overflow-hidden rounded-md border border-line bg-surface py-1 text-ink">
+                      {grupo.items.map((item) => {
+                        const Icon = item.icon;
+                        const marcado = pathname === item.to || pathname.startsWith(`${item.to}/`);
+                        return (
+                          <Link
+                            key={item.to}
+                            to={item.to}
+                            className={cn(
+                              "flex h-9 items-center gap-2 px-2.5 text-sm",
+                              marcado ? "bg-leaf/10 font-medium text-leaf" : "text-ink",
+                            )}
+                            onClick={() => setMenu(null)}
+                          >
+                            <Icon className="size-3.5" />
+                            {item.label}
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  ))}
+              </div>
+            ) : null}
+          </nav>
+          <div className="flex shrink-0 items-center gap-1.5">
             <span
               className={cn(
-                "inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs",
-                online ? "bg-white/15 text-leaf-fg" : "bg-warn-bg text-terra",
+                "inline-flex items-center gap-1 rounded-full px-1.5 py-1 text-[11px]",
+                online ? "text-leaf-fg/80" : "bg-warn-bg text-terra",
               )}
+              title={online ? "En red" : "Modo local"}
             >
               {online ? <Wifi className="size-3.5" /> : <WifiOff className="size-3.5" />}
-              <span className="hidden lg:inline">{online ? "En red" : "Modo local"}</span>
             </span>
-            <span className="hidden rounded-full bg-ambar/25 px-2.5 py-1 text-xs font-medium text-ambar xl:inline">
-              {ROL_LABEL[staff.rol]}
-            </span>
+            <span className="hidden text-[11px] text-ambar xl:inline">{ROL_LABEL[staff.rol]}</span>
             <TemaBoton />
             <UserButton />
           </div>
         </div>
-        <nav
-          className="relative flex w-full min-w-0 flex-wrap gap-1 border-t border-white/10 px-2 py-1"
-          onPointerDown={(event) => event.stopPropagation()}
-        >
-          {grupos.map((grupo, index) => {
-            const activo = grupo.items.some((item) => pathname === item.to || pathname.startsWith(`${item.to}/`));
-            const abierto = menu === grupo.id;
-            const alBorde = index >= grupos.length - 2;
-            return (
-              <div key={grupo.id} className="relative">
-                <button
-                  type="button"
-                  aria-expanded={abierto}
-                  className={cn(
-                    "inline-flex h-9 items-center gap-1 rounded-[10px] px-2.5 text-xs sm:text-sm",
-                    activo || abierto ? "bg-terra text-white" : "text-leaf-fg/80",
-                  )}
-                  onClick={() => setMenu(abierto ? null : grupo.id)}
-                >
-                  {grupo.label}
-                  <ChevronDown className={cn("size-3.5", abierto && "rotate-180")} />
-                </button>
-                {abierto ? (
-                  <div
-                    className={cn(
-                      "absolute top-full z-40 mt-1 hidden min-w-44 rounded-lg border border-line bg-surface py-1 text-ink shadow-lg sm:block",
-                      alBorde ? "right-0" : "left-0",
-                    )}
-                  >
-                    {grupo.items.map((item) => {
-                      const Icon = item.icon;
-                      const marcado = pathname === item.to || pathname.startsWith(`${item.to}/`);
-                      return (
-                        <Link
-                          key={item.to}
-                          to={item.to}
-                          className={cn(
-                            "flex h-10 items-center gap-2 px-3 text-sm",
-                            marcado ? "bg-leaf/10 font-medium text-leaf" : "text-ink",
-                          )}
-                          onClick={() => setMenu(null)}
-                        >
-                          <Icon className="size-4" />
-                          {item.label}
-                        </Link>
-                      );
-                    })}
-                  </div>
-                ) : null}
-              </div>
-            );
-          })}
-          {menu ? (
-            <div className="basis-full sm:hidden">
-              {grupos
-                .filter((grupo) => grupo.id === menu)
-                .map((grupo) => (
-                  <div key={grupo.id} className="mt-1 overflow-hidden rounded-lg border border-line bg-surface py-1 text-ink">
-                    {grupo.items.map((item) => {
-                      const Icon = item.icon;
-                      const marcado = pathname === item.to || pathname.startsWith(`${item.to}/`);
-                      return (
-                        <Link
-                          key={item.to}
-                          to={item.to}
-                          className={cn(
-                            "flex h-10 items-center gap-2 px-3 text-sm",
-                            marcado ? "bg-leaf/10 font-medium text-leaf" : "text-ink",
-                          )}
-                          onClick={() => setMenu(null)}
-                        >
-                          <Icon className="size-4" />
-                          {item.label}
-                        </Link>
-                      );
-                    })}
-                  </div>
-                ))}
-            </div>
-          ) : null}
-        </nav>
       </header>
-      <main className="mx-auto max-w-[1400px] px-3 py-3 sm:px-5 sm:py-6">
+      <main className={cn("mx-auto w-full px-4 py-5 sm:px-6", ancho === "completo" ? "max-w-none" : "max-w-6xl")}>
         {title ? (
-          <h1 className="mb-3 flex items-center gap-2 font-display text-xl font-semibold tracking-tight text-leaf sm:mb-4 sm:text-2xl">
-            <span className="h-5 w-1 shrink-0 rounded-full bg-terra" aria-hidden />
-            {title}
-          </h1>
+          <div className="mb-5">
+            <p className="text-[11px] font-medium tracking-[0.14em] text-muted uppercase">El puesto</p>
+            <h1 className="mt-1 font-display text-[1.65rem] leading-none font-semibold tracking-tight">{title}</h1>
+          </div>
         ) : null}
         <PuertaLegal modo="mostrador">{children}</PuertaLegal>
       </main>

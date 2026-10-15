@@ -17,8 +17,10 @@ import { Route as CajaRouteImport } from './routes/caja'
 import { Route as CierreRouteImport } from './routes/cierre'
 import { Route as ClientesRouteImport } from './routes/clientes'
 import { Route as ClientesAppRouteImport } from './routes/clientes-app'
+import { Route as ConfirmarRouteImport } from './routes/confirmar'
 import { Route as ContratoRouteImport } from './routes/contrato'
 import { Route as DashboardRouteImport } from './routes/dashboard'
+import { Route as EscritorioRouteImport } from './routes/escritorio'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as MarketingRouteImport } from './routes/marketing'
 import { Route as MercadoRouteImport } from './routes/mercado'
@@ -100,6 +102,11 @@ const ClientesAppRoute = ClientesAppRouteImport.update({
   path: '/clientes-app',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ConfirmarRoute = ConfirmarRouteImport.update({
+  id: '/confirmar',
+  path: '/confirmar',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ContratoRoute = ContratoRouteImport.update({
   id: '/contrato',
   path: '/contrato',
@@ -108,6 +115,11 @@ const ContratoRoute = ContratoRouteImport.update({
 const DashboardRoute = DashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EscritorioRoute = EscritorioRouteImport.update({
+  id: '/escritorio',
+  path: '/escritorio',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -321,8 +333,10 @@ export interface FileRoutesByFullPath {
   '/cierre': typeof CierreRoute
   '/clientes': typeof ClientesRoute
   '/clientes-app': typeof ClientesAppRoute
+  '/confirmar': typeof ConfirmarRoute
   '/contrato': typeof ContratoRoute
   '/dashboard': typeof DashboardRoute
+  '/escritorio': typeof EscritorioRoute
   '/login': typeof LoginRoute
   '/marketing': typeof MarketingRoute
   '/mercado': typeof MercadoRoute
@@ -373,8 +387,10 @@ export interface FileRoutesByTo {
   '/cierre': typeof CierreRoute
   '/clientes': typeof ClientesRoute
   '/clientes-app': typeof ClientesAppRoute
+  '/confirmar': typeof ConfirmarRoute
   '/contrato': typeof ContratoRoute
   '/dashboard': typeof DashboardRoute
+  '/escritorio': typeof EscritorioRoute
   '/login': typeof LoginRoute
   '/marketing': typeof MarketingRoute
   '/mercado': typeof MercadoRoute
@@ -425,8 +441,10 @@ export interface FileRoutesById {
   '/cierre': typeof CierreRoute
   '/clientes': typeof ClientesRoute
   '/clientes-app': typeof ClientesAppRoute
+  '/confirmar': typeof ConfirmarRoute
   '/contrato': typeof ContratoRoute
   '/dashboard': typeof DashboardRoute
+  '/escritorio': typeof EscritorioRoute
   '/login': typeof LoginRoute
   '/marketing': typeof MarketingRoute
   '/mercado': typeof MercadoRoute
@@ -479,8 +497,10 @@ export interface FileRouteTypes {
     | '/cierre'
     | '/clientes'
     | '/clientes-app'
+    | '/confirmar'
     | '/contrato'
     | '/dashboard'
+    | '/escritorio'
     | '/login'
     | '/marketing'
     | '/mercado'
@@ -531,8 +551,10 @@ export interface FileRouteTypes {
     | '/cierre'
     | '/clientes'
     | '/clientes-app'
+    | '/confirmar'
     | '/contrato'
     | '/dashboard'
+    | '/escritorio'
     | '/login'
     | '/marketing'
     | '/mercado'
@@ -582,8 +604,10 @@ export interface FileRouteTypes {
     | '/cierre'
     | '/clientes'
     | '/clientes-app'
+    | '/confirmar'
     | '/contrato'
     | '/dashboard'
+    | '/escritorio'
     | '/login'
     | '/marketing'
     | '/mercado'
@@ -635,8 +659,10 @@ export interface RootRouteChildren {
   CierreRoute: typeof CierreRoute
   ClientesRoute: typeof ClientesRoute
   ClientesAppRoute: typeof ClientesAppRoute
+  ConfirmarRoute: typeof ConfirmarRoute
   ContratoRoute: typeof ContratoRoute
   DashboardRoute: typeof DashboardRoute
+  EscritorioRoute: typeof EscritorioRoute
   LoginRoute: typeof LoginRoute
   MarketingRoute: typeof MarketingRoute
   MercadoRoute: typeof MercadoRoute
@@ -716,6 +742,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ClientesAppRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/confirmar': {
+      id: '/confirmar'
+      path: '/confirmar'
+      fullPath: '/confirmar'
+      preLoaderRoute: typeof ConfirmarRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/contrato': {
       id: '/contrato'
       path: '/contrato'
@@ -728,6 +761,13 @@ declare module '@tanstack/react-router' {
       path: '/dashboard'
       fullPath: '/dashboard'
       preLoaderRoute: typeof DashboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/escritorio': {
+      id: '/escritorio'
+      path: '/escritorio'
+      fullPath: '/escritorio'
+      preLoaderRoute: typeof EscritorioRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -1081,8 +1121,10 @@ const rootRouteChildren: RootRouteChildren = {
   CierreRoute: CierreRoute,
   ClientesRoute: ClientesRoute,
   ClientesAppRoute: ClientesAppRoute,
+  ConfirmarRoute: ConfirmarRoute,
   ContratoRoute: ContratoRoute,
   DashboardRoute: DashboardRoute,
+  EscritorioRoute: EscritorioRoute,
   LoginRoute: LoginRoute,
   MarketingRoute: MarketingRoute,
   MercadoRoute: MercadoRoute,

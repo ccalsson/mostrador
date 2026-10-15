@@ -1,6 +1,11 @@
 package ar.com.mostrador.mercado
 
 import android.content.Context
+import android.webkit.JavascriptInterface
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.viewinterop.AndroidView
 import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -97,6 +102,8 @@ private fun Ingreso(e: Estado, vm: MercadoVm) {
             }
             Campo(if (e.pais == "PY") "Cédula" else "DNI", e.documento, vm::documento)
         }
+        if (e.alta) CaptchaAlta(vm)
+        if (!e.aviso.isNullOrBlank()) Text(e.aviso, color = Leaf)
         Error(e.error)
         Boton(if (e.alta) "Crear cuenta" else "Entrar", true, Modifier.fillMaxWidth(), e.ocupado) { vm.ingresar() }
         Boton("Continuar con Google", false, Modifier.fillMaxWidth(), !e.ocupado) {
@@ -104,6 +111,44 @@ private fun Ingreso(e: Estado, vm: MercadoVm) {
         }
         TextButton(onClick = { vm.alta(!e.alta) }) { Text(if (e.alta) "Ya tengo cuenta" else "Crear cuenta", color = Leaf) }
     }
+}
+
+@Composable
+private fun CaptchaAlta(vm: MercadoVm) {
+    val clave = stringResource(R.string.turnstile_site_key)
+    if (clave.isBlank()) return
+    AndroidView(
+        factory = { context ->
+            WebView(context).apply {
+                settings.javaScriptEnabled = true
+                addJavascriptInterface(
+                    object {
+                        @JavascriptInterface
+                        fun onToken(token: String) {
+                            vm.captcha(token)
+                        }
+                    },
+                    "AndroidCaptcha",
+                )
+                webViewClient = WebViewClient()
+                loadDataWithBaseURL(
+                    "https://mostrador.grok.me",
+                    """
+                    <!doctype html><html><head><meta name="viewport" content="width=device-width"></head>
+                    <body style="margin:0">
+                    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+                    <div class="cf-turnstile" data-sitekey="$clave" data-callback="listo"></div>
+                    <script>function listo(t){AndroidCaptcha.onToken(t)}</script>
+                    </body></html>
+                    """.trimIndent(),
+                    "text/html",
+                    "utf-8",
+                    null,
+                )
+            }
+        },
+        modifier = Modifier.fillMaxWidth().height(78.dp),
+    )
 }
 
 @Composable

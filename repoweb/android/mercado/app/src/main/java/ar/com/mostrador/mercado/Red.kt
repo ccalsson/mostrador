@@ -264,10 +264,10 @@ class Red(base: String) {
     }
 
     fun ingresar(email: String, password: String, perfil: String) = pedir("auth/ingreso", "POST", null, JSONObject().put("email", email).put("password", password).put("perfil", perfil), null, false)
-    fun registrarComprador(nombre: String, email: String, password: String, telefono: String, pais: String, documento: String) =
-        pedir("auth/registro", "POST", null, JSONObject().put("nombre", nombre).put("email", email).put("password", password).put("telefono", telefono).put("pais", pais).put("tipoDocumento", if (pais == "PY") "CI_PY" else "DNI").put("numeroDocumento", documento), null, false)
-    fun registrarCargador(nombre: String, email: String, password: String, telefono: String) =
-        pedir("auth/registro-cargador", "POST", null, JSONObject().put("nombre", nombre).put("email", email).put("password", password).put("telefono", telefono), null, false)
+    fun registrarComprador(nombre: String, email: String, password: String, telefono: String, pais: String, documento: String, captcha: String) =
+        pedir("auth/registro", "POST", null, JSONObject().put("nombre", nombre).put("email", email).put("password", password).put("telefono", telefono).put("pais", pais).put("tipoDocumento", if (pais == "PY") "CI_PY" else "DNI").put("numeroDocumento", documento).put("captcha", captcha), null, false)
+    fun registrarCargador(nombre: String, email: String, password: String, telefono: String, captcha: String) =
+        pedir("auth/registro-cargador", "POST", null, JSONObject().put("nombre", nombre).put("email", email).put("password", password).put("telefono", telefono).put("captcha", captcha), null, false)
     fun salir(token: String) = pedir("auth/salir", "POST", token, JSONObject(), null, false)
     fun yo(token: String) = pedir("yo", "GET", token, null, null, false)
     fun identidad(token: String, pais: String, documento: String, doc: String, selfie: String) =

@@ -4,9 +4,10 @@ import { correoRecuperacion, resendListo } from "./recuperacion.ts";
 
 describe("recuperación por Resend", () => {
   it("arma el correo con el enlace y no manda si falta la clave", () => {
-    assert.equal(resendListo(undefined), false);
-    assert.equal(resendListo("  "), false);
-    assert.equal(resendListo("re_test"), true);
+    assert.equal(resendListo(undefined, "Mostrador <avisos@mostrador.test>"), false);
+    assert.equal(resendListo("  ", "Mostrador <avisos@mostrador.test>"), false);
+    assert.equal(resendListo("re_test", "  "), false);
+    assert.equal(resendListo("re_test", "Mostrador <avisos@mostrador.test>"), true);
     const correo = correoRecuperacion("caja@puesto.test", "https://mostrador.test/recuperar?token=abc", "Mostrador <avisos@mostrador.test>");
     assert.deepEqual(correo.to, ["caja@puesto.test"]);
     assert.match(correo.text, /token=abc/);

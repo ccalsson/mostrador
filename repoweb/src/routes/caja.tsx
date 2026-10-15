@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
 import { ClimaDolar } from "@/components/clima-dolar";
+import { MesaTurno } from "@/components/mesa-turno";
 import { TermicaBoton } from "@/components/termica-boton";
 import { TicketSlip } from "@/components/ticket-slip";
 import { Button } from "@/components/ui/button";
@@ -176,6 +177,7 @@ function CajaPage() {
           </Link>
         </div>
       </div>
+      <MesaTurno modo="caja" />
       {direct ? (
         <VentaDirecta
           productos={productos.data ?? []}
@@ -202,7 +204,10 @@ function CajaPage() {
                       pedido?.id === p.id ? "border-leaf bg-ok-bg/60" : "border-line bg-paper",
                     )}
                   >
-                    <span className="block truncate text-sm font-medium">{p.clienteNombre}</span>
+                    <span className="block truncate text-sm font-medium">
+                      {p.origen === "mercado_al_toque" ? "App · " : ""}
+                      {p.clienteNombre}
+                    </span>
                     {p.retiro ? (
                       <span className="block text-xs font-medium text-leaf">
                         Retirado · {p.retiro.changarin} · {clock(p.retiro.retiradoEn)}

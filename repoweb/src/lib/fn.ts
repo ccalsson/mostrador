@@ -16,6 +16,7 @@ import {
   mapProducto,
 } from "@/lib/server/context";
 import { ensureBootstrapped, ensureStaffForUser, seedDemoAccounts } from "@/lib/server/bootstrap";
+import { correoAceptable } from "@/lib/seguridad/correo";
 import { condicionOperativa, puedeAparecer } from "@/lib/torre/presencia";
 import { calificarCompradorDesdePuesto } from "@/lib/mercado/servicio";
 import { leerBanners, ponerBanner, validarBanner } from "@/lib/mercado/plantillas";
@@ -169,11 +170,11 @@ export const canalMercado = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     const staff = await ensureStaffForUser(context.userId);
     const sql = await getSql();
-    const rows = await sql<{ config: unknown }>`select config from tenants where id = ${staff.tenantId} limit 1`;
+    const rows = await sql<{ config: unknown }>`select config from tenants where id = ${staff.casaId} limit 1`;
     const raw = rows[0]?.config;
     const config =
       typeof raw === "string" ? (JSON.parse(raw) as { mercadoAlToque?: boolean }) : ((raw ?? {}) as { mercadoAlToque?: boolean });
-    const condicion = await condicionOperativa(staff.tenantId);
+    const condicion = await condicionOperativa(staff.casaId);
     return {
       activo: config.mercadoAlToque === true,
       presencia: condicion.presencia,
@@ -199,7 +200,7 @@ export const publicarBanner = createServerFn({ method: "POST" })
       select a.id
       from torre.saas_ads a
       join torre.saas_tenants t on t.id = a.tenant_id
-      where t.operational_tenant_ref = ${staff.tenantId}
+      where t.operational_tenant_ref = ${staff.casaId}
         and a.id = ${data.adId}
         and a.status in ('scheduled', 'active')
         and a.starts_on <= current_date
@@ -210,12 +211,12 @@ export const publicarBanner = createServerFn({ method: "POST" })
     if (banner.productoId) {
       const producto = await sql<{ id: string }>`
         select id from productos
-        where id = ${banner.productoId} and tenant_id = ${staff.tenantId} and activo = true and publicado_online = true
+        where id = ${banner.productoId} and tenant_id = ${staff.casaId} and activo = true and publicado_online = true
         limit 1
       `;
       if (!producto[0]) throw new Error("Elegí un producto publicado en Mercado.");
     }
-    const rows = await sql<{ config: unknown }>`select config from tenants where id = ${staff.tenantId} limit 1`;
+    const rows = await sql<{ config: unknown }>`select config from tenants where id = ${staff.casaId} limit 1`;
     const actuales = leerBanners(rows[0]?.config);
     const previo = actuales.find((item) => item.adId === data.adId);
     if (previo && (previo.plantilla !== banner.plantilla || previo.frase !== banner.frase || !banner.productoId)) {
@@ -230,7 +231,7 @@ export const publicarBanner = createServerFn({ method: "POST" })
     await sql`
       update tenants
       set config = coalesce(config, '{}'::jsonb) || ${JSON.stringify({ banners })}::jsonb
-      where id = ${staff.tenantId}
+      where id = ${staff.casaId}
     `;
     return { banners };
   });
@@ -267,7 +268,7 @@ export const catalogoAddons = createServerFn({ method: "GET" })
       from torre.saas_subscription_lines l
       join torre.saas_subscriptions s on s.id = l.subscription_id
       join torre.saas_tenants t on t.id = s.tenant_id
-      where t.operational_tenant_ref = ${staff.tenantId}
+      where t.operational_tenant_ref = ${staff.casaId}
         and l.status = 'active'
         and l.charge = 'recurring'
     `;
@@ -275,7 +276,7 @@ export const catalogoAddons = createServerFn({ method: "GET" })
       select p.product_id
       from torre.saas_payments p
       join torre.saas_tenants t on t.id = p.tenant_id
-      where t.operational_tenant_ref = ${staff.tenantId}
+      where t.operational_tenant_ref = ${staff.casaId}
         and p.status = 'pending'
         and p.line_id is null
         and p.kind in ('addon', 'publicidad', 'push')
@@ -363,13 +364,13 @@ export const guardarCanalMercado = createServerFn({ method: "POST" })
     assertRole(staff, ["admin"]);
     const sql = await getSql();
     if (data) {
-      const presencia = await puedeAparecer(staff.tenantId, { mercadoAlToque: true });
+      const presencia = await puedeAparecer(staff.casaId, { mercadoAlToque: true });
       if (!presencia.tier) throw new Error("Este puesto no tiene Presencia o Pro activo.");
     }
     await sql`
       update tenants
       set config = coalesce(config, '{}'::jsonb) || ${JSON.stringify({ mercadoAlToque: data })}::jsonb
-      where id = ${staff.tenantId}
+      where id = ${staff.casaId}
     `;
     return { activo: data };
   });
@@ -393,7 +394,7 @@ export const saveProducto = createServerFn({ method: "POST" })
     assertRole(staff, ["admin"]);
     const sql = await getSql();
     if (data.publicadoOnline) {
-      const presencia = await puedeAparecer(staff.tenantId, { mercadoAlToque: true });
+      const presencia = await puedeAparecer(staff.casaId, { mercadoAlToque: true });
       if (!presencia.tier) throw new Error("Sin Presencia o Pro no se publica en Mercado.");
     }
     const id = data.id ?? newId("p");
@@ -1279,7 +1280,7 @@ export const dashboardResumen = createServerFn({ method: "GET" })
       order by p.created_at asc
       limit 8
     `;
-    const trial = await slidesTrial(staff.tenantId);
+    const trial = await slidesTrial(staff.casaId);
     const ventas = num(span[0]?.total);
     const tickets = num(span[0]?.n);
     return {
@@ -1450,11 +1451,12 @@ export const listUsuarios = createServerFn({ method: "GET" })
       email: string;
       rol: Rol;
       activo: boolean;
+      puede_cambiar: boolean;
       ultimo_login: string | null;
     }>`
-      select id, nombre, email, rol, activo, ultimo_login::text as ultimo_login
+      select id, nombre, email, rol, activo, puede_cambiar, ultimo_login::text as ultimo_login
       from staff
-      where tenant_id = ${staff.tenantId}
+      where tenant_id = ${staff.casaId}
       order by nombre
     `;
   });
@@ -1467,7 +1469,9 @@ export const createUsuario = createServerFn({ method: "POST" })
     assertRole(staff, ["admin"]);
     const sql = await getSql();
     if (data.password.length < 8) throw new Error("La contraseña necesita al menos 8 caracteres.");
-    const email = data.email.trim().toLowerCase();
+    const correo = correoAceptable(data.email);
+    if (!correo.ok) throw new Error(correo.motivo);
+    const email = correo.email;
     const exists = await sql<{ id: string }>`select id from "user" where email = ${email} limit 1`;
     if (exists[0]) throw new Error("Ya existe un usuario con ese email.");
     const userId = newId("usr").replace("usr_", "");
@@ -1483,9 +1487,9 @@ export const createUsuario = createServerFn({ method: "POST" })
     `;
     await sql`
       insert into staff (id, tenant_id, user_id, nombre, email, rol, activo)
-      values (${newId("stf")}, ${staff.tenantId}, ${userId}, ${data.nombre.trim()}, ${email}, ${data.rol}, ${true})
+      values (${newId("stf")}, ${staff.casaId}, ${userId}, ${data.nombre.trim()}, ${email}, ${data.rol}, ${true})
     `;
-    await audit(staff.tenantId, staff, "alta_usuario", "staff", { email, rol: data.rol });
+    await audit(staff.casaId, staff, "alta_usuario", "staff", { email, rol: data.rol });
     return { ok: true };
   });
 
@@ -1498,7 +1502,7 @@ export const cambiarClaveUsuario = createServerFn({ method: "POST" })
     if (data.password.length < 8) throw new Error("La contraseña necesita al menos 8 caracteres.");
     const sql = await getSql();
     const destino = await sql<{ user_id: string }>`
-      select user_id from staff where id = ${data.id} and tenant_id = ${staff.tenantId} limit 1
+      select user_id from staff where id = ${data.id} and tenant_id = ${staff.casaId} limit 1
     `;
     if (!destino[0]) throw new Error("Ese usuario no es de este puesto.");
     const hash = await hashPassword(data.password);
@@ -1507,7 +1511,7 @@ export const cambiarClaveUsuario = createServerFn({ method: "POST" })
     `;
     if (!account[0]) throw new Error("Esa cuenta no tiene contraseña.");
     await sql`update account set password = ${hash}, "updatedAt" = now() where id = ${account[0].id}`;
-    await audit(staff.tenantId, staff, "cambiar_clave", "staff", { id: data.id });
+    await audit(staff.casaId, staff, "cambiar_clave", "staff", { id: data.id });
     return { ok: true };
   });
 
@@ -1521,9 +1525,9 @@ export const toggleUsuario = createServerFn({ method: "POST" })
     const sql = await getSql();
     await sql`
       update staff set activo = ${data.activo}
-      where id = ${data.id} and tenant_id = ${staff.tenantId}
+      where id = ${data.id} and tenant_id = ${staff.casaId}
     `;
-    await audit(staff.tenantId, staff, "cambiar_usuario", "staff", data);
+    await audit(staff.casaId, staff, "cambiar_usuario", "staff", data);
     return { ok: true };
   });
 
@@ -1637,6 +1641,211 @@ export const estadoCaja = createServerFn({ method: "GET" })
         facturaId: u.factura_id,
         cae: u.cae,
       })),
+    };
+  });
+
+export const mesaTurno = createServerFn({ method: "GET" })
+  .middleware([authMiddleware])
+  .handler(async ({ context }) => {
+    const staff = await ensureStaffForUser(context.userId);
+    assertRole(staff, ["admin", "cajero"]);
+    const sql = await getSql();
+    const [catalogo] = await sql<{ publicados: unknown; sin_stock: unknown; bajos: unknown }>`
+      select count(*) filter (where activo and publicado_online) as publicados,
+             count(*) filter (where activo and publicado_online and stock <= 0) as sin_stock,
+             count(*) filter (where activo and stock <= stock_minimo) as bajos
+      from productos
+      where tenant_id = ${staff.tenantId}
+    `;
+    const formas = await sql<{ forma_pago: string; total: unknown; n: unknown }>`
+      select forma_pago, coalesce(sum(monto), 0) as total, count(*)::int as n
+      from cobros
+      where tenant_id = ${staff.tenantId} and anulado = false and created_at::date = current_date
+      group by forma_pago
+    `;
+    const app = await sql<{
+      id: string;
+      cliente: string;
+      estado: string;
+      forma_pago: string | null;
+      total: unknown;
+      detalle: string;
+      created_at: string;
+    }>`
+      select p.id, p.cliente_nombre as cliente, p.estado, p.forma_pago,
+             coalesce((select sum(i.cantidad * i.precio_unitario) from pedido_items i where i.pedido_id = p.id), 0) as total,
+             coalesce((select string_agg(i.nombre_snapshot, ', ') from pedido_items i where i.pedido_id = p.id), '') as detalle,
+             p.created_at::text as created_at
+      from pedidos p
+      where p.tenant_id = ${staff.tenantId}
+        and p.origen = 'mercado_al_toque'
+        and p.estado in ('enviado', 'en_preparacion', 'listo', 'cobrado')
+      order by p.created_at desc
+      limit 8
+    `;
+    const criticos = await sql<{ nombre: string; stock: unknown }>`
+      select nombre, stock
+      from productos
+      where tenant_id = ${staff.tenantId} and activo and publicado_online and stock <= stock_minimo
+      order by stock asc, nombre
+      limit 5
+    `;
+    return {
+      publicados: num(catalogo?.publicados),
+      sinStock: num(catalogo?.sin_stock),
+      bajos: num(catalogo?.bajos),
+      cobrado: formas.reduce((acc, row) => acc + num(row.total), 0),
+      formas: formas.map((row) => ({
+        formaPago: row.forma_pago as FormaPago,
+        total: num(row.total),
+        n: num(row.n),
+      })),
+      deLaApp: app.map((row) => ({
+        id: row.id,
+        cliente: row.cliente,
+        estado: row.estado,
+        formaPago: (row.forma_pago ?? null) as FormaPago | null,
+        total: num(row.total),
+        detalle: row.detalle,
+        createdAt: row.created_at,
+      })),
+      criticos: criticos.map((row) => ({ nombre: row.nombre, stock: num(row.stock) })),
+    };
+  });
+
+export const escritorioDueno = createServerFn({ method: "GET" })
+  .middleware([authMiddleware])
+  .handler(async ({ context }) => {
+    const staff = await ensureStaffForUser(context.userId);
+    assertRole(staff, ["admin"]);
+    const sql = await getSql();
+    const [marca] = await sql<{ config: unknown }>`
+      select config from tenants where id = ${staff.tenantId} limit 1
+    `;
+    const presencia = await puedeAparecer(staff.casaId, marca?.config);
+    const cobros = await sql<{ dia: string; total: unknown }>`
+      select to_char(d::date, 'YYYY-MM-DD') as dia, coalesce(sum(c.monto), 0) as total
+      from generate_series(current_date - 13, current_date, interval '1 day') as d
+      left join cobros c
+        on c.tenant_id = ${staff.tenantId}
+       and c.anulado = false
+       and c.created_at::date = d::date
+      group by d::date
+      order by d::date
+    `;
+    const costos = await sql<{ dia: string; total: unknown }>`
+      select to_char(r.confirmado_at::date, 'YYYY-MM-DD') as dia,
+             coalesce(sum(i.cantidad * i.precio), 0) as total
+      from remitos r
+      join remito_items i on i.remito_id = r.id and i.confirmado and i.precio is not null
+      where r.tenant_id = ${staff.tenantId}
+        and r.estado = 'confirmado'
+        and r.confirmado_at::date >= current_date - 13
+      group by r.confirmado_at::date
+    `;
+    const [huecos] = await sql<{ n: unknown }>`
+      select count(*)::int as n
+      from remitos r
+      join remito_items i on i.remito_id = r.id and i.confirmado and i.precio is null
+      where r.tenant_id = ${staff.tenantId}
+        and r.estado = 'confirmado'
+        and r.confirmado_at::date >= current_date - 13
+    `;
+    const entradas = await sql<{ id: string; proveedor: string | null; cuando: string; costo: unknown; lineas: unknown }>`
+      select r.id, r.proveedor, r.confirmado_at::text as cuando,
+             coalesce(sum(i.cantidad * i.precio) filter (where i.precio is not null), 0) as costo,
+             count(i.id)::int as lineas
+      from remitos r
+      join remito_items i on i.remito_id = r.id and i.confirmado
+      where r.tenant_id = ${staff.tenantId} and r.estado = 'confirmado'
+      group by r.id, r.proveedor, r.confirmado_at
+      order by r.confirmado_at desc
+      limit 8
+    `;
+    const deudas = await sql<{ id: string; nombre: string; saldo: unknown }>`
+      select c.id, c.nombre, coalesce(sum(m.monto), 0) as saldo
+      from clientes c
+      left join cuenta_movimientos m on m.cliente_id = c.id and m.tenant_id = c.tenant_id
+      where c.tenant_id = ${staff.tenantId} and c.activo = true
+      group by c.id, c.nombre
+      having coalesce(sum(m.monto), 0) > 0
+      order by saldo desc
+      limit 40
+    `;
+    const cierres = await sql<{
+      id: string;
+      abierto_at: string;
+      cerrado_at: string;
+      esperado: unknown;
+      real: unknown;
+      diferencia: unknown;
+      notas: string | null;
+      nombre: string | null;
+    }>`
+      select c.id, c.abierto_at::text as abierto_at, c.cerrado_at::text as cerrado_at,
+             c.esperado, c.real, c.diferencia, c.notas, s.nombre
+      from cierres_caja c
+      left join staff s on s.id = c.usuario_id
+      where c.tenant_id = ${staff.tenantId} and c.cerrado_at is not null
+      order by c.cerrado_at desc
+      limit 30
+    `;
+    const publicados = await sql<{ id: string; nombre: string; precio: unknown; stock: unknown; unidad_label: string }>`
+      select id, nombre, precio, stock, unidad_label
+      from productos
+      where tenant_id = ${staff.tenantId} and activo = true and publicado_online = true
+      order by lower(nombre)
+    `;
+    const [ocultos] = await sql<{ n: unknown }>`
+      select count(*)::int as n
+      from productos
+      where tenant_id = ${staff.tenantId} and activo = true and publicado_online = false
+    `;
+    const costoPorDia = new Map(costos.map((row) => [String(row.dia).slice(0, 10), num(row.total)]));
+    const serie = cobros.map((row) => {
+      const dia = String(row.dia).slice(0, 10);
+      return { dia, cobrado: num(row.total), costo: costoPorDia.get(dia) ?? 0 };
+    });
+    const ultimos = serie.slice(-7);
+    const cobrado = ultimos.reduce((acc, row) => acc + row.cobrado, 0);
+    const costo = ultimos.reduce((acc, row) => acc + row.costo, 0);
+    return {
+      puestoVisible: presencia.visible,
+      margen: {
+        cobrado,
+        costo,
+        diferencia: cobrado - costo,
+        sinPrecio: num(huecos?.n),
+        serie,
+        entradas: entradas.map((row) => ({
+          id: row.id,
+          proveedor: row.proveedor || "Sin proveedor",
+          cuando: row.cuando,
+          costo: num(row.costo),
+          lineas: num(row.lineas),
+        })),
+      },
+      deudas: deudas.map((row) => ({ id: row.id, nombre: row.nombre, saldo: num(row.saldo) })),
+      cierres: cierres.map((row) => ({
+        id: row.id,
+        abiertoAt: row.abierto_at,
+        cerradoAt: row.cerrado_at,
+        esperado: num(row.esperado),
+        real: num(row.real),
+        diferencia: num(row.diferencia),
+        notas: row.notas ?? "",
+        quien: row.nombre ?? "Sin nombre",
+      })),
+      lista: {
+        ocultos: num(ocultos?.n),
+        productos: publicados.map((row) => ({
+          id: row.id,
+          nombre: row.nombre,
+          precio: num(row.precio),
+          stock: num(row.stock),
+          unidad: row.unidad_label,
+        })),
+      },
     };
   });
 

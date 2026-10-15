@@ -24,6 +24,8 @@
   --color-naranja: #c46b14;
   --color-ambar: #c9a227;
   --color-alerta: #9b2330;
+  --color-btn: #145c38;
+  --color-btn-fg: #f6e7c4;
 
   --radius-sm: 8px;
   --radius-md: 12px;
@@ -61,6 +63,53 @@
   }
 }
 
+.torre-app main .rounded-lg.border.bg-surface {
+  border-radius: 10px;
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--color-ink) 4%, transparent);
+}
+.torre-app main h1 {
+  letter-spacing: -0.03em;
+}
+.torre-app main h2,
+.torre-app main h3 {
+  letter-spacing: -0.015em;
+}
+.torre-app main table thead th {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+  background: color-mix(in srgb, var(--color-paper-2) 65%, var(--color-surface));
+}
+.torre-kpis {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  overflow: hidden;
+  border: 1px solid var(--color-line);
+  border-radius: 10px;
+  background: var(--color-surface);
+}
+.puesto-kpis {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  overflow: hidden;
+  border: 1px solid var(--color-line);
+  border-radius: 10px;
+  background: var(--color-surface);
+}
+.puesto-kpis > :nth-child(odd) {
+  border-right: 1px solid var(--color-line);
+}
+.puesto-kpis > :nth-child(-n + 2) {
+  border-bottom: 1px solid var(--color-line);
+}
+.puesto-app main .rounded-lg.border.bg-surface,
+.puesto-app main .rounded-xl.border.bg-surface,
+.puesto-app main .rounded-2xl.border.bg-surface {
+  border-radius: 10px;
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--color-ink) 4%, transparent);
+}
+
 html.dark {
   color-scheme: dark;
   --color-paper: #0e1412;
@@ -80,6 +129,8 @@ html.dark {
   --color-naranja: #e39245;
   --color-ambar: #e3c56a;
   --color-alerta: #e07078;
+  --color-btn: #145c38;
+  --color-btn-fg: #f6e7c4;
 }
 
 html.dark select,

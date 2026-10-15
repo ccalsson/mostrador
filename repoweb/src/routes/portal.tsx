@@ -41,7 +41,7 @@ function PortalPage() {
             onClick={() => setTab(id)}
             className={cn(
               "h-9 rounded-[10px] px-3 text-sm",
-              tab === id ? "bg-leaf text-leaf-fg" : "bg-surface text-ink-soft",
+              tab === id ? "bg-btn text-btn-fg" : "bg-surface text-ink-soft",
             )}
           >
             {label}

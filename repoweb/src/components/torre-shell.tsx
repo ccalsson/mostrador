@@ -1,32 +1,50 @@
 import { Link, Navigate, useRouterState } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
+import { TorrePanel } from "@/components/torre-panel";
 import { signOut } from "@/lib/auth/client";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { torreYo } from "@/lib/torre-fn";
 import { pedidosAddon } from "@/lib/torre/control-fn";
 import { cn } from "@/lib/cn";
 
-const NAV = [
-  { section: "Comercial", to: "/torre", label: "Tablero" },
-  { section: "Comercial", to: "/torre/tenants", label: "Tenants" },
-  { section: "Comercial", to: "/torre/clientes", label: "Clientes" },
-  { section: "Comercial", to: "/torre/planes", label: "Planes" },
-  { section: "Comercial", to: "/torre/productos", label: "Add-ons y precios" },
-  { section: "Comercial", to: "/torre/servicios", label: "Servicios" },
-  { section: "Comercial", to: "/torre/suscripciones", label: "Suscripciones" },
-  { section: "Comercial", to: "/torre/sucursales", label: "Sucursales" },
-  { section: "Comercial", to: "/torre/promociones", label: "Promociones y founders" },
-  { section: "Comercial", to: "/torre/publicidad", label: "Publicidad" },
-  { section: "Comercial", to: "/torre/finanzas", label: "Finanzas" },
-  { section: "Legal", to: "/torre/legal", label: "Documentos y contratos" },
-  { section: "Legal", to: "/torre/procesadores", label: "Procesadores" },
-  { section: "Operación", to: "/torre/mercado", label: "Mostrador y Mercado" },
-  { section: "Auditoría", to: "/torre/auditoria", label: "Eventos" },
-  { section: "Plataforma", to: "/torre/apps", label: "Aplicaciones" },
-  { section: "Plataforma", to: "/torre/versiones", label: "Versiones" },
-  { section: "Plataforma", to: "/torre/deployments", label: "Deployments" },
-  { section: "Plataforma", to: "/torre/configuracion", label: "Configuración" },
+const GRUPOS = [
+  {
+    label: "Comercial",
+    items: [
+      { to: "/torre/tenants", label: "Negocios" },
+      { to: "/torre/clientes", label: "Clientes" },
+      { to: "/torre/planes", label: "Planes" },
+      { to: "/torre/productos", label: "Add-ons y precios" },
+      { to: "/torre/servicios", label: "Servicios" },
+      { to: "/torre/suscripciones", label: "Suscripciones" },
+      { to: "/torre/sucursales", label: "Sucursales" },
+      { to: "/torre/promociones", label: "Promociones" },
+      { to: "/torre/publicidad", label: "Publicidad" },
+      { to: "/torre/finanzas", label: "Finanzas" },
+    ],
+  },
+  {
+    label: "Operación",
+    items: [{ to: "/torre/mercado", label: "Mostrador y Mercado" }],
+  },
+  {
+    label: "Legal",
+    items: [
+      { to: "/torre/legal", label: "Documentos y contratos" },
+      { to: "/torre/procesadores", label: "Procesadores" },
+    ],
+  },
+  {
+    label: "Plataforma",
+    items: [
+      { to: "/torre/apps", label: "Aplicaciones" },
+      { to: "/torre/versiones", label: "Versiones" },
+      { to: "/torre/deployments", label: "Deployments" },
+      { to: "/torre/auditoria", label: "Auditoría" },
+      { to: "/torre/configuracion", label: "Configuración" },
+    ],
+  },
 ] as const;
 
 export function TorreShell({ title, children }: { title: string; children: ReactNode }) {
@@ -45,6 +63,7 @@ export function TorreShell({ title, children }: { title: string; children: React
   });
   const avisos = pedidos.data?.length ?? 0;
   const path = useRouterState({ select: (s) => s.location.pathname });
+  const [abierto, setAbierto] = useState<string | null>(null);
 
   if (isPending || (user && yo.isPending)) {
     return <div className="grid min-h-dvh place-items-center bg-paper text-muted">Abriendo la Torre…</div>;
@@ -64,58 +83,109 @@ export function TorreShell({ title, children }: { title: string; children: React
     );
   }
 
+  const tablero = path === "/torre" || path === "/torre/";
+
   return (
-    <div className="min-h-dvh bg-paper text-ink md:grid md:grid-cols-[14rem_minmax(0,1fr)]">
-      <aside className="sticky top-0 z-20 border-b border-white/10 bg-[#14110e] text-[#f4efe4] md:static md:min-h-dvh md:border-r md:border-b-0">
-        <div className="flex items-center justify-between gap-3 px-4 py-3">
-          <div>
-            <p className="text-[11px] tracking-wide text-[#e3c56a] uppercase">Interna</p>
-            <p className="font-display text-lg leading-tight font-semibold text-[#f4efe4]">Torre de Control</p>
-          </div>
-          <button
-            type="button"
-            className="shrink-0 text-xs text-[#f4efe4]/70"
-            onClick={() => void signOut("/torre/login")}
-          >
+    <div className="torre-app min-h-dvh bg-paper text-ink">
+      <header className="sticky top-0 z-30 border-b border-[#e3c56a]/25 bg-[#12100e] text-[#f4efe4]">
+        <div className="mx-auto flex w-full max-w-6xl items-center gap-4 px-4 py-2.5 sm:px-6">
+          <Link to="/torre" className="shrink-0 border-r border-white/10 pr-4" onClick={() => setAbierto(null)}>
+            <p className="text-[10px] font-medium tracking-[0.16em] text-[#e3c56a] uppercase">Consola</p>
+            <p className="font-display text-lg leading-none font-semibold tracking-tight">Torre</p>
+          </Link>
+          <nav className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
+            <Link
+              to="/torre"
+              onClick={() => setAbierto(null)}
+              className={cn("shrink-0 rounded-[10px] px-3 py-2 text-sm", tablero ? "bg-white/15" : "text-[#f4efe4]/75")}
+            >
+              Tablero
+              {avisos > 0 ? (
+                <span className="ml-2 inline-flex min-w-5 justify-center rounded-full bg-[#e3c56a] px-1.5 text-[11px] font-medium text-[#14110e]">{avisos}</span>
+              ) : null}
+            </Link>
+            {GRUPOS.map((grupo) => {
+              const activo = grupo.items.some((item) => path.startsWith(item.to));
+              const aLaDerecha = grupo.label === "Legal" || grupo.label === "Plataforma";
+              return (
+                <div key={grupo.label} className="relative shrink-0">
+                  <button
+                    type="button"
+                    className={cn("rounded-[10px] px-3 py-2 text-sm", activo || abierto === grupo.label ? "bg-white/15" : "text-[#f4efe4]/75")}
+                    onClick={() => setAbierto((actual) => (actual === grupo.label ? null : grupo.label))}
+                  >
+                    {grupo.label}
+                  </button>
+                  {abierto === grupo.label ? (
+                    <div className={cn("absolute top-full z-50 mt-2 min-w-56 rounded-[10px] border border-white/10 bg-[#1a1612] py-1 shadow-xl", aLaDerecha ? "right-0" : "left-0")}>
+                      {grupo.items.map((item) => (
+                        <Link
+                          key={item.to}
+                          to={item.to}
+                          onClick={() => setAbierto(null)}
+                          className={cn(
+                            "block rounded-md px-3 py-2 text-sm",
+                            path.startsWith(item.to) ? "bg-white/15" : "text-[#f4efe4]/80",
+                          )}
+                        >
+                          {item.label}
+                        </Link>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+          </nav>
+          <button type="button" className="shrink-0 text-xs text-[#f4efe4]/70" onClick={() => void signOut("/torre/login")}>
             Salir
           </button>
         </div>
-        <nav className="flex gap-1 overflow-x-auto px-2 pb-3 md:block md:space-y-1 md:overflow-visible md:px-2">
-          {NAV.map((item, index) => {
-            const active = item.to === "/torre" ? path === "/torre" : path.startsWith(item.to);
-            const header = index === 0 || NAV[index - 1].section !== item.section;
-            return (
-              <div key={item.to} className="shrink-0 md:shrink">
-                {header ? <p className="px-3 pt-2 text-[10px] tracking-wide text-[#e3c56a] uppercase">{item.section}</p> : null}
-                <Link
-                  to={item.to}
-                  className={cn(
-                    "block rounded-[10px] px-3 py-2 text-sm text-[#f4efe4]",
-                    active ? "bg-white/15" : "text-[#f4efe4]/75",
-                  )}
-                >
-                  {item.label}
-                  {item.to === "/torre" && avisos > 0 ? (
-                    <span className="ml-2 inline-flex min-w-5 justify-center rounded-full bg-[#e3c56a] px-1.5 text-[11px] font-medium text-[#14110e]">{avisos}</span>
-                  ) : null}
-                </Link>
-              </div>
-            );
-          })}
-        </nav>
-      </aside>
-      <main className="min-w-0 px-4 py-4 sm:px-6">
-        <h1 className="mb-4 font-display text-2xl font-semibold">{title}</h1>
-        {avisos > 0 && path !== "/torre" ? (
+      </header>
+      <main className="mx-auto w-full max-w-6xl px-4 py-5 sm:px-6">
+        <p className="text-[11px] font-medium tracking-[0.14em] text-muted uppercase">Varios negocios</p>
+        <h1 className="mt-1 mb-5 font-display text-[1.65rem] leading-none font-semibold">{title}</h1>
+        {avisos > 0 && !tablero ? (
           <p className="mb-4 rounded-md bg-warn-bg px-3 py-2 text-sm text-terra">
             {avisos === 1 ? "Hay un add-on esperando habilitación." : `Hay ${avisos} add-ons esperando habilitación.`}{" "}
             <Link to="/torre" className="font-medium underline">Ver en el tablero</Link>
           </p>
         ) : null}
-        {children}
+        {tablero ? (
+          children
+        ) : (
+          <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_17rem]">
+            <div className="min-w-0">{children}</div>
+            <TorrePanel clave={claveDe(path)} />
+          </div>
+        )}
       </main>
     </div>
   );
+}
+
+function claveDe(path: string) {
+  const tabla: [string, string][] = [
+    ["/torre/tenants", "negocios"],
+    ["/torre/clientes", "clientes"],
+    ["/torre/planes", "planes"],
+    ["/torre/productos", "precios"],
+    ["/torre/servicios", "servicios"],
+    ["/torre/suscripciones", "suscripciones"],
+    ["/torre/sucursales", "sucursales"],
+    ["/torre/promociones", "promociones"],
+    ["/torre/publicidad", "publicidad"],
+    ["/torre/finanzas", "finanzas"],
+    ["/torre/mercado", "operacion"],
+    ["/torre/legal", "legal"],
+    ["/torre/procesadores", "procesadores"],
+    ["/torre/apps", "apps"],
+    ["/torre/versiones", "versiones"],
+    ["/torre/deployments", "deployments"],
+    ["/torre/auditoria", "auditoria"],
+    ["/torre/configuracion", "configuracion"],
+  ];
+  return tabla.find(([prefijo]) => path.startsWith(prefijo))?.[1] ?? "negocios";
 }
 
 export function Field({

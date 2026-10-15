@@ -3,7 +3,7 @@ import { cn } from "@/lib/cn";
 
 const variants = {
   primary:
-    "bg-leaf text-leaf-fg hover:brightness-95 shadow-[0_1px_0_rgba(0,0,0,0.08)]",
+    "bg-btn text-btn-fg hover:brightness-105 shadow-[0_1px_0_rgba(0,0,0,0.08)]",
   secondary: "bg-surface text-ink border border-line hover:bg-paper-2",
   ghost: "bg-transparent text-ink hover:bg-paper-2",
   danger: "bg-terra text-white hover:brightness-95",

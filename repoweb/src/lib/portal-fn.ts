@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { createServerFn } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
-import { correoRecuperacion, resendListo } from "@/lib/correo/recuperacion";
+import { correoRecuperacion, enviarPorResend } from "@/lib/correo/recuperacion";
 import { hashPassword } from "better-auth/crypto";
 import { authMiddleware } from "@/lib/auth/middleware";
 import { TENANT_ID } from "@/lib/catalog";
@@ -11,7 +11,12 @@ import { num } from "@/lib/money";
 import { createCredentialUser, ensureBootstrapped, ensureStaffForUser } from "@/lib/server/bootstrap";
 import { audit, loadPedido, mapProducto } from "@/lib/server/context";
 import { reservarLineas, soltarReserva } from "@/lib/server/stock";
-import type { Cliente, FormaPago, Pedido, Producto } from "@/lib/types";
+import { pedirConfirmacion, confirmarToken } from "@/lib/seguridad/confirmar";
+import { claveAceptable, correoAceptable } from "@/lib/seguridad/correo";
+import { ipDe } from "@/lib/seguridad/cupo";
+import { cupoFirme } from "@/lib/seguridad/cupo-db";
+import { verificarTurnstile } from "@/lib/seguridad/turnstile";
+import type { FormaPago, Pedido, Producto } from "@/lib/types";
 import { esCondicion } from "@/lib/afip-calc";
 import { condicionOperativa } from "@/lib/torre/presencia";
 
@@ -82,8 +87,7 @@ async function fichaPorUsuario(userId: string) {
 function enmascarar(email: string) {
   const [nombre, dominio] = email.split("@");
   if (!dominio) return "correo registrado";
-  const visible = nombre.slice(0, 1);
-  return `${visible}***@${dominio}`;
+  return `${nombre.slice(0, 1)}***@${dominio}`;
 }
 
 export const registrarCliente = createServerFn({ method: "POST" })
@@ -94,22 +98,34 @@ export const registrarCliente = createServerFn({ method: "POST" })
     telefono: string;
     cuit: string;
     direccion: string;
+    website?: string;
+    captcha?: string;
   }) => input)
   .handler(async ({ data }) => {
+    if (data.website?.trim()) {
+      return { id: "ok", pendiente: true, aviso: "Si el correo es válido, te llega un enlace para confirmarlo.", enlace: null as string | null };
+    }
+    const request = getRequest();
+    const ip = request ? ipDe(request) : "sin-ip";
+    const humano = await verificarTurnstile(data.captcha ?? "", ip);
+    if (!humano.ok) throw new Error(humano.motivo);
+    const golpe = await cupoFirme(`reg-cli:${ip}`, 40, 60 * 60 * 1000);
+    if (!golpe.ok) throw new Error("Demasiados intentos. Esperá un momento.");
     await ensureBootstrapped();
-    const email = data.email.trim().toLowerCase();
+    const correo = correoAceptable(data.email);
+    if (!correo.ok) throw new Error(correo.motivo);
+    const clave = claveAceptable(data.password, correo.email);
+    if (!clave.ok) throw new Error(clave.motivo);
+    const email = correo.email;
     const nombre = data.nombre.trim();
     const cuit = data.cuit.trim();
     const direccion = data.direccion.trim();
     const telefono = data.telefono.trim();
-    if (!nombre || !email || !cuit || !direccion || !telefono) throw new Error("Completá todos los datos.");
-    if (data.password.length < 6) throw new Error("La contraseña necesita al menos 6 caracteres.");
+    if (!nombre || !cuit || !direccion || !telefono) throw new Error("Completá todos los datos.");
     const sql = await getSql();
-    const staff = await sql<{ id: string }>`
-      select id from staff where lower(email) = ${email} limit 1
-    `;
+    const staff = await sql<{ id: string }>`select id from staff where lower(email) = ${email} limit 1`;
     if (staff[0]) throw new Error("Ese correo pertenece al puesto. Usá otro.");
-    const userId = await createCredentialUser(email, data.password, nombre);
+    const userId = await createCredentialUser(email, data.password, nombre, false);
     const id = newId("cli");
     await sql`
       insert into clientes (id, tenant_id, nombre, telefono, email, cuit, direccion, cuenta_corriente, activo, user_id)
@@ -117,42 +133,37 @@ export const registrarCliente = createServerFn({ method: "POST" })
         ${id}, ${TENANT_ID}, ${nombre}, ${telefono}, ${email}, ${cuit}, ${direccion}, ${false}, ${true}, ${userId}
       )
     `;
-    return { id };
+    const confirmacion = await pedirConfirmacion(email);
+    return { id, pendiente: true, aviso: confirmacion.aviso, enlace: confirmacion.enlace };
   });
 
 function origenPublico() {
   const fijo = process.env.BETTER_AUTH_URL?.trim();
   if (fijo) return fijo.replace(/\/$/, "");
   const request = getRequest();
-  const host =
-    request?.headers.get("x-forwarded-host")?.split(",")[0]?.trim() || request?.headers.get("host") || "";
+  const host = request?.headers.get("x-forwarded-host")?.split(",")[0]?.trim() || request?.headers.get("host") || "";
   const proto = request?.headers.get("x-forwarded-proto")?.split(",")[0]?.trim() || "http";
   return host ? `${proto}://${host}` : "http://127.0.0.1:8080";
 }
 
 async function enviarEnlace(email: string, enlace: string) {
-  const key = process.env.RESEND_API_KEY?.trim();
-  if (!resendListo(key)) return false;
-  const from = process.env.RESEND_FROM?.trim() || "Mostrador <onboarding@resend.dev>";
-  const respuesta = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
-    body: JSON.stringify(correoRecuperacion(email, enlace, from)),
-  });
-  return respuesta.ok;
+  return enviarPorResend(correoRecuperacion(email, enlace, process.env.RESEND_FROM?.trim() || ""));
 }
 
 export const pedirRecuperacion = createServerFn({ method: "POST" })
   .validator((input: { email: string }) => input)
   .handler(async ({ data }) => {
+    const request = getRequest();
+    const golpe = await cupoFirme(`reset:${request ? ipDe(request) : "sin-ip"}`, 20, 60 * 60 * 1000);
+    if (!golpe.ok) throw new Error("Demasiados intentos. Esperá un momento.");
     await ensureBootstrapped();
-    const email = data.email.trim().toLowerCase();
+    const correo = correoAceptable(data.email);
+    const email = correo.ok ? correo.email : "";
     const aviso = "Si ese correo tiene cuenta, le llega un enlace para elegir otra clave.";
-    if (!email.includes("@")) throw new Error("Ingresá un correo.");
+    if (!correo.ok) throw new Error(correo.motivo);
     const sql = await getSql();
     const users = await sql<{ id: string }>`select id from "user" where lower(email) = ${email} limit 1`;
-    const user = users[0];
-    if (!user) return { aviso, enlace: null as string | null };
+    if (!users[0]) return { aviso, enlace: null as string | null };
     const token = randomBytes(32).toString("hex");
     const hash = createHash("sha256").update(token).digest("hex");
     const id = newId("ver").replace("ver_", "");
@@ -188,21 +199,20 @@ export const confirmarRecuperacion = createServerFn({ method: "POST" })
     const users = await sql<{ id: string }>`select id from "user" where lower(email) = ${email} limit 1`;
     const userId = users[0]?.id;
     if (!userId) throw new Error("El enlace venció. Pedí otro.");
-    const clave = await hashPassword(data.password);
+    const clave = claveAceptable(data.password, email);
+    if (!clave.ok) throw new Error(clave.motivo);
+    const hashed = await hashPassword(data.password);
     const cuentas = await sql<{ id: string }>`
       select id from account where "userId" = ${userId} and "providerId" = 'credential' limit 1
     `;
     if (!cuentas[0]) throw new Error("Esta cuenta entra con Google, no con clave.");
-    await sql`
-      update account set password = ${clave}, "updatedAt" = now()
-      where id = ${cuentas[0].id}
-    `;
+    await sql`update account set password = ${hashed}, "updatedAt" = now() where id = ${cuentas[0].id}`;
     await sql`delete from session where "userId" = ${userId}`;
     await sql`delete from verification where identifier = ${identifier}`;
     try {
       await sql`delete from mercado_sesiones where user_id = ${userId}`;
     } catch {
-      /* el canal puede no estar migrado */
+      /* sin sesiones de mercado */
     }
     return { ok: true };
   });
@@ -210,15 +220,16 @@ export const confirmarRecuperacion = createServerFn({ method: "POST" })
 export const recordarUsuario = createServerFn({ method: "POST" })
   .validator((input: { dato: string }) => input)
   .handler(async ({ data }) => {
+    const request = getRequest();
+    const golpe = await cupoFirme(`recordar:${request ? ipDe(request) : "sin-ip"}`, 20, 60 * 60 * 1000);
+    if (!golpe.ok) throw new Error("Demasiados intentos. Esperá un momento.");
     await ensureBootstrapped();
     const dato = data.dato.trim();
     if (!dato) throw new Error("Ingresá el CUIT o el teléfono.");
     const sql = await getSql();
     const rows = await sql<{ email: string | null }>`
       select email from clientes
-      where tenant_id = ${TENANT_ID}
-        and user_id is not null
-        and (cuit = ${dato} or telefono = ${dato})
+      where tenant_id = ${TENANT_ID} and user_id is not null and (cuit = ${dato} or telefono = ${dato})
       limit 1
     `;
     const email = rows[0]?.email;
@@ -228,21 +239,10 @@ export const recordarUsuario = createServerFn({ method: "POST" })
 
 export const catalogoCliente = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
-  .handler(async ({ context }) => {
+  .handler(async ({ context }): Promise<Producto[]> => {
     await fichaPorUsuario(context.userId);
     const sql = await getSql();
-    const rows = await sql<{
-      id: string;
-      nombre: string;
-      unidad: Producto["unidad"];
-      unidad_label: string;
-      precio: unknown;
-      stock: unknown;
-      stock_minimo: unknown;
-      alias: unknown;
-      activo: boolean;
-      orden: unknown;
-    }>`
+    const rows = await sql<Parameters<typeof mapProducto>[0]>`
       select id, nombre, unidad, unidad_label, precio, stock, stock_minimo, alias, activo, orden
       from productos
       where tenant_id = ${TENANT_ID} and activo = true
@@ -280,26 +280,14 @@ export const misMovimientos = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     const ficha = await fichaPorUsuario(context.userId);
     const sql = await getSql();
-    const rows = await sql<{
-      id: string;
-      tipo: string;
-      monto: unknown;
-      nota: string | null;
-      created_at: string;
-    }>`
+    const rows = await sql<{ id: string; tipo: string; monto: unknown; nota: string | null; created_at: string }>`
       select id, tipo, monto, nota, created_at::text as created_at
       from cuenta_movimientos
       where cliente_id = ${ficha.id}
       order by created_at desc
       limit 40
     `;
-    return rows.map((r) => ({
-      id: r.id,
-      tipo: r.tipo,
-      monto: num(r.monto),
-      nota: r.nota,
-      createdAt: r.created_at,
-    }));
+    return rows.map((r) => ({ id: r.id, tipo: r.tipo, monto: num(r.monto), nota: r.nota, createdAt: r.created_at }));
   });
 
 export const misPedidos = createServerFn({ method: "GET" })
@@ -332,7 +320,7 @@ export const pedirComoCliente = createServerFn({ method: "POST" })
   }) => input)
   .handler(async ({ context, data }) => {
     const ficha = await fichaPorUsuario(context.userId);
-    const items = data.items.filter((line) => line.cantidad > 0);
+    const items = data.items.filter((line) => line.cantidad > 0).slice(0, 40);
     if (items.length === 0) throw new Error("El pedido no tiene productos.");
     if (data.formaPago === "cuenta_corriente" && (!ficha.cuentaCorriente || !ficha.puedeCuentaCorriente)) {
       throw new Error(ficha.puedeCuentaCorriente ? "El puesto todavía no te habilitó la cuenta corriente." : "La cuenta corriente no está incluida en el plan.");
@@ -354,17 +342,7 @@ export const pedirComoCliente = createServerFn({ method: "POST" })
         ${data.formaPago === "transferencia" ? data.comprobanteData ?? null : null}
       )
     `;
-    const productos = await sql<{
-      id: string;
-      nombre: string;
-      unidad: Producto["unidad"];
-      unidad_label: string;
-      precio: unknown;
-      stock: unknown;
-      stock_minimo: unknown;
-      alias: unknown;
-      activo: boolean;
-    }>`
+    const productos = await sql<Parameters<typeof mapProducto>[0]>`
       select id, nombre, unidad, unidad_label, precio, stock, stock_minimo, alias, activo
       from productos where tenant_id = ${TENANT_ID} and activo = true
     `;
@@ -373,6 +351,7 @@ export const pedirComoCliente = createServerFn({ method: "POST" })
     for (const line of items) {
       const prod = byId.get(line.productoId);
       if (!prod) throw new Error("Hay un producto que ya no está.");
+      if (line.cantidad > 500) throw new Error("La cantidad de una línea es demasiado alta.");
       lineas.push({ productoId: prod.id, cantidad: line.cantidad });
       await sql`
         insert into pedido_items (
@@ -392,10 +371,7 @@ export const pedirComoCliente = createServerFn({ method: "POST" })
     }
     await sql`
       insert into alertas (id, tenant_id, tipo, mensaje, leida)
-      values (
-        ${newId("alr")}, ${TENANT_ID}, ${"pedido_cliente"},
-        ${`${ficha.nombre} mandó un pedido.`}, ${false}
-      )
+      values (${newId("alr")}, ${TENANT_ID}, ${"pedido_cliente"}, ${`${ficha.nombre} mandó un pedido.`}, ${false})
     `;
     return loadPedido(pedidoId, TENANT_ID);
   });
@@ -406,24 +382,16 @@ export const verComprobante = createServerFn({ method: "GET" })
   .handler(async ({ context, data: pedidoId }) => {
     await ensureBootstrapped();
     const sql = await getSql();
-    const rows = await sql<{
-      cliente_id: string | null;
-      comprobante_nombre: string | null;
-      comprobante_data: string | null;
-    }>`
+    const rows = await sql<{ cliente_id: string | null; comprobante_nombre: string | null; comprobante_data: string | null }>`
       select cliente_id, comprobante_nombre, comprobante_data
       from pedidos where id = ${pedidoId} and tenant_id = ${TENANT_ID} limit 1
     `;
     const row = rows[0];
     if (!row?.comprobante_data) throw new Error("Este pedido no tiene comprobante.");
-    const ficha = await sql<{ id: string }>`
-      select id from clientes where user_id = ${context.userId} and tenant_id = ${TENANT_ID} limit 1
-    `;
+    const ficha = await sql<{ id: string }>`select id from clientes where user_id = ${context.userId} limit 1`;
     if (ficha[0]) {
       if (ficha[0].id !== row.cliente_id) throw new Error("Ese comprobante no es tuyo.");
-    } else {
-      await ensureStaffForUser(context.userId);
-    }
+    } else await ensureStaffForUser(context.userId);
     return { nombre: row.comprobante_nombre, data: row.comprobante_data };
   });
 
@@ -518,34 +486,28 @@ export const listarCompradoresApp = createServerFn({ method: "GET" })
   .handler(async ({ context, data }) => {
     const staff = await ensureStaffForUser(context.userId);
     if (staff.rol !== "admin") throw new Error("No tenés permiso para esta acción.");
+    const q = (data.busca ?? "").trim().toLowerCase().slice(0, 80);
+    const like = `%${q}%`;
     const sql = await getSql();
-    const busca = (data.busca ?? "").trim();
-    const like = `%${busca.replace(/[%_]/g, "")}%`;
     const rows = await sql<{
       user_id: string;
+      email: string;
       nombre: string;
       telefono: string | null;
-      email: string;
       identidad_estado: string;
       cliente_id: string | null;
-      cuenta_corriente: boolean | null;
-      cliente_activo: boolean | null;
       pedidos: number;
     }>`
-      select mc.user_id, mc.nombre, mc.telefono, u.email, mc.identidad_estado,
-             c.id as cliente_id, c.cuenta_corriente, c.activo as cliente_activo,
-             (select count(*)::int from pedidos p
-               where p.tenant_id = ${staff.tenantId}
-                 and p.comprador_mercado_id = mc.id
-                 and p.origen = 'mercado_al_toque') as pedidos
-      from mercado_compradores mc
-      join "user" u on u.id = mc.user_id
-      left join clientes c on c.user_id = mc.user_id and c.tenant_id = ${staff.tenantId}
-      where ${busca.length < 2}
-         or mc.nombre ilike ${like}
-         or u.email ilike ${like}
-         or coalesce(mc.telefono, '') ilike ${like}
-      order by pedidos desc, lower(mc.nombre)
+      select u.id as user_id, u.email, c.nombre, c.telefono, c.identidad_estado, cl.id as cliente_id,
+             (select count(*)::int from pedidos p where p.comprador_mercado_id = c.id and p.tenant_id = ${staff.tenantId}) as pedidos
+      from mercado_compradores c
+      join "user" u on u.id = c.user_id
+      left join clientes cl on cl.user_id = u.id and cl.tenant_id = ${staff.tenantId}
+      where ${q} = ''
+         or lower(c.nombre) like ${like}
+         or lower(u.email) like ${like}
+         or coalesce(c.telefono, '') like ${like}
+      order by lower(c.nombre)
       limit 80
     `;
     const condicion = await condicionOperativa(staff.tenantId);
@@ -553,15 +515,13 @@ export const listarCompradoresApp = createServerFn({ method: "GET" })
       puedeCuenta: condicion.cuentaCorriente,
       compradores: rows.map((row) => ({
         userId: row.user_id,
+        email: row.email,
         nombre: row.nombre,
         telefono: row.telefono,
-        email: row.email,
         identidad: row.identidad_estado,
-        pedidos: row.pedidos,
         clienteId: row.cliente_id,
+        pedidos: num(row.pedidos),
         enLista: Boolean(row.cliente_id),
-        activo: row.cliente_activo !== false,
-        cuentaCorriente: row.cuenta_corriente === true,
       })),
     };
   });
@@ -573,48 +533,25 @@ export const sumarCompradorApp = createServerFn({ method: "POST" })
     const staff = await ensureStaffForUser(context.userId);
     if (staff.rol !== "admin") throw new Error("No tenés permiso para esta acción.");
     const sql = await getSql();
-    const compradores = await sql<{ nombre: string; telefono: string | null; email: string }>`
-      select mc.nombre, mc.telefono, u.email
-      from mercado_compradores mc
-      join "user" u on u.id = mc.user_id
-      where mc.user_id = ${data.userId}
+    const rows = await sql<{ nombre: string; telefono: string | null; email: string }>`
+      select c.nombre, c.telefono, u.email
+      from mercado_compradores c
+      join "user" u on u.id = c.user_id
+      where c.user_id = ${data.userId}
       limit 1
     `;
-    const comprador = compradores[0];
-    if (!comprador) throw new Error("Ese usuario no está en la app.");
-    const email = comprador.email.trim().toLowerCase();
-    const propio = await sql<{ id: string }>`
-      select id from clientes
-      where tenant_id = ${staff.tenantId} and user_id = ${data.userId}
-      limit 1
+    const comprador = rows[0];
+    if (!comprador) throw new Error("Ese comprador no está en la app.");
+    const ya = await sql<{ id: string }>`
+      select id from clientes where tenant_id = ${staff.tenantId} and user_id = ${data.userId} limit 1
     `;
-    if (propio[0]) return { id: propio[0].id };
-    const porCorreo = await sql<{ id: string; user_id: string | null }>`
-      select id, user_id from clientes
-      where tenant_id = ${staff.tenantId} and lower(email) = ${email}
-      limit 1
-    `;
-    if (porCorreo[0]?.user_id && porCorreo[0].user_id !== data.userId) {
-      throw new Error("Ese correo ya está en otro cliente del puesto.");
-    }
-    if (porCorreo[0]) {
-      await sql`
-        update clientes set user_id = ${data.userId}, activo = true
-        where id = ${porCorreo[0].id} and tenant_id = ${staff.tenantId}
-      `;
-      await audit(staff.tenantId, staff, "sumar_cliente_app", "cliente", { userId: data.userId, id: porCorreo[0].id });
-      return { id: porCorreo[0].id };
-    }
+    if (ya[0]) return { id: ya[0].id };
     const id = newId("cli");
     await sql`
-      insert into clientes (
-        id, tenant_id, nombre, telefono, email, cuenta_corriente, activo, user_id
-      ) values (
-        ${id}, ${staff.tenantId}, ${comprador.nombre}, ${comprador.telefono},
-        ${email}, ${false}, ${true}, ${data.userId}
-      )
+      insert into clientes (id, tenant_id, nombre, telefono, email, cuenta_corriente, activo, user_id)
+      values (${id}, ${staff.tenantId}, ${comprador.nombre}, ${comprador.telefono}, ${comprador.email}, ${false}, ${true}, ${data.userId})
     `;
-    await audit(staff.tenantId, staff, "sumar_cliente_app", "cliente", { userId: data.userId, id });
+    await audit(staff.tenantId, staff, "alta_cliente_app", "cliente", { id, userId: data.userId });
     return { id };
   });
 
@@ -625,67 +562,45 @@ export const estadisticasCompradorApp = createServerFn({ method: "GET" })
     const staff = await ensureStaffForUser(context.userId);
     if (staff.rol !== "admin") throw new Error("No tenés permiso para esta acción.");
     const sql = await getSql();
-    const fila = await sql<{
-      pedidos: number;
-      cobrados: number;
-      anulados: number;
-      en_curso: number;
+    const comprador = await sql<{ id: string }>`select id from mercado_compradores where user_id = ${userId} limit 1`;
+    if (!comprador[0]) throw new Error("Ese comprador no está en la app.");
+    const [tot] = await sql<{
+      pedidos: unknown;
       total: unknown;
+      cobrados: unknown;
+      en_curso: unknown;
+      anulados: unknown;
       ultimo: string | null;
     }>`
       select count(*)::int as pedidos,
+             coalesce(sum(i.cantidad * i.precio_unitario), 0) as total,
              count(*) filter (where p.estado in ('cobrado', 'entregado', 'listo'))::int as cobrados,
+             count(*) filter (where p.estado in ('enviado', 'en_preparacion'))::int as en_curso,
              count(*) filter (where p.estado = 'anulado')::int as anulados,
-             count(*) filter (where p.estado not in ('cobrado', 'entregado', 'listo', 'anulado'))::int as en_curso,
-             coalesce(sum(
-               case when p.estado = 'anulado' then 0
-               else (select coalesce(sum(i.cantidad * i.precio_unitario), 0) from pedido_items i where i.pedido_id = p.id)
-               end
-             ), 0) as total,
              max(p.created_at)::text as ultimo
       from pedidos p
-      join mercado_compradores mc on mc.id = p.comprador_mercado_id
-      where p.tenant_id = ${staff.tenantId}
-        and mc.user_id = ${userId}
-        and p.origen = 'mercado_al_toque'
+      left join pedido_items i on i.pedido_id = p.id
+      where p.tenant_id = ${staff.tenantId} and p.comprador_mercado_id = ${comprador[0].id}
     `;
-    const formas = await sql<{ forma: string; cantidad: number; total: unknown }>`
-      select coalesce(p.forma_pago, 'sin_informar') as forma,
-             count(*)::int as cantidad,
-             coalesce(sum(
-               (select coalesce(sum(i.cantidad * i.precio_unitario), 0) from pedido_items i where i.pedido_id = p.id)
-             ), 0) as total
+    const formas = await sql<{ forma: string; cantidad: unknown; total: unknown }>`
+      select coalesce(p.forma_pago, 'sin_pago') as forma, count(*)::int as cantidad,
+             coalesce(sum(i.cantidad * i.precio_unitario), 0) as total
       from pedidos p
-      join mercado_compradores mc on mc.id = p.comprador_mercado_id
-      where p.tenant_id = ${staff.tenantId}
-        and mc.user_id = ${userId}
-        and p.origen = 'mercado_al_toque'
-        and p.estado <> 'anulado'
-      group by 1
-      order by cantidad desc
+      left join pedido_items i on i.pedido_id = p.id
+      where p.tenant_id = ${staff.tenantId} and p.comprador_mercado_id = ${comprador[0].id}
+      group by p.forma_pago
+      order by total desc
     `;
-    const base = fila[0];
     return {
-      pedidos: base?.pedidos ?? 0,
-      cobrados: base?.cobrados ?? 0,
-      anulados: base?.anulados ?? 0,
-      enCurso: base?.en_curso ?? 0,
-      total: num(base?.total),
-      ultimo: base?.ultimo ?? null,
-      formas: formas.map((forma) => ({ forma: forma.forma, cantidad: forma.cantidad, total: num(forma.total) })),
+      pedidos: num(tot?.pedidos),
+      total: num(tot?.total),
+      cobrados: num(tot?.cobrados),
+      enCurso: num(tot?.en_curso),
+      anulados: num(tot?.anulados),
+      ultimo: tot?.ultimo ?? null,
+      formas: formas.map((row) => ({ forma: row.forma as FormaPago, cantidad: num(row.cantidad), total: num(row.total) })),
     };
   });
-
-export type Proveedor = {
-  id: string;
-  nombre: string;
-  cuit: string | null;
-  telefono: string | null;
-  email: string | null;
-  direccion: string | null;
-  observaciones: string | null;
-  activo: boolean;
-};
 
 export const listarProveedores = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
@@ -693,13 +608,21 @@ export const listarProveedores = createServerFn({ method: "GET" })
     const staff = await ensureStaffForUser(context.userId);
     if (staff.rol !== "admin" && staff.rol !== "cajero") throw new Error("No tenés permiso para esta acción.");
     const sql = await getSql();
-    const rows = await sql<Proveedor & { observaciones: string | null }>`
+    return sql<{
+      id: string;
+      nombre: string;
+      cuit: string | null;
+      telefono: string | null;
+      email: string | null;
+      direccion: string | null;
+      observaciones: string | null;
+      activo: boolean;
+    }>`
       select id, nombre, cuit, telefono, email, direccion, observaciones, activo
       from proveedores
       where tenant_id = ${staff.tenantId}
       order by activo desc, lower(nombre)
     `;
-    return rows;
   });
 
 export const guardarProveedor = createServerFn({ method: "POST" })
@@ -768,7 +691,7 @@ export const productosDelProveedor = createServerFn({ method: "GET" })
 
 export const asignarProveedorRemito = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
-  .validator((input: { remitoId: string; proveedorId: string }) => input)
+  .validator((input: { proveedorId: string; remitoId: string }) => input)
   .handler(async ({ context, data }) => {
     const staff = await ensureStaffForUser(context.userId);
     if (staff.rol !== "admin" && staff.rol !== "cajero") throw new Error("No tenés permiso para esta acción.");
@@ -787,4 +710,6 @@ export const asignarProveedorRemito = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
-export type { Cliente };
+export const confirmarCorreo = createServerFn({ method: "POST" })
+  .validator((input: { token: string }) => input)
+  .handler(async ({ data }) => confirmarToken(data.token));

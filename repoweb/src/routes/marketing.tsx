@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { canalMercado, catalogoAddons, confirmarAddon, cotizarAddon, listProductos, publicarBanner } from "@/lib/fn";
+import { estadoCreativos, pedirCreativos } from "@/lib/creativos-fn";
 import { textoArs } from "@/lib/torre/reglas";
 import { ChecksContrato } from "@/components/checks-contrato";
 import { PLANTILLAS } from "@/lib/mercado/plantillas";
@@ -56,7 +57,7 @@ function Pantalla() {
   const venta = catalogo.data?.dolar?.venta ?? null;
   const contratados = new Set(catalogo.data?.contratados ?? []);
   const pendientes = new Set(catalogo.data?.pendientes ?? []);
-  const producto = productos.find((item) => item.id === elegido) ?? null;
+  const producto = (catalogo.data?.productos ?? []).find((item) => item.id === elegido) ?? null;
 
   if (producto) return <Checkout producto={producto} onVolver={() => setElegido(null)} />;
 
@@ -100,7 +101,102 @@ function Pantalla() {
           </div>
         ) : null}
       </section>
+      <Creativos onComprar={(id) => setElegido(id)} />
     </div>
+  );
+}
+
+function Creativos({ onComprar }: { onComprar: (id: string) => void }) {
+  const qc = useQueryClient();
+  const estado = useQuery({ queryKey: ["creativos"], queryFn: () => estadoCreativos() });
+  const [formato, setFormato] = useState<"banner" | "push">("banner");
+  const [brief, setBrief] = useState("");
+  const pedir = useMutation({
+    mutationFn: () => pedirCreativos({ data: { formato: elegido ?? formato, brief } }),
+    onSuccess: async () => {
+      toast.success("Foto lista, con los textos.");
+      setBrief("");
+      await qc.invalidateQueries({ queryKey: ["creativos"] });
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+  const data = estado.data;
+  const piezas = data?.piezas ?? [];
+  const elegido = piezas.includes(formato) ? formato : piezas[0];
+  const costo = data?.costo ?? 4;
+  return (
+    <section className="rounded-lg border border-line bg-surface p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="font-display text-xl font-semibold">Creativos</h2>
+          <p className="mt-1 max-w-2xl text-sm text-muted">
+            Solo para el banner o el push que Torre ya habilitó. Una foto y cuatro textos distintos. Si la imagen no sale, no se cobra.
+          </p>
+        </div>
+        <div className="text-right">
+          <p className="font-display text-2xl font-semibold tabular-nums">{data?.creditos ?? 0}</p>
+          <p className="text-xs text-muted">créditos</p>
+          <div className="mt-2 flex gap-2">
+            {(data?.paquetes ?? [{ id: "prod_creditos_50", creditos: 50, usd: 5.99 }, { id: "prod_creditos_100", creditos: 100, usd: 9.99 }]).map((pack) => (
+              <Button key={pack.id} onClick={() => onComprar(pack.id)}>{pack.creditos} · USD {pack.usd.toFixed(2).replace(".", ",")}</Button>
+            ))}
+          </div>
+        </div>
+      </div>
+      <p className="mt-3 text-sm text-muted">
+        Una foto sale {costo} créditos. El texto no se cobra aparte.
+      </p>
+      {estado.isPending ? <p className="mt-3 text-sm text-muted">Leyendo el saldo…</p> : null}
+      {!estado.isPending && piezas.length === 0 ? (
+        <p className="mt-3 text-sm text-muted">No hay una pieza habilitada. Contratá el banner o el push y esperá que Torre lo prenda.</p>
+      ) : null}
+      {elegido ? (
+        <form
+          className="mt-4 grid gap-3 sm:grid-cols-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            pedir.mutate();
+          }}
+        >
+          <label className="block text-sm">
+            Pieza
+            <select className="mt-1 h-11 w-full rounded-md border border-line bg-paper px-3" value={elegido} onChange={(event) => setFormato(event.target.value as "banner" | "push")}>
+              {piezas.map((pieza) => (
+                <option key={pieza} value={pieza}>{pieza === "banner" ? "Banner" : "Push"}</option>
+              ))}
+            </select>
+          </label>
+          <label className="block text-sm sm:col-span-2">
+            Qué tiene que decir
+            <textarea className="mt-1 min-h-24 w-full rounded-md border border-line bg-paper px-3 py-2" value={brief} maxLength={400} onChange={(event) => setBrief(event.target.value)} placeholder="Tomate perita, cajón de hoy, precio de puesto." />
+          </label>
+          <Button type="submit" disabled={pedir.isPending || (data?.creditos ?? 0) < costo}>
+            {pedir.isPending ? "Armando…" : `Pedir la foto · ${costo} créditos`}
+          </Button>
+        </form>
+      ) : null}
+      <ul className="mt-4 space-y-4">
+        {data?.pedidos.map((pedido) => (
+          <li key={pedido.id} className="border-t border-line pt-3">
+            <p className="text-sm text-muted">{pedido.formato} · 1 foto · {pedido.variantes.length} textos · {pedido.creditos} créditos</p>
+            <p className="text-sm">{pedido.brief}</p>
+            {pedido.variantes[0] ? (
+              <div className="mt-2 grid gap-3 sm:grid-cols-[180px_minmax(0,1fr)]">
+                <img src={pedido.variantes[0].imagen} alt={pedido.variantes[0].titulo} className="aspect-square w-full rounded-md border border-line object-cover" />
+                <ul className="space-y-2 text-sm">
+                  {pedido.variantes.map((variante) => (
+                    <li key={variante.id}>
+                      <p className="font-medium">{variante.titulo}</p>
+                      <p className="text-muted">{variante.texto}</p>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
@@ -145,8 +241,8 @@ function Checkout({ producto, onVolver }: { producto: Producto; onVolver: () => 
         </div>
       ) : null}
       <div className="mt-4 grid grid-cols-2 gap-2">
-        <button type="button" className={medio === "transferencia" ? "h-11 rounded-md bg-leaf px-3 text-sm text-white" : "h-11 rounded-md border border-line px-3 text-sm"} onClick={() => setMedio("transferencia")}>Transferencia</button>
-        <button type="button" className={medio === "cuenta" ? "h-11 rounded-md bg-leaf px-3 text-sm text-white" : "h-11 rounded-md border border-line px-3 text-sm"} onClick={() => setMedio("cuenta")}>A cargo en cuenta</button>
+        <button type="button" className={medio === "transferencia" ? "h-11 rounded-md bg-btn px-3 text-sm text-btn-fg" : "h-11 rounded-md border border-line px-3 text-sm"} onClick={() => setMedio("transferencia")}>Transferencia</button>
+        <button type="button" className={medio === "cuenta" ? "h-11 rounded-md bg-btn px-3 text-sm text-btn-fg" : "h-11 rounded-md border border-line px-3 text-sm"} onClick={() => setMedio("cuenta")}>A cargo en cuenta</button>
       </div>
       {medio === "transferencia" ? (
         <div className="mt-3 space-y-2 text-sm">
@@ -299,7 +395,7 @@ function Creador({
           <input className="mt-1 h-11 w-full rounded-md border border-line bg-paper px-2 text-sm text-ink" maxLength={80} value={frase} onChange={(event) => setFrase(event.target.value)} />
         </label>
       )}
-      <button type="submit" className="h-11 rounded-md bg-leaf px-3 text-sm font-medium text-white disabled:opacity-50 sm:col-span-2" disabled={publicar.isPending}>Publicar banner</button>
+      <button type="submit" className="h-11 rounded-md bg-btn px-3 text-sm font-medium text-btn-fg disabled:opacity-50 sm:col-span-2" disabled={publicar.isPending}>Publicar banner</button>
     </form>
   );
 }

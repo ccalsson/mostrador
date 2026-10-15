@@ -39,7 +39,11 @@ function Login() {
         email: nextEmail,
         password: nextPassword,
       });
-      if (err) throw new Error(err.message ?? "No se pudo entrar.");
+      if (err) {
+        const crudo = err.message ?? "No se pudo entrar.";
+        const mensaje = /verif/i.test(crudo) ? "Confirmá el correo antes de entrar." : crudo;
+        throw new Error(mensaje);
+      }
       const token = (data as { token?: string } | null)?.token;
       if (token) {
         try {

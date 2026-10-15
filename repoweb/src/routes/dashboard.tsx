@@ -1,12 +1,13 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Bar, BarChart, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { Package, Receipt, ShoppingBag, Timer } from "lucide-react";
+import { Bar, BarChart, Cell, Line, LineChart, Area, AreaChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { AppShell } from "@/components/app-shell";
 import { ClimaDolar } from "@/components/clima-dolar";
 import { IdentidadPuesto } from "@/components/identidad-puesto";
+import { MesaTurno } from "@/components/mesa-turno";
 import { StockBoard } from "@/components/stock-board";
+import { SucursalesPuesto } from "@/components/sucursales-puesto";
 import { dashboardResumen, listAlertas, marcarAlertaLeida, rankingCargadores } from "@/lib/fn";
 import { cn } from "@/lib/cn";
 import { clock, money } from "@/lib/money";
@@ -15,7 +16,7 @@ import { ESTADO_LABEL, PAGO_LABEL, type FormaPago, type PedidoEstado } from "@/l
 export const Route = createFileRoute("/dashboard")({ component: DashboardPage });
 
 type Rango = 1 | 7 | 30;
-type Grafico = "barras" | "linea" | "pagos" | "productos";
+type Grafico = "barras" | "linea" | "area";
 type Metrica = "pesos" | "tickets";
 
 function DashboardPage() {
@@ -28,17 +29,6 @@ function DashboardPage() {
   const [producto, setProducto] = useState<string | null>(null);
   const [buscar, setBuscar] = useState("");
   const [verCola, setVerCola] = useState(false);
-  const [alertasAbiertas, setAlertasAbiertas] = useState(false);
-  const alertasRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!alertasAbiertas) return;
-    function cerrar(event: PointerEvent) {
-      if (!alertasRef.current?.contains(event.target as Node)) setAlertasAbiertas(false);
-    }
-    window.addEventListener("pointerdown", cerrar);
-    return () => window.removeEventListener("pointerdown", cerrar);
-  }, [alertasAbiertas]);
 
   const kpis = useQuery({
     queryKey: ["kpis", rango],
@@ -60,7 +50,6 @@ function DashboardPage() {
   const delta = d ? d.ventas - d.ventasPrev : 0;
   const deltaTickets = d ? d.tickets - d.ticketsPrev : 0;
   const rangoLabel = rango === 1 ? "hoy" : `${rango} días`;
-  const sinLeer = (alertas.data ?? []).filter((a) => !a.leida);
 
   const movimientos = useMemo(() => {
     const rows = d?.movimientos ?? [];
@@ -84,11 +73,23 @@ function DashboardPage() {
   }
 
   return (
-    <AppShell title="Tablero">
-      <IdentidadPuesto />
-      <div>
-          <div className="mb-3 flex items-center gap-2">
-          <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto pb-1">
+    <AppShell title="" ancho="completo">
+      <div className="mb-4 grid grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] items-start gap-3">
+        <div className="min-w-0">
+          <p className="text-[11px] font-medium tracking-[0.14em] text-muted uppercase">El puesto</p>
+          <h1 className="mt-1 font-display text-[1.65rem] leading-none font-semibold tracking-tight">Tablero</h1>
+          <IdentidadPuesto />
+        </div>
+        <Vitrina
+          trial={d?.trial ?? null}
+          productos={(d?.top ?? []).slice(0, 3).map((t) => ({ nombre: t.nombre, total: t.total }))}
+          onProducto={(nombre) => setProducto((cur) => (cur === nombre ? null : nombre))}
+        />
+      </div>
+      <MesaTurno modo="dueno" />
+      <div className="space-y-4">
+        <div className="min-w-0 space-y-4">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="inline-flex items-center gap-1.5 text-xs text-ok">
               <span className="size-2 animate-pulse rounded-full bg-ok" />
               En vivo
@@ -96,11 +97,7 @@ function DashboardPage() {
             <ClimaDolar />
             <Seg
               value={String(rango)}
-              options={[
-                ["1", "Hoy"],
-                ["7", "7 días"],
-                ["30", "30 días"],
-              ]}
+              options={[["1", "Hoy"], ["7", "7 días"], ["30", "30 días"]]}
               onChange={(v) => {
                 setRango(Number(v) as Rango);
                 setDia(null);
@@ -108,324 +105,129 @@ function DashboardPage() {
             />
             <Seg
               value={grafico}
-              options={[
-                ["barras", "Barras"],
-                ["linea", "Línea"],
-                ["pagos", "Medios"],
-                ["productos", "Productos"],
-              ]}
+              options={[["barras", "Barras"], ["linea", "Línea"], ["area", "Área"]]}
               onChange={(v) => setGrafico(v as Grafico)}
             />
-            {grafico !== "pagos" ? (
-              <Seg
-                value={metrica}
-                options={
-                  grafico === "productos"
-                    ? [
-                        ["pesos", "Pesos"],
-                        ["tickets", "Cantidad"],
-                      ]
-                    : [
-                        ["pesos", "Pesos"],
-                        ["tickets", "Tickets"],
-                      ]
-                }
-                onChange={(v) => setMetrica(v as Metrica)}
-              />
-            ) : null}
+            <Seg
+              value={metrica}
+              options={[["pesos", "Pesos"], ["tickets", "Tickets"]]}
+              onChange={(v) => setMetrica(v as Metrica)}
+            />
           </div>
-            <div ref={alertasRef} className="relative shrink-0">
-              <button
-                type="button"
-                onClick={() => setAlertasAbiertas((v) => !v)}
-                className={cn(
-                  "inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm",
-                  alertasAbiertas ? "border-leaf bg-surface" : "border-line bg-surface",
-                )}
-              >
-                Alertas
-                <span
-                  className={cn(
-                    "inline-flex min-w-5 items-center justify-center rounded-full px-1.5 text-xs tabular-nums",
-                    sinLeer.length ? "bg-terra text-leaf-fg" : "bg-paper-2 text-muted",
-                  )}
-                >
-                  {sinLeer.length}
-                </span>
-              </button>
-              {alertasAbiertas ? (
-                <div className="absolute right-0 z-20 mt-1 w-60 rounded-lg border border-line bg-surface p-2 shadow-md">
-                  <p className="px-1.5 pb-1 text-xs text-muted">
-                    {sinLeer.length ? `${sinLeer.length} sin leer` : "Nada pendiente"}
-                  </p>
-                  <ul className="max-h-64 space-y-1 overflow-auto">
-                    {(alertas.data ?? []).length === 0 ? (
-                      <li className="px-1.5 py-2 text-xs text-muted">Sin alertas.</li>
-                    ) : (
-                      (alertas.data ?? []).slice(0, 6).map((a) => (
-                        <li key={a.id} className="rounded-md bg-paper px-2 py-1.5">
-                          <p className={cn("text-xs leading-snug", a.leida ? "text-muted" : "text-ink")}>{a.mensaje}</p>
-                          {!a.leida ? (
-                            <button
-                              type="button"
-                              className="mt-1 text-xs font-medium text-leaf"
-                              onClick={() => leer.mutate(a.id)}
-                            >
-                              Marcar leída
-                            </button>
-                          ) : null}
-                        </li>
-                      ))
-                    )}
-                  </ul>
-                </div>
-              ) : null}
+
+          <div className="puesto-kpis">
+            <button type="button" className="px-3 py-3 text-left" onClick={() => setMetrica("pesos")}>
+              <p className="text-[11px] font-medium tracking-[0.12em] text-muted uppercase">Ventas · {rangoLabel}</p>
+              <p className="mt-1 font-display text-2xl leading-none font-semibold tabular-nums">{money(d?.ventas ?? 0)}</p>
+              <p className="mt-1.5 text-[11px] text-muted">{delta >= 0 ? `+${money(delta)}` : money(delta)} vs el anterior</p>
+            </button>
+            <button type="button" className="px-3 py-3 text-left" onClick={() => setMetrica("tickets")}>
+              <p className="text-[11px] font-medium tracking-[0.12em] text-muted uppercase">Tickets</p>
+              <p className="mt-1 font-display text-2xl leading-none font-semibold tabular-nums">{d?.tickets ?? 0}</p>
+              <p className="mt-1.5 text-[11px] text-muted">{deltaTickets >= 0 ? `+${deltaTickets}` : deltaTickets} vs el anterior</p>
+            </button>
+            <div className="px-3 py-3">
+              <p className="text-[11px] font-medium tracking-[0.12em] text-muted uppercase">Ticket promedio</p>
+              <p className="mt-1 font-display text-2xl leading-none font-semibold tabular-nums">{money(d?.ticketPromedio ?? 0)}</p>
+              <p className="mt-1.5 text-[11px] text-muted">{d?.tickets ?? 0} cobrados</p>
             </div>
+            <button type="button" className="px-3 py-3 text-left" onClick={() => setVerCola((v) => !v)}>
+              <p className="text-[11px] font-medium tracking-[0.12em] text-muted uppercase">En cola</p>
+              <p className="mt-1 font-display text-2xl leading-none font-semibold tabular-nums">{d?.enCola ?? 0}</p>
+              <p className="mt-1.5 text-[11px] text-muted">{verCola ? "Abajo está la cola" : "Tocá para verla abajo"}</p>
+            </button>
           </div>
 
-          {d?.trial ? (
-            <SliderTrial trial={d.trial} />
-          ) : (
-            <SliderTablero
-              tickets={d?.tickets ?? 0}
-              deltaTickets={deltaTickets}
-              rangoLabel={rangoLabel}
-              productos={(d?.top ?? []).slice(0, 4).map((t) => ({ nombre: t.nombre, total: t.total }))}
-              enCola={d?.enCola ?? 0}
-              ventas={money(d?.ventas ?? 0)}
-              ticketPromedio={money(d?.ticketPromedio ?? 0)}
-              onVerCola={() => setVerCola(true)}
-            />
-          )}
+          <SucursalesPuesto />
 
-          <p className="mb-2 text-sm text-muted">Métricas clave</p>
-          <div className="grid grid-cols-2 gap-2 sm:gap-3 xl:grid-cols-4">
-            <Kpi
-              tono="leaf"
-              label={`Ventas · ${rangoLabel}`}
-              value={money(d?.ventas ?? 0)}
-              hint={delta >= 0 ? `+${money(delta)} vs anterior` : `${money(delta)} vs anterior`}
-              active={metrica === "pesos" && grafico !== "pagos"}
-              onClick={() => {
-                setMetrica("pesos");
-                if (grafico === "pagos") setGrafico("barras");
-              }}
-            />
-            <Kpi
-              tono="terra"
-              label="Ticket promedio"
-              value={money(d?.ticketPromedio ?? 0)}
-              hint={`${d?.tickets ?? 0} cobrados`}
-            />
-            <Kpi
-              tono="naranja"
-              label="Tickets"
-              value={String(d?.tickets ?? 0)}
-              hint={deltaTickets >= 0 ? `+${deltaTickets} vs anterior` : `${deltaTickets} vs anterior`}
-              active={metrica === "tickets"}
-              onClick={() => {
-                setMetrica("tickets");
-                if (grafico === "pagos") setGrafico("linea");
-              }}
-            />
-            <Kpi
-              tono="ambar"
-              label="En cola"
-              value={String(d?.enCola ?? 0)}
-              hint="esperando cobro"
-              active={verCola}
-              onClick={() => setVerCola((v) => !v)}
-            />
-          </div>
-
-          <StockBoard />
-
-          <section className="mt-4 rounded-lg border border-line border-t-2 border-t-leaf bg-surface p-4">
+          <section className="rounded-[10px] border border-line bg-surface p-3">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <h2 className="font-display text-xl font-semibold">
-                {grafico === "pagos"
-                  ? "Medios de pago"
-                  : grafico === "productos"
-                    ? "Productos"
-                    : rango === 1
-                      ? metrica === "pesos"
-                        ? "Ventas por hora"
-                        : "Tickets por hora"
-                      : metrica === "pesos"
-                        ? "Ventas"
-                        : "Tickets"}
+              <h2 className="font-medium">
+                {rango === 1 ? (metrica === "pesos" ? "Ventas por hora" : "Tickets por hora") : metrica === "pesos" ? "Ventas" : "Tickets"}
               </h2>
-              <p className="text-xs text-muted">Tocá el gráfico para filtrar los movimientos.</p>
+              <p className="text-xs text-muted">Tocá una barra o un punto para filtrar.</p>
             </div>
-            {grafico === "pagos" ? (
-              <MediosChart
-                formas={d?.formas ?? []}
-                activo={pago}
-                onPick={(fp) => setPago((cur) => (cur === fp ? null : fp))}
-              />
-            ) : grafico === "productos" ? (
-              <div className="mt-4 h-72 overflow-hidden">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart
-                    data={d?.top ?? []}
-                    layout="vertical"
-                    margin={{ left: 8, right: 12, top: 4, bottom: 4 }}
-                  >
-                    <XAxis type="number" hide />
-                    <YAxis
-                      type="category"
-                      dataKey="nombre"
-                      width={96}
-                      stroke="var(--color-muted)"
-                      fontSize={12}
-                      tickLine={false}
-                      axisLine={false}
-                    />
-                    <Tooltip
-                      formatter={(v) => (metrica === "pesos" ? money(Number(v)) : String(v))}
-                      contentStyle={tooltipStyle}
-                    />
-                    <Bar
-                      dataKey={metrica === "pesos" ? "total" : "cantidad"}
-                      radius={[0, 6, 6, 0]}
-                      cursor="pointer"
-                      onClick={(row) => {
-                        const nombre = barNombre(row);
-                        if (nombre) setProducto((cur) => (cur === nombre ? null : nombre));
-                      }}
-                    >
-                      {(d?.top ?? []).map((t) => (
-                        <Cell
-                          key={t.nombre}
-                          fill={producto === t.nombre ? "var(--color-terra)" : "var(--color-leaf)"}
-                        />
+            <div className="mt-3 h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                {grafico === "linea" ? (
+                  <LineChart data={d?.series ?? []} onClick={(state) => elegirDesdeChart(state, elegirDia)}>
+                    <XAxis dataKey="dia" tickFormatter={diaCorto} stroke="var(--color-muted)" fontSize={11} tickLine={false} axisLine={false} />
+                    <YAxis tickFormatter={(v: number) => (metrica === "pesos" ? `${Math.round(v / 1000)}k` : String(v))} stroke="var(--color-muted)" fontSize={11} width={32} tickLine={false} axisLine={false} />
+                    <Tooltip formatter={(v) => (metrica === "pesos" ? money(Number(v)) : String(v))} labelFormatter={(l) => diaCorto(String(l))} contentStyle={tooltipStyle} />
+                    <Line type="monotone" dataKey={metrica === "pesos" ? "total" : "n"} stroke="var(--color-leaf)" strokeWidth={2} dot={false} />
+                  </LineChart>
+                ) : grafico === "area" ? (
+                  <AreaChart data={d?.series ?? []} onClick={(state) => elegirDesdeChart(state, elegirDia)}>
+                    <XAxis dataKey="dia" tickFormatter={diaCorto} stroke="var(--color-muted)" fontSize={11} tickLine={false} axisLine={false} />
+                    <YAxis tickFormatter={(v: number) => (metrica === "pesos" ? `${Math.round(v / 1000)}k` : String(v))} stroke="var(--color-muted)" fontSize={11} width={32} tickLine={false} axisLine={false} />
+                    <Tooltip formatter={(v) => (metrica === "pesos" ? money(Number(v)) : String(v))} labelFormatter={(l) => diaCorto(String(l))} contentStyle={tooltipStyle} />
+                    <Area type="monotone" dataKey={metrica === "pesos" ? "total" : "n"} stroke="var(--color-leaf)" fill="var(--color-leaf)" fillOpacity={0.16} />
+                  </AreaChart>
+                ) : (
+                  <BarChart data={d?.series ?? []} onClick={(state) => elegirDesdeChart(state, elegirDia)}>
+                    <XAxis dataKey="dia" tickFormatter={diaCorto} stroke="var(--color-muted)" fontSize={11} tickLine={false} axisLine={false} />
+                    <YAxis tickFormatter={(v: number) => (metrica === "pesos" ? `${Math.round(v / 1000)}k` : String(v))} stroke="var(--color-muted)" fontSize={11} width={32} tickLine={false} axisLine={false} />
+                    <Tooltip formatter={(v) => (metrica === "pesos" ? money(Number(v)) : String(v))} labelFormatter={(l) => diaCorto(String(l))} contentStyle={tooltipStyle} />
+                    <Bar dataKey={metrica === "pesos" ? "total" : "n"} radius={[4, 4, 0, 0]} cursor="pointer">
+                      {(d?.series ?? []).map((s) => (
+                        <Cell key={s.dia} fill={dia === s.dia ? "var(--color-terra)" : "var(--color-leaf)"} />
                       ))}
                     </Bar>
                   </BarChart>
-                </ResponsiveContainer>
-              </div>
-            ) : (
-              <div className="mt-4 h-64 overflow-hidden">
-                <ResponsiveContainer width="100%" height="100%">
-                  {grafico === "linea" ? (
-                    <LineChart data={d?.series ?? []} onClick={(state) => elegirDesdeChart(state, elegirDia)}>
-                      <XAxis dataKey="dia" tickFormatter={diaCorto} stroke="var(--color-muted)" fontSize={12} />
-                      <YAxis
-                        tickFormatter={(v: number) => (metrica === "pesos" ? `${Math.round(v / 1000)}k` : String(v))}
-                        stroke="var(--color-muted)"
-                        fontSize={12}
-                        width={36}
-                      />
-                      <Tooltip
-                        formatter={(v) => (metrica === "pesos" ? money(Number(v)) : String(v))}
-                        labelFormatter={(l) => diaCorto(String(l))}
-                        contentStyle={tooltipStyle}
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey={metrica === "pesos" ? "total" : "n"}
-                        stroke="var(--color-leaf)"
-                        strokeWidth={2}
-                        dot={(props) => {
-                          const { cx, cy, payload } = props as {
-                            cx?: number;
-                            cy?: number;
-                            payload?: { dia?: string };
-                          };
-                          const on = payload?.dia === dia;
-                          return (
-                            <circle
-                              cx={cx}
-                              cy={cy}
-                              r={on ? 5 : 3}
-                              fill={on ? "var(--color-terra)" : "var(--color-leaf)"}
-                            />
-                          );
-                        }}
-                      />
-                    </LineChart>
-                  ) : (
-                    <BarChart data={d?.series ?? []} onClick={(state) => elegirDesdeChart(state, elegirDia)}>
-                      <XAxis dataKey="dia" tickFormatter={diaCorto} stroke="var(--color-muted)" fontSize={12} />
-                      <YAxis
-                        tickFormatter={(v: number) => (metrica === "pesos" ? `${Math.round(v / 1000)}k` : String(v))}
-                        stroke="var(--color-muted)"
-                        fontSize={12}
-                        width={36}
-                      />
-                      <Tooltip
-                        formatter={(v) => (metrica === "pesos" ? money(Number(v)) : String(v))}
-                        labelFormatter={(l) => diaCorto(String(l))}
-                        contentStyle={tooltipStyle}
-                      />
-                      <Bar dataKey={metrica === "pesos" ? "total" : "n"} radius={[6, 6, 0, 0]} cursor="pointer">
-                        {(d?.series ?? []).map((s) => (
-                          <Cell key={s.dia} fill={dia === s.dia ? "var(--color-terra)" : "var(--color-leaf)"} />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  )}
-                </ResponsiveContainer>
-              </div>
-            )}
+                )}
+              </ResponsiveContainer>
+            </div>
             {dia || pago || producto ? (
               <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                {dia ? (
-                  <Chip onClear={() => setDia(null)}>{rango === 1 ? `Hora ${diaCorto(dia)}` : `Día ${diaCorto(dia)}`}</Chip>
-                ) : null}
+                {dia ? <Chip onClear={() => setDia(null)}>{rango === 1 ? `Hora ${diaCorto(dia)}` : `Día ${diaCorto(dia)}`}</Chip> : null}
                 {pago ? <Chip onClear={() => setPago(null)}>{PAGO_LABEL[pago]}</Chip> : null}
                 {producto ? <Chip onClear={() => setProducto(null)}>{producto}</Chip> : null}
               </div>
             ) : null}
           </section>
 
-          <div className="mt-4 grid gap-4 md:grid-cols-2">
-            <section id="movimientos" className="min-w-0 rounded-lg border border-line border-t-2 border-t-naranja bg-surface p-3 sm:p-4">
-              <h2 className="font-display text-xl font-semibold">{verCola ? "Cola ahora" : "Movimientos"}</h2>
+          <div className="grid items-start gap-3 lg:grid-cols-[minmax(0,4fr)_minmax(11rem,1fr)]">
+            <StockBoard />
+            <section id="movimientos" className="rounded-[10px] border border-line bg-surface p-2.5">
+              <h2 className="text-sm font-medium">{verCola ? "Cola ahora" : "Movimientos"}</h2>
               {!verCola ? (
                 <input
                   value={buscar}
                   onChange={(e) => setBuscar(e.target.value)}
-                  placeholder="Cliente, producto o n° de ticket"
-                  className="mt-3 h-11 w-full rounded-md border border-line bg-paper px-3 text-sm outline-none focus:border-leaf"
+                  placeholder="Cliente o ticket"
+                  className="mt-2 h-8 w-full rounded-md border border-line bg-paper px-2 text-xs outline-none focus:border-leaf"
                 />
               ) : null}
-              <ul className="mt-3 max-h-80 space-y-2 overflow-auto">
+              <ul className="mt-2 max-h-52 space-y-1.5 overflow-y-auto pr-1">
                 {verCola ? (
                   (d?.cola ?? []).length === 0 ? (
-                    <li className="text-sm text-muted">No hay pedidos esperando.</li>
+                    <li className="text-xs text-muted">No hay pedidos esperando.</li>
                   ) : (
                     (d?.cola ?? []).map((p) => (
-                      <li key={p.id} className="rounded-md border border-line px-3 py-2">
+                      <li key={p.id} className="rounded-md border border-line px-2 py-1.5">
                         <div className="flex items-baseline justify-between gap-2">
-                          <span className="font-medium">{p.cliente}</span>
-                          <span className="tabular-nums text-sm">{money(p.total)}</span>
+                          <span className="truncate text-sm font-medium">{p.cliente}</span>
+                          <span className="shrink-0 tabular-nums text-xs">{money(p.total)}</span>
                         </div>
-                        <p className="text-xs text-muted">
-                          {ESTADO_LABEL[p.estado as PedidoEstado] ?? p.estado} · {p.vendedor ?? "Mostrador"} ·{" "}
-                          {clock(p.createdAt)}
+                        <p className="truncate text-[11px] text-muted">
+                          {ESTADO_LABEL[p.estado as PedidoEstado] ?? p.estado} · {clock(p.createdAt)}
                         </p>
                       </li>
                     ))
                   )
                 ) : movimientos.length === 0 ? (
-                  <li className="text-sm text-muted">Nada para ese filtro.</li>
+                  <li className="text-xs text-muted">Nada para ese filtro.</li>
                 ) : (
-                  movimientos.slice(0, 12).map((m) => (
+                  movimientos.map((m) => (
                     <li key={m.id}>
-                      <Link
-                        to="/ticket/$cobroId"
-                        params={{ cobroId: m.id }}
-                        className="block rounded-md border border-line px-3 py-2 hover:border-leaf/50"
-                      >
+                      <Link to="/ticket/$cobroId" params={{ cobroId: m.id }} className="block rounded-md border border-line px-2 py-1.5 hover:border-leaf/50">
                         <div className="flex items-baseline justify-between gap-2">
-                          <span className="font-medium">{m.cliente}</span>
-                          <span className="tabular-nums text-sm">{money(m.monto)}</span>
+                          <span className="truncate text-sm font-medium">{m.cliente}</span>
+                          <span className="shrink-0 tabular-nums text-xs">{money(m.monto)}</span>
                         </div>
-                        <p className="text-xs text-muted">
+                        <p className="truncate text-[11px] text-muted">
                           {m.numero ? `Nº ${m.numero} · ` : ""}
                           {PAGO_LABEL[m.formaPago]} · {clock(m.createdAt)}
-                          {m.productos ? ` · ${m.productos}` : ""}
                         </p>
                       </Link>
                     </li>
@@ -433,63 +235,84 @@ function DashboardPage() {
                 )}
               </ul>
             </section>
+          </div>
 
-            <section className="min-w-0 rounded-lg border border-line border-t-2 border-t-terra bg-surface p-3 sm:p-4">
-              <h2 className="font-display text-xl font-semibold">Productos del período</h2>
-              <ul className="mt-3 max-h-80 space-y-1 overflow-auto">
-                {(d?.top ?? []).length === 0 ? (
-                  <li className="text-sm text-muted">Todavía no hay ventas en este rango.</li>
-                ) : (
-                  (d?.top ?? []).map((t) => {
-                    const max = Math.max(...(d?.top ?? []).map((x) => x.total), 1);
-                    const on = producto === t.nombre;
-                    return (
-                      <li key={t.nombre}>
-                        <button
-                          type="button"
-                          onClick={() => setProducto(on ? null : t.nombre)}
-                          className={cn(
-                            "w-full rounded-md px-2 py-1.5 text-left",
-                            on ? "bg-ok-bg" : "hover:bg-paper",
-                          )}
-                        >
-                          <div className="flex items-baseline justify-between gap-3 text-sm">
-                            <span>{t.nombre}</span>
-                            <span className="tabular-nums text-muted">{money(t.total)}</span>
-                          </div>
-                          <div className="mt-1 h-1 overflow-hidden rounded-full bg-paper-2">
-                            <div className="h-full bg-leaf/80" style={{ width: `${(t.total / max) * 100}%` }} />
-                          </div>
-                        </button>
-                      </li>
-                    );
-                  })
-                )}
+          <div className="flex gap-3 overflow-x-auto pb-1 xl:grid xl:grid-cols-5 xl:overflow-visible">
+            <section className="flex h-40 w-[min(16rem,78vw)] shrink-0 flex-col overflow-hidden rounded-[10px] border border-line bg-surface p-3 xl:w-auto">
+              <div className="flex items-baseline justify-between gap-2">
+                <h2 className="text-[11px] font-medium tracking-[0.12em] text-muted uppercase">Cola · {d?.enCola ?? 0}</h2>
+                <button type="button" className="text-xs text-leaf" onClick={() => setVerCola((v) => !v)}>
+                  {verCola ? "Cobros" : "Ver"}
+                </button>
+              </div>
+              <ul className="mt-2 min-h-0 flex-1 space-y-1.5 overflow-y-auto">
+                {(d?.cola ?? []).length === 0 ? <li className="text-xs text-muted">Nadie esperando.</li> : null}
+                {(d?.cola ?? []).map((p) => (
+                  <li key={p.id} className="flex items-baseline justify-between gap-2 text-sm">
+                    <span className="min-w-0 truncate">{p.cliente}</span>
+                    <span className="shrink-0 tabular-nums text-muted">{money(p.total)}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+            <section className="h-40 w-[min(16rem,78vw)] shrink-0 overflow-y-auto rounded-[10px] border border-line bg-surface p-3 xl:w-auto">
+              <h2 className="text-[11px] font-medium tracking-[0.12em] text-muted uppercase">Medios</h2>
+              <MediosChart formas={d?.formas ?? []} activo={pago} onPick={(fp) => setPago((cur) => (cur === fp ? null : fp))} />
+            </section>
+            <section className="flex h-40 w-[min(16rem,78vw)] shrink-0 flex-col overflow-hidden rounded-[10px] border border-line bg-surface p-3 xl:w-auto">
+              <h2 className="text-[11px] font-medium tracking-[0.12em] text-muted uppercase">Alertas</h2>
+              <ul className="mt-2 min-h-0 flex-1 space-y-2 overflow-y-auto">
+                {(alertas.data ?? []).length === 0 ? <li className="text-xs text-muted">Nada pendiente.</li> : null}
+                {(alertas.data ?? []).map((a) => (
+                  <li key={a.id}>
+                    <p className={cn("text-xs leading-snug", a.leida ? "text-muted" : "text-ink")}>{a.mensaje}</p>
+                    {!a.leida ? (
+                      <button type="button" className="mt-1 text-xs font-medium text-leaf" onClick={() => leer.mutate(a.id)}>
+                        Marcar leída
+                      </button>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            </section>
+            <section className="flex h-40 w-[min(16rem,78vw)] shrink-0 flex-col overflow-hidden rounded-[10px] border border-line bg-surface p-3 xl:w-auto">
+              <h2 className="text-[11px] font-medium tracking-[0.12em] text-muted uppercase">Productos</h2>
+              <ul className="mt-2 min-h-0 flex-1 space-y-2 overflow-y-auto">
+                {(d?.top ?? []).length === 0 ? <li className="text-xs text-muted">Todavía no hay ventas.</li> : null}
+                {(d?.top ?? []).map((t) => {
+                  const max = Math.max(...(d?.top ?? []).map((x) => x.total), 1);
+                  const on = producto === t.nombre;
+                  return (
+                    <li key={t.nombre}>
+                      <button type="button" onClick={() => setProducto(on ? null : t.nombre)} className="w-full text-left">
+                        <div className="flex items-baseline justify-between gap-2 text-sm">
+                          <span className="truncate">{t.nombre}</span>
+                          <span className="shrink-0 tabular-nums text-muted">{money(t.total)}</span>
+                        </div>
+                        <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-paper-2">
+                          <div className={cn("h-full rounded-full", on ? "bg-terra" : "bg-leaf")} style={{ width: `${Math.max(6, (t.total / max) * 100)}%` }} />
+                        </div>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+            <section className="flex h-40 w-[min(16rem,78vw)] shrink-0 flex-col overflow-hidden rounded-[10px] border border-line bg-surface p-3 xl:w-auto">
+              <h2 className="text-[11px] font-medium tracking-[0.12em] text-muted uppercase">Cargadores</h2>
+              <ul className="mt-2 min-h-0 flex-1 space-y-1.5 overflow-y-auto text-sm">
+                {(cargadores.data?.ranking ?? []).length === 0 ? <li className="text-xs text-muted">Todavía no hay cargadores.</li> : null}
+                {(cargadores.data?.ranking ?? []).map((item) => (
+                  <li key={`${item.puesto}-${item.nombre}`} className="flex items-baseline gap-2">
+                    <span className="w-4 shrink-0 tabular-nums text-muted">{item.puesto}</span>
+                    <span className="min-w-0 flex-1 truncate">{item.nombre}</span>
+                    <span className="shrink-0 text-[11px] text-muted">{etiquetaNivel(item.nivel)}</span>
+                  </li>
+                ))}
               </ul>
             </section>
           </div>
-
-          <section className="mt-4 min-w-0 rounded-lg border border-line border-t-2 border-t-ambar bg-surface p-3 sm:p-4">
-              <h2 className="font-display text-xl font-semibold">Ranking de cargadores</h2>
-              <p className="mt-1 text-xs text-muted">
-                El puntaje lo calcula Mercado con entregas y la calificación del comprador. Acá se muestra, no se recalcula.
-                La nota la pone el comprador al cerrar la entrega.
-              </p>
-              <ul className="mt-3 max-h-80 space-y-1 overflow-auto text-sm">
-                {(cargadores.data?.ranking ?? []).length === 0 ? (
-                  <li className="text-muted">Todavía no hay cargadores activos.</li>
-                ) : (
-                  (cargadores.data?.ranking ?? []).map((item) => (
-                    <li key={`${item.puesto}-${item.nombre}`} className="flex items-baseline gap-2 rounded-md px-1 py-1.5">
-                      <span className="w-5 shrink-0 tabular-nums text-muted">{item.puesto}</span>
-                      <span className="min-w-0 flex-1 truncate font-medium">{item.nombre}</span>
-                      <span className="shrink-0 text-xs text-muted">{etiquetaNivel(item.nivel)}</span>
-                      <span className="shrink-0 tabular-nums">{item.score}</span>
-                    </li>
-                  ))
-                )}
-              </ul>
-            </section>
+        </div>
       </div>
     </AppShell>
   );
@@ -522,52 +345,92 @@ function desplazarSlider(el: HTMLDivElement | null, n: number) {
   el.scrollTo({ left, behavior: "smooth" });
 }
 
-function SliderTrial({
+const FOTOS = ["/slides/citricos.jpg", "/slides/rojos.jpg", "/slides/verdura.jpg", "/slides/puesto-color.jpg"];
+const TINTES = [
+  { fondo: "#f6e3cf", tinta: "#6a2e12" },
+  { fondo: "#e7f2e4", tinta: "#145c38" },
+  { fondo: "#f8efd0", tinta: "#6d5310" },
+  { fondo: "#f4e4d6", tinta: "#7a3418" },
+];
+
+function fotoDe(nombre: string, indice: number) {
+  const n = nombre.toLowerCase();
+  if (/naranj|lim[oó]n|mandarin|pomelo|c[ií]tric/.test(n)) return FOTOS[0];
+  if (/tomate|morr[oó]n|piment|frutill|manzana|pera|durazn/.test(n)) return FOTOS[1];
+  if (/lechuga|acelga|espinaca|zapall|cebolla|papa|r[uú]cula/.test(n)) return FOTOS[2];
+  return FOTOS[indice % FOTOS.length];
+}
+
+function Vitrina({
   trial,
+  productos,
+  onProducto,
 }: {
-  trial: NonNullable<Awaited<ReturnType<typeof dashboardResumen>>["trial"]>;
+  trial: Awaited<ReturnType<typeof dashboardResumen>>["trial"] | null;
+  productos: { nombre: string; total: number }[];
+  onProducto: (nombre: string) => void;
 }) {
-  const puesto =
-    trial.puesto == null
-      ? "Hoy todavía no cobraste."
-      : trial.puesto === 1
-        ? `Hoy vas primero, con ${trial.liderTickets} tickets.`
-        : `Estás ${trial.puesto}° del día. El líder lleva ${trial.liderTickets} tickets.`;
-  const slides = [
-    {
-      kicker: "Tus resultados",
-      titulo: `Hoy generaste ${trial.ticketsHoy} tickets`,
-      texto: `Llevás ${trial.ticketsTrial} en el trial.`,
-      imagen: trial.imagenes.resultados,
-    },
-    {
-      kicker: "Tu producto",
-      titulo: trial.producto ? `${trial.producto} es lo que más salió hoy` : "Hoy no hay un producto destacado",
-      texto: "Lo medimos por ventas, no por búsquedas.",
-      imagen: trial.imagenes.producto,
-    },
-    {
-      kicker: "El mercado",
-      titulo: puesto,
-      texto: "El puesto se arma con los cobros de hoy.",
-      imagen: trial.imagenes.ranking,
-    },
-    {
-      kicker: "Actividad",
-      titulo: `${trial.compradores} compradores con pedido hoy`,
-      texto: `${trial.puestos} puestos cobraron hoy.`,
-      imagen: trial.imagenes.actividad,
-    },
-    {
-      kicker: "Trial Pro",
-      titulo: trial.diasRestantes === 1 ? "Te queda 1 día de trial" : `Te quedan ${trial.diasRestantes} días de trial`,
-      texto: "Seguí sumando. Al terminar, Pro se contrata desde Add-ons.",
-      imagen: trial.imagenes.cuenta,
-    },
-  ];
+  const laminas: {
+    id: string;
+    kicker: string;
+    titulo: string;
+    texto: string;
+    fondo: string;
+    tinta: string;
+    imagen: string;
+    producto?: string;
+  }[] = productos.map((item, indice) => {
+    const tono = TINTES[indice % TINTES.length];
+    return {
+      id: `prod-${item.nombre}`,
+      kicker: indice === 0 ? "Destacado" : "También salió",
+      titulo: item.nombre,
+      texto: `${money(item.total)} en este período. Tocá la foto para ver esos movimientos.`,
+      fondo: tono.fondo,
+      tinta: tono.tinta,
+      imagen: fotoDe(item.nombre, indice),
+      producto: item.nombre,
+    };
+  });
+  if (trial) {
+    const puesto =
+      trial.puesto == null
+        ? "Hoy todavía no cobraste."
+        : trial.puesto === 1
+          ? `Hoy vas primero, con ${trial.liderTickets} tickets.`
+          : `Estás ${trial.puesto}° del día. El líder lleva ${trial.liderTickets} tickets.`;
+    laminas.push(
+      {
+        id: "trial-hoy",
+        kicker: "Hoy",
+        titulo: `${trial.ticketsHoy} tickets`,
+        texto: `Llevás ${trial.ticketsTrial} en el trial.`,
+        fondo: TINTES[1].fondo,
+        tinta: TINTES[1].tinta,
+        imagen: trial.imagenes.resultados || FOTOS[3],
+      },
+      {
+        id: "trial-puesto",
+        kicker: "El mercado",
+        titulo: puesto,
+        texto: `${trial.compradores} compradores con pedido. ${trial.puestos} puestos cobraron.`,
+        fondo: TINTES[2].fondo,
+        tinta: TINTES[2].tinta,
+        imagen: trial.imagenes.ranking || FOTOS[2],
+      },
+      {
+        id: "trial-dias",
+        kicker: "Trial Pro",
+        titulo: trial.diasRestantes === 1 ? "Queda 1 día" : `Quedan ${trial.diasRestantes} días`,
+        texto: "Cuando termina, Pro se contrata desde Add-ons.",
+        fondo: TINTES[0].fondo,
+        tinta: TINTES[0].tinta,
+        imagen: trial.imagenes.cuenta || FOTOS[1],
+      },
+    );
+  }
   const scroller = useRef<HTMLDivElement>(null);
   const [pagina, setPagina] = useState(0);
-  const [oculto, setOculto] = useState(false);
   const [pausa, setPausa] = useState(false);
 
   const ir = (n: number) => {
@@ -576,204 +439,72 @@ function SliderTrial({
   };
 
   useEffect(() => {
-    if (oculto || pausa) return;
+    if (pausa || laminas.length < 2) return;
     const id = window.setInterval(() => {
       setPagina((actual) => {
-        const next = (actual + 1) % slides.length;
+        const next = (actual + 1) % laminas.length;
         desplazarSlider(scroller.current, next);
         return next;
       });
-    }, 8000);
+    }, 7000);
     return () => window.clearInterval(id);
-  }, [oculto, pausa, slides.length]);
+  }, [pausa, laminas.length]);
 
-  if (oculto) {
-    return (
-      <button
-        type="button"
-        onClick={() => setOculto(false)}
-        className="mb-4 flex w-full items-center justify-between rounded-xl border border-line bg-surface px-3 py-2 text-left text-sm"
-      >
-        <span>Trial Pro · {trial.diasRestantes === 1 ? "queda 1 día" : `quedan ${trial.diasRestantes} días`}</span>
-        <span className="text-leaf">Mostrar</span>
-      </button>
-    );
-  }
+  if (laminas.length === 0) return null;
 
   return (
-    <div
-      className="mb-4"
-      onPointerEnter={() => setPausa(true)}
-      onPointerLeave={() => setPausa(false)}
-    >
-      <div className="mb-1 flex items-center justify-between text-xs text-muted">
-        <span>Trial Pro</span>
-        <button type="button" className="text-leaf" onClick={() => setOculto(true)}>
-          Minimizar
-        </button>
-      </div>
+    <div className="relative" onPointerEnter={() => setPausa(true)} onPointerLeave={() => setPausa(false)}>
       <div
         ref={scroller}
         onScroll={() => {
           const el = scroller.current;
           if (!el) return;
           const ancho = el.firstElementChild?.getBoundingClientRect().width ?? el.clientWidth;
-          setPagina(Math.min(slides.length - 1, Math.max(0, Math.round(el.scrollLeft / (ancho + 12)))));
+          setPagina(Math.min(laminas.length - 1, Math.max(0, Math.round(el.scrollLeft / (ancho + 12)))));
         }}
         className="flex snap-x snap-mandatory gap-3 overflow-x-auto scroll-smooth [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
-        {slides.map((slide) => (
+        {laminas.map((lamina) => (
           <article
-            key={slide.kicker}
-            className="flex min-h-28 w-[88%] shrink-0 snap-start items-center gap-3 rounded-2xl border border-line bg-surface p-3 sm:w-[48%]"
+            key={lamina.id}
+            className="relative h-36 w-full shrink-0 snap-start overflow-hidden rounded-[14px]"
           >
-            <div className="min-w-0 flex-1">
-              <p className="text-xs text-leaf">{slide.kicker}</p>
-              <p className="mt-1 font-display text-lg font-semibold leading-tight">{slide.titulo}</p>
-              <p className="mt-1 text-sm text-muted">{slide.texto}</p>
-            </div>
-            {slide.imagen ? (
-              <img src={slide.imagen} alt="" className="size-16 shrink-0 rounded-xl object-cover" />
-            ) : null}
+            <img src={lamina.imagen} alt="" className="absolute inset-0 h-full w-full object-cover" />
+            <div className="absolute inset-0 bg-gradient-to-r from-black/75 via-black/40 to-black/10" />
+            <button
+              type="button"
+              className="relative flex h-full w-full flex-col justify-end px-3 py-2.5 text-left text-[#f6e7c4]"
+              onClick={() => {
+                if (lamina.producto) onProducto(lamina.producto);
+              }}
+            >
+              <p className="text-[10px] font-medium tracking-[0.16em] uppercase opacity-80">{lamina.kicker}</p>
+              <h2 className="mt-1 font-display text-xl leading-none font-semibold tracking-tight">{lamina.titulo}</h2>
+              <p className="mt-1 line-clamp-1 text-xs opacity-80">{lamina.texto}</p>
+            </button>
           </article>
         ))}
       </div>
-      <div className="mt-2 flex justify-center gap-1.5">
-        {slides.map((slide, n) => (
-          <button
-            key={slide.kicker}
-            type="button"
-            aria-label={slide.kicker}
-            onClick={() => ir(n)}
-            className={cn("h-1.5 rounded-full", pagina === n ? "w-4 bg-leaf" : "w-1.5 bg-line")}
-          />
-        ))}
-      </div>
+      {laminas.length > 1 ? (
+        <div className="pointer-events-none absolute right-2 bottom-2 flex gap-1.5">
+          {laminas.map((lamina, n) => (
+            <button
+              key={lamina.id}
+              type="button"
+              aria-label={lamina.kicker}
+              onClick={() => ir(n)}
+              className={cn("pointer-events-auto h-1.5 rounded-full", pagina === n ? "w-4 bg-[#f6e7c4]" : "w-1.5 bg-white/50")}
+            />
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
 
-function SliderTablero({
-  tickets,
-  deltaTickets,
-  rangoLabel,
-  productos,
-  enCola,
-  ventas,
-  ticketPromedio,
-  onVerCola,
-}: {
-  tickets: number;
-  deltaTickets: number;
-  rangoLabel: string;
-  productos: { nombre: string; total: number }[];
-  enCola: number;
-  ventas: string;
-  ticketPromedio: string;
-  onVerCola: () => void;
-}) {
-  const scroller = useRef<HTMLDivElement>(null);
-  const [pagina, setPagina] = useState(0);
-  const paginas = 4;
-
-  function alScroll() {
-    const el = scroller.current;
-    if (!el) return;
-    const ancho = el.firstElementChild?.getBoundingClientRect().width ?? el.clientWidth;
-    const hueco = 12;
-    setPagina(Math.min(paginas - 1, Math.max(0, Math.round(el.scrollLeft / (ancho + hueco)))));
-  }
-
-  function ir(n: number) {
-    desplazarSlider(scroller.current, n);
-    setPagina(n);
-  }
-
-  return (
-    <div className="mb-4">
-      <div
-        ref={scroller}
-        onScroll={alScroll}
-        className="flex snap-x snap-mandatory gap-3 overflow-x-auto scroll-smooth pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-      >
-        <article className="flex min-h-44 w-[86%] shrink-0 snap-start flex-col rounded-2xl border border-line bg-surface p-4 sm:w-[46%]">
-          <span className="grid size-11 place-items-center rounded-full bg-ok-bg text-leaf">
-            <Receipt className="size-5" />
-          </span>
-          <p className="mt-4 font-display text-2xl font-semibold tracking-tight">{tickets} tickets {rangoLabel}</p>
-          <p className="mt-1 text-sm text-muted">Cobros del puesto en este período.</p>
-          {deltaTickets !== 0 ? (
-            <p className={cn("mt-2 text-sm", deltaTickets > 0 ? "text-ok" : "text-alerta")}>
-              {deltaTickets > 0 ? "↑" : "↓"} {Math.abs(deltaTickets)} vs el período anterior
-            </p>
-          ) : null}
-          <a href="#movimientos" className="mt-auto pt-3 text-sm font-medium text-leaf">
-            Ver movimientos →
-          </a>
-        </article>
-        <article className="min-h-44 w-[86%] shrink-0 snap-start rounded-2xl border border-line bg-surface p-4 sm:w-[46%]">
-          <h2 className="font-medium">Más vendidos</h2>
-          <p className="text-sm text-muted">Del período, por importe.</p>
-          {productos.length === 0 ? (
-            <p className="mt-6 text-sm text-muted">Todavía no hay ventas en este rango.</p>
-          ) : (
-            <ul className="mt-3 grid grid-cols-2 gap-2">
-              {productos.map((p) => (
-                <li key={p.nombre} className="rounded-xl border border-line bg-paper px-2 py-3 text-center">
-                  <Package className="mx-auto size-5 text-leaf" />
-                  <p className="mt-1 truncate text-sm font-medium">{p.nombre}</p>
-                  <p className="text-xs tabular-nums text-muted">{money(p.total)}</p>
-                </li>
-              ))}
-            </ul>
-          )}
-        </article>
-        <article className="flex min-h-44 w-[86%] shrink-0 snap-start flex-col rounded-2xl border border-line bg-surface p-4 sm:w-[46%]">
-          <span className="grid size-11 place-items-center rounded-full bg-ok-bg text-leaf">
-            <Timer className="size-5" />
-          </span>
-          <p className="mt-4 font-display text-2xl font-semibold tracking-tight">{enCola} en cola</p>
-          <p className="mt-1 text-sm text-muted">Pedidos que todavía no se cobraron.</p>
-          <a
-            href="#movimientos"
-            className="mt-auto pt-3 text-sm font-medium text-leaf"
-            onClick={onVerCola}
-          >
-            Ver la cola →
-          </a>
-        </article>
-        <article className="flex min-h-44 w-[86%] shrink-0 snap-start flex-col rounded-2xl border border-line bg-surface p-4 sm:w-[46%]">
-          <span className="grid size-11 place-items-center rounded-full bg-ok-bg text-leaf">
-            <ShoppingBag className="size-5" />
-          </span>
-          <p className="mt-4 font-display text-2xl font-semibold tracking-tight">{ventas}</p>
-          <p className="mt-1 text-sm text-muted">Ventas de {rangoLabel}. Ticket promedio {ticketPromedio}.</p>
-        </article>
-      </div>
-      <div className="mt-2 flex justify-center gap-1.5">
-        {Array.from({ length: paginas }, (_, n) => (
-          <button
-            key={n}
-            type="button"
-            aria-label={`Tarjeta ${n + 1}`}
-            onClick={() => ir(n)}
-            className={cn("h-1.5 rounded-full", pagina === n ? "w-4 bg-leaf" : "w-1.5 bg-line")}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function elegirDesdeChart(state: { activeLabel?: unknown } | null, elegirDia: (dia: string) => void) {
+function elegirDesdeChart(state: { activeLabel?: unknown }, elegir: (dia: string) => void) {
   const label = state?.activeLabel;
-  if (typeof label === "string") elegirDia(label);
-}
-
-function barNombre(row: unknown) {
-  if (!row || typeof row !== "object") return null;
-  const rec = row as { nombre?: string; payload?: { nombre?: string } };
-  return rec.nombre ?? rec.payload?.nombre ?? null;
+  if (typeof label === "string") elegir(label);
 }
 
 function MediosChart({
@@ -785,18 +516,18 @@ function MediosChart({
   activo: FormaPago | null;
   onPick: (fp: FormaPago) => void;
 }) {
-  if (formas.length === 0) return <p className="mt-4 text-sm text-muted">Sin cobros en este período.</p>;
+  if (formas.length === 0) return <p className="mt-3 text-sm text-muted">Sin cobros en este período.</p>;
   return (
-    <div className="mt-2 grid items-center gap-2 sm:grid-cols-[220px_1fr]">
-      <div className="h-52">
+    <div className="mt-2">
+      <div className="h-36">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie
               data={formas}
               dataKey="total"
               nameKey="formaPago"
-              innerRadius={48}
-              outerRadius={78}
+              innerRadius={36}
+              outerRadius={54}
               paddingAngle={2}
               cursor="pointer"
               onClick={(row) => {

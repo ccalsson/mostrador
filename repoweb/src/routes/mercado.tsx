@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Minus, Plus, Search, Trash2 } from "lucide-react";
+import { Captcha } from "@/components/captcha";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PuertaLegal } from "@/components/puerta-legal";
@@ -216,6 +217,8 @@ function MercadoPage() {
   const [nombre, setNombre] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [website, setWebsite] = useState("");
+  const [captcha, setCaptcha] = useState("");
   const [telefono, setTelefono] = useState("");
   const [pais, setPais] = useState("AR");
   const [documento, setDocumento] = useState("");
@@ -390,14 +393,18 @@ function MercadoPage() {
   async function registrar() {
     await correr(async () => {
       if (como === "cargador") {
-        const data = await pedir<{ token: string }>("auth/registro-cargador", {
+        const data = await pedir<{ token?: string; pendiente?: boolean; aviso?: string; enlace?: string | null }>("auth/registro-cargador", {
           method: "POST",
-          body: { nombre, email, password, telefono },
+          body: { nombre, email, password, telefono, website, captcha },
         });
+        if (data.pendiente || !data.token) {
+          setAviso(data.enlace ? `${data.aviso ?? "Confirmá el correo."} ${data.enlace}` : (data.aviso ?? "Confirmá el correo antes de entrar."));
+          return;
+        }
         entrar(data.token, "cargador");
         return;
       }
-      const data = await pedir<{ token: string; comprador?: { identidadEstado?: string } }>("auth/registro", {
+      const data = await pedir<{ token?: string; pendiente?: boolean; aviso?: string; enlace?: string | null; comprador?: { identidadEstado?: string } }>("auth/registro", {
         method: "POST",
         body: {
           nombre,
@@ -407,8 +414,14 @@ function MercadoPage() {
           pais,
           tipoDocumento: pais === "PY" ? "CI_PY" : "DNI",
           numeroDocumento: documento,
+          website,
+          captcha,
         },
       });
+      if (data.pendiente || !data.token) {
+        setAviso(data.enlace ? `${data.aviso ?? "Confirmá el correo."} ${data.enlace}` : (data.aviso ?? "Confirmá el correo antes de entrar."));
+        return;
+      }
       setIdentidad(data.comprador?.identidadEstado ?? "pendiente");
       entrar(data.token, "comprador");
     });
@@ -837,7 +850,14 @@ function MercadoPage() {
           {alta ? <Campo label="Nombre" value={nombre} onChange={setNombre} /> : null}
           <Campo label="Email" value={email} onChange={setEmail} type="email" />
           <Campo label="Clave" value={password} onChange={setPassword} type="password" />
+          {alta ? (
+            <label className="absolute -left-[9999px] h-0 overflow-hidden" aria-hidden>
+              Web
+              <input tabIndex={-1} autoComplete="off" value={website} onChange={(ev) => setWebsite(ev.target.value)} />
+            </label>
+          ) : null}
           {alta ? <Campo label="Teléfono" value={telefono} onChange={setTelefono} /> : null}
+          {alta ? <Captcha onToken={setCaptcha} /> : null}
           {alta && como === "comprador" ? (
             <>
               <label className="block text-sm">
@@ -1099,7 +1119,7 @@ function MercadoPage() {
                   key={valor}
                   type="button"
                   disabled={ocupado || (valor === "cuenta_corriente" && (carrito.length === 0 || !carrito.every((linea) => tieneCuenta(linea.tenantId))))}
-                  className={`h-9 rounded-md border text-xs ${medioPago === valor ? "border-leaf bg-leaf text-white" : "border-line bg-paper"}`}
+                  className={`h-9 rounded-md border text-xs ${medioPago === valor ? "border-btn bg-btn text-btn-fg" : "border-line bg-paper"}`}
                   onClick={() => cambiarPago(valor)}
                 >
                   {valor === "efectivo" ? "Contado" : valor === "transferencia" ? "Transferencia" : "Cuenta"}

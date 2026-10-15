@@ -685,6 +685,21 @@ export async function contratarEn(email: string, data: ContratarInput) {
         values (${newId("pack")}, ${data.tenantId}, ${product.id}, ${lineId}, ${sends}, 0, ${start}::date, 'active')
       `;
     }
+    const creditos = Number(product.config.credits ?? 0);
+    if (Number.isInteger(creditos) && creditos > 0) {
+      const ops = await sql<{ operational_tenant_ref: string | null }>`
+        select operational_tenant_ref from torre.saas_tenants where id = ${data.tenantId} limit 1
+      `;
+      const puesto = ops[0]?.operational_tenant_ref;
+      if (puesto) {
+        await sql`
+          insert into creativos_saldo (tenant_id, creditos)
+          values (${puesto}, ${creditos})
+          on conflict (tenant_id) do update
+          set creditos = creativos_saldo.creditos + ${creditos}, updated_at = now()
+        `;
+      }
+    }
     await auditar(email, "contratar", "subscription_line", lineId, {
       tenantId: data.tenantId,
       product: product.slug,

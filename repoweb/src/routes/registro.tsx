@@ -1,20 +1,22 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, type FormEvent } from "react";
-import { authClient } from "@/lib/auth/client";
 import { registrarCliente } from "@/lib/portal-fn";
+import { Captcha } from "@/components/captcha";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 export const Route = createFileRoute("/registro")({ component: RegistroPage });
 
 function RegistroPage() {
-  const nav = useNavigate();
   const [nombre, setNombre] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [telefono, setTelefono] = useState("");
   const [cuit, setCuit] = useState("");
   const [direccion, setDireccion] = useState("");
+  const [website, setWebsite] = useState("");
+  const [captcha, setCaptcha] = useState("");
+  const [aviso, setAviso] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -23,13 +25,13 @@ function RegistroPage() {
     setBusy(true);
     setError(null);
     try {
-      await registrarCliente({
-        data: { nombre, email, password, telefono, cuit, direccion },
+      const alta = await registrarCliente({
+        data: { nombre, email, password, telefono, cuit, direccion, website, captcha },
       });
-      const { error: err } = await authClient.signIn.email({ email: email.trim().toLowerCase(), password });
-      if (err) throw new Error(err.message ?? "La cuenta quedó creada, pero no pude entrar.");
-      await authClient.getSession();
-      nav({ to: "/portal" });
+      if (alta.pendiente) {
+        setAviso(alta.enlace ? `${alta.aviso} ${alta.enlace}` : alta.aviso);
+        return;
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo crear la cuenta.");
     } finally {
@@ -50,7 +52,13 @@ function RegistroPage() {
           <Campo label="Teléfono" value={telefono} onChange={setTelefono} />
           <Campo label="CUIT o DNI" value={cuit} onChange={setCuit} />
           <Campo label="Dirección" value={direccion} onChange={setDireccion} />
+          <label className="absolute -left-[9999px] h-0 w-0 overflow-hidden" aria-hidden>
+            Sitio
+            <input tabIndex={-1} autoComplete="off" value={website} onChange={(e) => setWebsite(e.target.value)} />
+          </label>
+          <Captcha onToken={setCaptcha} />
         </div>
+        {aviso ? <p className="mt-3 text-sm text-ink">{aviso}</p> : null}
         {error ? <p className="mt-3 text-sm text-terra">{error}</p> : null}
         <Button type="submit" className="mt-4 w-full" disabled={busy}>
           {busy ? "Creando…" : "Crear cuenta"}
