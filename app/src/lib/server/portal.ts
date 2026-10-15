@@ -5,6 +5,7 @@ import { newId } from "@/lib/ids";
 import { num } from "@/lib/money";
 import { createCredentialUser, ensureBootstrapped, SinAccesoError } from "@/lib/server/bootstrap";
 import { loadPedido, loadPedidos, mapProducto } from "@/lib/server/context";
+import { claveAceptable, correoAceptable } from "@/lib/seguridad/correo";
 import { reservarLineas, soltarReserva } from "@/lib/server/stock";
 import { condicionOperativa } from "@/lib/torre/presencia";
 import type { FormaPago, Producto } from "@/lib/types";
@@ -91,13 +92,16 @@ export async function registrarClienteForPublic(data: {
   direccion: string;
 }) {
   await ensureBootstrapped();
-  const email = data.email.trim().toLowerCase();
+  const correo = correoAceptable(data.email);
+  if (!correo.ok) throw new Error(correo.motivo);
+  const email = correo.email;
   const nombre = data.nombre.trim();
   const cuit = data.cuit.trim();
   const direccion = data.direccion.trim();
   const telefono = data.telefono.trim();
-  if (!nombre || !email || !cuit || !direccion || !telefono) throw new Error("Completá todos los datos.");
-  if (data.password.length < 6) throw new Error("La contraseña necesita al menos 6 caracteres.");
+  if (!nombre || !cuit || !direccion || !telefono) throw new Error("Completá todos los datos.");
+  const clave = claveAceptable(data.password, email);
+  if (!clave.ok) throw new Error(clave.motivo);
   const sql = await getSql();
   const staff = await sql<{ id: string }>`
     select id from staff where lower(email) = ${email} limit 1
@@ -133,8 +137,11 @@ export async function recordarUsuarioForPublic(dato: string) {
 
 export async function recuperarClaveForPublic(data: { email: string; cuit: string; password: string }) {
   await ensureBootstrapped();
-  const email = data.email.trim().toLowerCase();
-  if (data.password.length < 6) throw new Error("La contraseña necesita al menos 6 caracteres.");
+  const correo = correoAceptable(data.email);
+  if (!correo.ok) throw new Error(correo.motivo);
+  const email = correo.email;
+  const clave = claveAceptable(data.password, email);
+  if (!clave.ok) throw new Error(clave.motivo);
   const sql = await getSql();
   const staff = await sql<{ id: string }>`
     select id from staff where lower(email) = ${email} limit 1

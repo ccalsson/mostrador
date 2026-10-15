@@ -38,12 +38,19 @@ import {
 } from "@/lib/server/legal";
 import { getSql } from "@/lib/db";
 import type { MercadoPerfil } from "@/lib/server/mercado";
+import { ipDe, rechazarCupo } from "@/lib/seguridad/cupo";
+import { cupoFirme } from "@/lib/seguridad/cupo-db";
+import { verificarTurnstile } from "@/lib/seguridad/turnstile";
 
 const HEADERS = {
   "content-type": "application/json; charset=utf-8",
   "cache-control": "no-store",
   vary: "authorization",
 };
+
+/** Tope del pedido común. La identidad lleva la foto del documento y la selfie. */
+const TOPE_CUERPO = 24_000;
+const TOPE_ADJUNTO = 1_500_000;
 
 class RouteError extends Error {
   constructor(
@@ -94,13 +101,17 @@ function segmentsOf(splat: string | undefined): string[] {
     });
 }
 
-async function bodyOf(request: Request): Promise<Record<string, unknown>> {
+async function bodyOf(request: Request, tope = TOPE_CUERPO): Promise<Record<string, unknown>> {
   if (!request.headers.get("content-type")?.includes("application/json")) {
     throw new RouteError(415, "unsupported_media_type", "Enviá el cuerpo como application/json.");
   }
+  const anunciado = Number(request.headers.get("content-length") ?? 0);
+  if (anunciado > tope) throw new RouteError(413, "payload_too_large", "El envío es demasiado grande.");
+  const texto = await request.text();
+  if (texto.length > tope) throw new RouteError(413, "payload_too_large", "El envío es demasiado grande.");
   let body: unknown;
   try {
-    body = await request.json();
+    body = texto ? JSON.parse(texto) : undefined;
   } catch {
     throw new RouteError(400, "invalid_request", "El cuerpo no es JSON válido.");
   }
@@ -108,6 +119,10 @@ async function bodyOf(request: Request): Promise<Record<string, unknown>> {
     throw new RouteError(400, "invalid_request", "El cuerpo debe ser un objeto JSON.");
   }
   return body as Record<string, unknown>;
+}
+
+function textoDe(data: Record<string, unknown>, clave: string): string {
+  return typeof data[clave] === "string" ? data[clave] : "";
 }
 
 function pathOf(splat: string | undefined) {
@@ -294,45 +309,67 @@ async function handle(method: "GET" | "POST", request: Request, splat?: string) 
   try {
     const segments = pathOf(splat);
     const url = new URL(request.url);
-    if (method === "POST" && segments.join("/") === "auth/registro") {
-      return json(await registerBuyer(await bodyOf(request)), { status: 201 });
+    const ruta = segments.join("/");
+    const ip = ipDe(request);
+    const publico =
+      method === "GET" && (ruta === "ranking" || ruta === "avisos" || ruta.startsWith("puestos"));
+    const registro =
+      method === "POST" && (ruta === "auth/registro" || ruta === "auth/registro-cargador");
+    const ingreso = method === "POST" && ruta === "auth/ingreso";
+    const golpe = await cupoFirme(
+      `${registro ? "registro" : ingreso ? "ingreso" : publico ? "lectura" : "uso"}:${ip}`,
+      registro ? 80 : ingreso ? 40 : publico ? 600 : 120,
+      registro ? 60 * 60 * 1000 : ingreso ? 15 * 60 * 1000 : 60 * 1000,
+    );
+    if (!golpe.ok) return rechazarCupo(golpe.reintento);
+    if (registro) {
+      const data = await bodyOf(request);
+      // Campo oculto: si viene con texto es un robot. Se finge el alta y no se crea nada.
+      if (textoDe(data, "website")) {
+        return json(
+          { pendiente: true, aviso: "Si el correo es válido, te llega un enlace para confirmarlo." },
+          { status: 201 },
+        );
+      }
+      const humano = await verificarTurnstile(textoDe(data, "captcha"), ip);
+      if (!humano.ok) throw new RouteError(400, "captcha", humano.motivo);
+      return json(
+        await (ruta === "auth/registro" ? registerBuyer(data) : registerCourier(data)),
+        { status: 201 },
+      );
     }
-    if (method === "POST" && segments.join("/") === "auth/registro-cargador") {
-      return json(await registerCourier(await bodyOf(request)), { status: 201 });
-    }
-    if (method === "POST" && segments.join("/") === "auth/ingreso") {
+    if (method === "POST" && ruta === "auth/ingreso") {
       return json(await signIn(await bodyOf(request)));
     }
-    if (method === "POST" && segments.join("/") === "auth/recuperar") {
+    if (method === "POST" && ruta === "auth/recuperar") {
       return json(await solicitarRecuperacion(await bodyOf(request)));
     }
-    if (method === "POST" && segments.join("/") === "auth/restablecer") {
+    if (method === "POST" && ruta === "auth/restablecer") {
       return json(await restablecer(await bodyOf(request)));
     }
-    if (method === "POST" && segments.join("/") === "auth/google") {
+    if (method === "POST" && ruta === "auth/google") {
       return startGoogle(request, await bodyOf(request));
     }
-    if (method === "GET" && segments.join("/") === "auth/google/callback") {
+    if (method === "GET" && ruta === "auth/google/callback") {
       return await finishGoogle(request, url);
     }
-    if (method === "POST" && segments.join("/") === "auth/salir") {
+    if (method === "POST" && ruta === "auth/salir") {
       return json(await signOut(tokenFrom(request)));
     }
-    if (method === "GET" && segments.join("/") === "ranking") {
+    if (method === "GET" && ruta === "ranking") {
       return json(await listPublicRanking(), {
         headers: { "cache-control": "public, max-age=60" },
       });
     }
-    if (method === "GET" && segments.join("/") === "avisos") {
+    if (method === "GET" && ruta === "avisos") {
       return json(await listAvisos(), { headers: { "cache-control": "public, max-age=60" } });
     }
 
     const actor = await authenticate(tokenFrom(request));
-    const route = segments.join("/");
-    if (method === "GET" && route === "yo") return json(await getMe(actor));
-    if (method === "POST" && route === "identidad")
-      return json(await uploadIdentity(actor, await bodyOf(request)));
-    if (method === "GET" && route === "puestos") return json(await listStands());
+    if (method === "GET" && ruta === "yo") return json(await getMe(actor));
+    if (method === "POST" && ruta === "identidad")
+      return json(await uploadIdentity(actor, await bodyOf(request, TOPE_ADJUNTO)));
+    if (method === "GET" && ruta === "puestos") return json(await listStands());
     if (
       method === "GET" &&
       segments.length === 3 &&
@@ -341,8 +378,8 @@ async function handle(method: "GET" | "POST", request: Request, splat?: string) 
     ) {
       return json(await listStandProducts(segments[1]!));
     }
-    if (method === "GET" && route === "pedidos") return json(await listBuyerOrders(actor));
-    if (method === "POST" && route === "pedidos") {
+    if (method === "GET" && ruta === "pedidos") return json(await listBuyerOrders(actor));
+    if (method === "POST" && ruta === "pedidos") {
       return json(
         await createOrders(
           actor,
@@ -363,8 +400,8 @@ async function handle(method: "GET" | "POST", request: Request, splat?: string) 
     ) {
       return json(await cancelBuyerOrder(actor, segments[1]!));
     }
-    if (method === "GET" && route === "cargadores") return json(await listCouriers());
-    if (method === "POST" && route === "recorridos") {
+    if (method === "GET" && ruta === "cargadores") return json(await listCouriers());
+    if (method === "POST" && ruta === "recorridos") {
       return json(
         await createRoute(
           actor,
@@ -374,7 +411,7 @@ async function handle(method: "GET" | "POST", request: Request, splat?: string) 
         { status: 201 },
       );
     }
-    if (method === "GET" && route === "recorridos") return json(await listRoutes(actor));
+    if (method === "GET" && ruta === "recorridos") return json(await listRoutes(actor));
     if (
       method === "POST" &&
       segments.length === 3 &&
@@ -418,10 +455,10 @@ async function handle(method: "GET" | "POST", request: Request, splat?: string) 
     ) {
       return json(await rateRoute(actor, segments[1]!, await bodyOf(request)));
     }
-    if (method === "POST" && route === "cargador/disponibilidad") {
+    if (method === "POST" && ruta === "cargador/disponibilidad") {
       return json(await setCourierAvailability(actor, await bodyOf(request)));
     }
-    if (method === "GET" && route === "legal/documentos") {
+    if (method === "GET" && ruta === "legal/documentos") {
       return json(await listarDocumentosLegales(actor));
     }
     if (

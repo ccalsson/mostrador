@@ -2017,7 +2017,7 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
 
   it("22. portal de clientes: registro, recordar/recuperar, catálogo, pedidos y mensajes", async () => {
     const stamp = Date.now();
-    const email = `portal.${stamp}@example.com`;
+    const email = `portal.${stamp}@frutasroman.com`;
     const cuit = `pc${stamp}`;
     const telefono = `119999${String(stamp).slice(-5)}`;
     const registroBody = {
@@ -2034,10 +2034,10 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
     assert.equal(alta.status, 201, JSON.stringify(alta.data));
     assert.match(alta.data.data.id, /^cli[-_]/);
 
-    // Validaciones: datos incompletos, contraseña corta, correo de staff.
+    // Validaciones: datos incompletos, clave corta, correo de staff.
     expectError(
       await api("POST", "/portal/registro", {
-        body: { ...registroBody, email: `otro.${stamp}@example.com`, telefono: "  " },
+        body: { ...registroBody, email: `otro.${stamp}@frutasroman.com`, telefono: "  " },
       }),
       400,
       /telefono es obligatorio/i,
@@ -2045,7 +2045,7 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
     expectError(
       await api("POST", "/portal/registro", { body: { ...registroBody, password: "123" } }),
       400,
-      /contraseña/i,
+      /clave necesita entre 8 y 72/i,
     );
     expectError(
       await api("POST", "/portal/registro", { body: { ...registroBody, email: "dueno@frutasroman.com" } }),
@@ -2274,7 +2274,7 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
     assert.equal(lecturaNegocio.data.data.mensajes[1].emisor, "cliente");
 
     // Aislamiento: un segundo cliente registrado no ve nada del primero.
-    const emailB = `portal.b.${stamp}@example.com`;
+    const emailB = `portal.b.${stamp}@frutasroman.com`;
     const altaB = await api("POST", "/portal/registro", {
       body: {
         nombre: "Cliente Portal B 22",

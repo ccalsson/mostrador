@@ -88,6 +88,9 @@ import {
   type PedirComoClienteInput,
 } from "@/lib/server/portal";
 import type { FormaPago, PedidoEstado, Rol, Staff } from "@/lib/types";
+import { ipDe, rechazarCupo } from "@/lib/seguridad/cupo";
+import { cupoFirme } from "@/lib/seguridad/cupo-db";
+import { verificarTurnstile } from "@/lib/seguridad/turnstile";
 
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8" };
 
@@ -166,6 +169,11 @@ function asString(value: unknown, field: string, max = 500): string {
   const text = typeof value === "string" ? value.trim() : "";
   if (!text || text.length > max) throw new HttpError(400, "invalid_request", `${field} es obligatorio.`);
   return text;
+}
+
+function asStringOpcional(value: unknown, max = 4_000): string {
+  const text = typeof value === "string" ? value.trim() : "";
+  return text.length > max ? text.slice(0, max) : text;
 }
 
 function asOptionalString(value: unknown, max = 500): string | undefined {
@@ -930,7 +938,14 @@ const ROUTES: Entry[] = [
     path: ["portal", "registro"],
     audience: "public",
     handler: async ({ request }) => {
+      const ip = ipDe(request);
+      const golpe = await cupoFirme(`reg-cli:${ip}`, 40, 60 * 60 * 1000);
+      if (!golpe.ok) return rechazarCupo(golpe.reintento);
       const body = asRecord(await readJson(request));
+      // Campo oculto: si viene con texto es un robot. Se finge el alta y no se crea nada.
+      if (asStringOpcional(body.website)) return json({ data: { id: null } }, { status: 201 });
+      const humano = await verificarTurnstile(asStringOpcional(body.captcha), ip);
+      if (!humano.ok) throw new HttpError(400, "captcha", humano.motivo);
       const cliente = await registrarClienteForPublic({
         nombre: asString(body.nombre, "nombre", 120),
         email: asString(body.email, "email", 200),
@@ -947,6 +962,8 @@ const ROUTES: Entry[] = [
     path: ["portal", "recordar"],
     audience: "public",
     handler: async ({ request }) => {
+      const golpe = await cupoFirme(`recordar:${ipDe(request)}`, 20, 60 * 60 * 1000);
+      if (!golpe.ok) return rechazarCupo(golpe.reintento);
       const body = asRecord(await readJson(request));
       return json({ data: await recordarUsuarioForPublic(asString(body.dato, "dato", 80)) });
     },
@@ -956,6 +973,8 @@ const ROUTES: Entry[] = [
     path: ["portal", "recuperar"],
     audience: "public",
     handler: async ({ request }) => {
+      const golpe = await cupoFirme(`reset:${ipDe(request)}`, 20, 60 * 60 * 1000);
+      if (!golpe.ok) return rechazarCupo(golpe.reintento);
       const body = asRecord(await readJson(request));
       return json({
         data: await recuperarClaveForPublic({

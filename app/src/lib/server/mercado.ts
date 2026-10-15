@@ -3,6 +3,8 @@ import { getSql } from "@/lib/db";
 import type { Sql } from "@/lib/db";
 import { newId } from "@/lib/ids";
 import { num } from "@/lib/money";
+import { claveAceptable, correoAceptable } from "@/lib/seguridad/correo";
+import { cupoFirme } from "@/lib/seguridad/cupo-db";
 import { reservarLineas, soltarReserva } from "@/lib/server/stock";
 import { textoCondicion, tierContratado } from "@/lib/torre/condiciones";
 import { avisosDe, comisionDePuesto, lineasPorPuesto, puedeAparecer } from "@/lib/torre/presencia";
@@ -70,11 +72,9 @@ export async function auditMercado(
 }
 
 function emailValue(value: unknown): string {
-  const email = typeof value === "string" ? value.trim().toLowerCase() : "";
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) {
-    fail(400, "invalid_request", "El correo no es válido.");
-  }
-  return email;
+  const correo = correoAceptable(typeof value === "string" ? value : "");
+  if (!correo.ok) fail(400, "invalid_request", correo.motivo);
+  return correo.email;
 }
 
 function passwordValue(value: unknown): string {
@@ -82,6 +82,14 @@ function passwordValue(value: unknown): string {
     fail(400, "invalid_request", "La contraseña debe tener entre 8 y 200 caracteres.");
   }
   return value;
+}
+
+/** Clave nueva: rige la política. Al ingreso no se aplica, para no invalidar claves ya cargadas. */
+function claveNueva(value: unknown, email: string): string {
+  const clave = typeof value === "string" ? value : "";
+  const revisada = claveAceptable(clave, email);
+  if (!revisada.ok) fail(400, "invalid_request", revisada.motivo);
+  return clave;
 }
 
 function textValue(value: unknown, field: string, max = 160): string {
@@ -135,7 +143,7 @@ async function ensureEmailAvailable(sql: Sql, email: string) {
 export async function registerBuyer(input: Record<string, unknown>) {
   const nombre = textValue(input.nombre, "nombre");
   const email = emailValue(input.email);
-  const password = passwordValue(input.password);
+  const password = claveNueva(input.password, email);
   const telefono = textValue(input.telefono, "telefono", 40);
   const pais = input.pais;
   const tipoDocumento = input.tipoDocumento;
@@ -170,7 +178,7 @@ export async function registerBuyer(input: Record<string, unknown>) {
 export async function registerCourier(input: Record<string, unknown>) {
   const nombre = textValue(input.nombre, "nombre");
   const email = emailValue(input.email);
-  const password = passwordValue(input.password);
+  const password = claveNueva(input.password, email);
   const telefono = textValue(input.telefono, "telefono", 40);
   const id = newId("mca");
   const sql = await getSql();
@@ -196,6 +204,8 @@ export async function signIn(input: Record<string, unknown>) {
   if (perfil !== "comprador" && perfil !== "cargador") {
     fail(400, "invalid_request", "perfil debe ser comprador o cargador.");
   }
+  const golpe = await cupoFirme(`ingreso-mail:${email}`, 8, 15 * 60 * 1000);
+  if (!golpe.ok) fail(429, "rate_limited", "Demasiados intentos. Esperá un momento.");
   const sql = await getSql();
   const credentials = await sql<{
     usuario_id: string;
@@ -307,7 +317,6 @@ export async function solicitarRecuperacion(input: Record<string, unknown>) {
 
 export async function restablecer(input: Record<string, unknown>) {
   const token = textValue(input.token, "token", 200);
-  const password = passwordValue(input.password);
   const sql = await getSql();
   const rows = await sql<{ email: string }>`
     delete from mercado_reset_tokens
@@ -316,6 +325,7 @@ export async function restablecer(input: Record<string, unknown>) {
   `;
   const row = rows[0];
   if (!row) fail(400, "token_invalido", "El enlace no es válido o ya venció. Pedí otro.");
+  const password = claveNueva(input.password, row.email);
   await sql.transaction(async (tx) => {
     await tx`update mercado_credenciales set password_hash = ${passwordHash(password)} where email = ${row.email}`;
     await tx`
