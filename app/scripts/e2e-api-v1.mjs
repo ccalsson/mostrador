@@ -10,10 +10,11 @@
 // proveedores, caja, auditoría, suscripción/contratos + legal del
 // canal (torre), facturación ARCA (config/emisión sin credenciales reales),
 // mensajería del pedido, portal de clientes (registro, catálogo, pedidos
-// propios, comprobante y mensajes) y Mercado al Toque (avisos públicos,
+// propios, comprobante y mensajes), Mercado al Toque (avisos públicos,
 // cancelación de pedido con restitución de reserva y condición comercial
-// congelada en pedidos.condicion), más acceso cruzado denegado (staff y
-// compradores de un tenant/usuario contra recursos ajenos).
+// congelada en pedidos.condicion) y sucursales (cupo de Torre, libros
+// aislados, cambio de sucursal y transferencia de stock), más acceso cruzado
+// denegado (staff y compradores de un tenant/usuario contra recursos ajenos).
 // Los datos que crea se limpian en `after` tomando el reloj de la base
 // (runStart) como referencia, para no tocar el seed demo. Las versiones
 // publicadas y las aceptaciones legales son inmutables por diseño (trigger
@@ -64,6 +65,8 @@ const state = {
   marcaNombre0: null,
   marcaConfig0: null,
   afipConfigPrev: undefined,
+  sucursalE2E: null,
+  sucursalStaffFlags: {},
 };
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -336,6 +339,28 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
         await pool.query('delete from account where "userId" = any($1::text[])', [state.portalUserIds]);
         await pool.query('delete from "user" where id = any($1::text[])', [state.portalUserIds]);
       }
+
+      // (p) sucursal del test 26: staff de vuelta a la casa, libros operativos,
+      // copias, rama de Torre y línea de cupo. La matriz queda (es estado
+      // idempotente del puesto, igual que al abrir la pantalla web).
+      if (state.sucursalE2E) {
+        const e = state.sucursalE2E;
+        await pool.query("update staff set sucursal_actual_id = null where tenant_id = $1", [TENANT]);
+        for (const [staffId, previo] of Object.entries(state.sucursalStaffFlags)) {
+          await pool.query("update staff set puede_cambiar = $2 where id = $1", [staffId, previo]);
+        }
+        if (e.lineaId) await pool.query("delete from torre.saas_subscription_lines where id = $1", [e.lineaId]);
+        if (e.branchId) await pool.query("delete from torre.saas_branches where id = $1", [e.branchId]);
+        if (e.libros) {
+          await pool.query("delete from stock_movimientos where tenant_id = $1", [e.libros]);
+          await pool.query("delete from productos where tenant_id = $1", [e.libros]);
+          await pool.query("delete from clientes where tenant_id = $1", [e.libros]);
+          await pool.query("delete from ticket_seq where tenant_id = $1", [e.libros]);
+        }
+        if (e.id) await pool.query("delete from sucursal_producto where sucursal_id = $1", [e.id]);
+        if (e.id) await pool.query("delete from sucursales where id = $1", [e.id]);
+        if (e.libros) await pool.query("delete from tenants where id = $1", [e.libros]);
+      }
     } finally {
       await pool.end();
     }
@@ -359,8 +384,11 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
     const session = await api("GET", "/session", { token: state.tokens.admin });
     assert.equal(session.status, 200);
     assert.equal(session.data.tenantId, TENANT);
-    assert.deepEqual(Object.keys(session.data.staff).sort(), ["id", "nombre", "rol"]);
+    assert.equal(session.data.casaId, TENANT);
+    assert.equal(session.data.sucursal, null);
+    assert.deepEqual(Object.keys(session.data.staff).sort(), ["id", "nombre", "puedeCambiar", "rol"]);
     assert.equal(session.data.staff.rol, "admin");
+    assert.equal(session.data.staff.puedeCambiar, true);
     assert.ok(session.data.staff.nombre.length > 0);
     assert.match(session.headers.get("vary") ?? "", /authorization/i);
     state.staffIds.admin = session.data.staff.id;
@@ -1005,7 +1033,7 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
     assert.equal(typeof a1.sucursalesContratadas, "number");
     assert.ok(a1.sucursalesContratadas >= 1);
     assert.ok(Array.isArray(a1.addons));
-    assert.equal(a1.precioVigente.moneda, "ARS");
+    assert.equal(a1.precioVigente.moneda, "USD", "el catálogo del workspace cotiza en USD (migración 0020)");
     assert.equal(typeof a1.precioVigente.monto, "number");
     assert.ok(a1.precioVigente.monto > 0);
     assert.equal(a1.precioVigente.periodo, "mensual");
@@ -2738,5 +2766,260 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
         .query("update productos set publicado_online = $1 where id = $2", [publicadoPrevio, productoId])
         .catch(() => {});
     }
+  });
+
+  it("26. sucursales: cupo de Torre, libros aislados, cambio de sucursal y transferencia (F2)", async () => {
+    const sql = (text, params) => state.pool.query(text, params);
+
+    // Listado: la matriz se asegura sola y sólo el dueño ve cruce/productos.
+    const lista0 = await api("GET", "/sucursales", { token: state.tokens.admin });
+    assert.equal(lista0.status, 200, JSON.stringify(lista0.data));
+    const l0 = lista0.data.data;
+    assert.equal(l0.esDueno, true);
+    assert.ok(Number.isInteger(l0.cupo) && l0.cupo >= 1, "cupo informado");
+    assert.ok(Number.isInteger(l0.usadas));
+    assert.ok(Array.isArray(l0.cruce) && Array.isArray(l0.productos));
+    const matriz = l0.sucursales.find((s) => s.esMatriz);
+    assert.ok(matriz, "la matriz existe en el listado");
+    assert.equal(matriz.esActual, true, "parado en la casa, la matriz es la actual");
+
+    const listaVend = await api("GET", "/sucursales", { token: state.tokens.vendedor });
+    assert.equal(listaVend.status, 200);
+    assert.equal(listaVend.data.data.esDueno, false);
+    assert.deepEqual(listaVend.data.data.cruce, []);
+    assert.deepEqual(listaVend.data.data.productos, []);
+
+    // Sólo el dueño crea; el nombre es obligatorio.
+    expectError(
+      await api("POST", "/sucursales", { token: state.tokens.cajero, body: { nombre: "E2E Prohibida" } }),
+      403,
+      /permiso/i,
+    );
+    expectError(
+      await api("POST", "/sucursales", { token: state.tokens.admin, body: { nombre: "" } }),
+      400,
+      /nombre/i,
+    );
+
+    // Con el cupo agotado el alta se rechaza; se habilita con una línea temporal.
+    if (l0.usadas >= l0.cupo) {
+      expectError(
+        await api("POST", "/sucursales", { token: state.tokens.admin, body: { nombre: "E2E Sucursal Ñandú" } }),
+        400,
+        /No hay lugar/i,
+      );
+    }
+    const sub = await sql(
+      `select s.id from torre.saas_subscriptions s
+         join torre.saas_tenants t on t.id = s.tenant_id
+        where t.operational_tenant_ref = $1 and t.status = 'active' limit 1`,
+      [TENANT],
+    );
+    assert.ok(sub.rows[0], "el puesto está vinculado a Torre");
+    const lineaId = `line_e2e_suc_${Date.now()}`;
+    const faltan = Math.max(1, l0.usadas - l0.cupo + 1);
+    await sql(
+      `insert into torre.saas_subscription_lines (
+         id, subscription_id, product_id, quantity, unit_price, currency, frequency, subtotal, starts_on, status
+       ) values ($1, $2, 'prod_sucursal', $3, 25, 'USD', 'monthly', $4, current_date, 'active')`,
+      [lineaId, sub.rows[0].id, faltan + 5, (faltan + 5) * 25],
+    );
+    state.sucursalE2E = { ...(state.sucursalE2E ?? {}), lineaId };
+
+    // Alta: libros nuevos, catálogo copiado con stock 0, sin online, sin Mercado.
+    const alta = await api("POST", "/sucursales", {
+      token: state.tokens.admin,
+      body: { nombre: "E2E Sucursal Ñandú", referencia: "Av. Siempreviva 742" },
+    });
+    assert.equal(alta.status, 201, JSON.stringify(alta.data));
+    const nuevaId = alta.data.data.id;
+    assert.ok(alta.data.data.productos >= 1, "copia al menos un producto");
+
+    const fila = await sql(
+      "select libros_tenant_id, es_matriz, torre_branch_id from sucursales where id = $1 and tenant_id = $2",
+      [nuevaId, TENANT],
+    );
+    assert.ok(fila.rows[0] && !fila.rows[0].es_matriz);
+    const libros = fila.rows[0].libros_tenant_id;
+    state.sucursalE2E = { ...state.sucursalE2E, id: nuevaId, libros, branchId: fila.rows[0].torre_branch_id, matrizId: matriz.id };
+
+    const configLibros = await sql("select config from tenants where id = $1", [libros]);
+    assert.equal(configLibros.rows[0].config.mercadoAlToque, false, "sin canal Mercado en la sucursal");
+    const seq = await sql("select ultimo from ticket_seq where tenant_id = $1", [libros]);
+    assert.equal(seq.rows[0].ultimo, 0, "ticket_seq propio en cero");
+
+    const copias = await sql(
+      `select p.stock::float as stock, p.precio::float as precio, p.publicado_online, o.precio::float as precio_origen
+         from sucursal_producto sp
+         join productos p on p.id = sp.producto_id and p.tenant_id = $2
+         join productos o on o.id = sp.origen_id and o.tenant_id = $1
+        where sp.sucursal_id = $3`,
+      [TENANT, libros, nuevaId],
+    );
+    assert.equal(copias.rows.length, alta.data.data.productos, "una copia por producto activo");
+    for (const c of copias.rows) {
+      assert.equal(c.stock, 0);
+      assert.equal(c.publicado_online, false);
+      approx(c.precio, c.precio_origen);
+    }
+
+    assert.ok(state.sucursalE2E.branchId, "rama anotada en Torre");
+    const branch = await sql("select status, included from torre.saas_branches where id = $1", [state.sucursalE2E.branchId]);
+    assert.equal(branch.rows[0].status, "active");
+
+    // Cambiar de sucursal: el vendedor sin habilitación recibe 403.
+    const flagPrevio = await sql("select puede_cambiar from staff where id = $1", [state.staffIds.vendedor]);
+    state.sucursalStaffFlags[state.staffIds.vendedor] = flagPrevio.rows[0].puede_cambiar;
+    await sql("update staff set puede_cambiar = false where id = $1", [state.staffIds.vendedor]);
+    expectError(
+      await api("POST", `/sucursales/${nuevaId}/usar`, { token: state.tokens.vendedor }),
+      403,
+      /habilit/i,
+    );
+
+    // El dueño siempre puede: la sesión pasa a los libros de la sucursal.
+    const usarDueno = await api("POST", `/sucursales/${nuevaId}/usar`, { token: state.tokens.admin });
+    assert.equal(usarDueno.status, 200, JSON.stringify(usarDueno.data));
+    const sesionDentro = await api("GET", "/session", { token: state.tokens.admin });
+    assert.equal(sesionDentro.data.tenantId, libros);
+    assert.equal(sesionDentro.data.casaId, TENANT);
+    assert.deepEqual(sesionDentro.data.sucursal, { id: nuevaId, nombre: "E2E Sucursal Ñandú" });
+
+    const catDentro = await api("GET", "/catalogo", { token: state.tokens.admin });
+    assert.equal(catDentro.status, 200);
+    assert.ok(catDentro.data.data.length >= 1);
+    assert.ok(catDentro.data.data.every((p) => p.stock === 0), "el catálogo de la sucursal arranca en 0");
+
+    const listaDentro = await api("GET", "/sucursales", { token: state.tokens.admin });
+    assert.equal(listaDentro.data.data.sucursales.find((s) => s.esActual)?.id, nuevaId);
+
+    const volver = await api("POST", `/sucursales/${matriz.id}/usar`, { token: state.tokens.admin });
+    assert.equal(volver.status, 200);
+    const sesionCasa = await api("GET", "/session", { token: state.tokens.admin });
+    assert.equal(sesionCasa.data.tenantId, TENANT);
+    assert.equal(sesionCasa.data.sucursal, null);
+
+    // El dueño habilita al vendedor: cambia, ve la sucursal y vuelve a la casa.
+    const habilitar = await api("POST", `/usuarios/${state.staffIds.vendedor}/cambio-sucursal`, {
+      token: state.tokens.admin,
+      body: { puedeCambiar: true },
+    });
+    assert.equal(habilitar.status, 200, JSON.stringify(habilitar.data));
+    const usarVend = await api("POST", `/sucursales/${nuevaId}/usar`, { token: state.tokens.vendedor });
+    assert.equal(usarVend.status, 200);
+    const sesionVend = await api("GET", "/session", { token: state.tokens.vendedor });
+    assert.equal(sesionVend.data.tenantId, libros);
+    assert.equal(sesionVend.data.staff.puedeCambiar, true);
+    const volverVend = await api("POST", `/sucursales/${matriz.id}/usar`, { token: state.tokens.vendedor });
+    assert.equal(volverVend.status, 200);
+    expectError(
+      await api("POST", `/usuarios/${state.staffIds.admin}/cambio-sucursal`, {
+        token: state.tokens.admin,
+        body: { puedeCambiar: true },
+      }),
+      400,
+      /no es de este puesto/i,
+    );
+    const revocar = await api("POST", `/usuarios/${state.staffIds.vendedor}/cambio-sucursal`, {
+      token: state.tokens.admin,
+      body: { puedeCambiar: false },
+    });
+    assert.equal(revocar.status, 200);
+
+    // Transferencia matriz → sucursal: movimientos y stock en ambos libros.
+    const producto = state.banana;
+    const stockAntes = await stockOf(producto.id);
+    const cant = 3;
+    expectError(
+      await api("POST", `/sucursales/${nuevaId}/transferir`, {
+        token: state.tokens.admin,
+        body: { productoId: producto.id, cantidad: 0 },
+      }),
+      400,
+      /mayor a cero/i,
+    );
+    expectError(
+      await api("POST", `/sucursales/${nuevaId}/transferir`, {
+        token: state.tokens.admin,
+        body: { productoId: producto.id, cantidad: 10 ** 9 },
+      }),
+      400,
+      /no alcanza/i,
+    );
+    expectError(
+      await api("POST", `/sucursales/${nuevaId}/transferir`, {
+        token: state.tokens.cajero,
+        body: { productoId: producto.id, cantidad: 1 },
+      }),
+      403,
+      null,
+    );
+    expectError(
+      await api("POST", `/sucursales/${matriz.id}/transferir`, {
+        token: state.tokens.admin,
+        body: { productoId: producto.id, cantidad: 1 },
+      }),
+      400,
+      /recibe/i,
+    );
+
+    const tx = await api("POST", `/sucursales/${nuevaId}/transferir`, {
+      token: state.tokens.admin,
+      body: { productoId: producto.id, cantidad: cant },
+    });
+    assert.equal(tx.status, 200, JSON.stringify(tx.data));
+    approx(await stockOf(producto.id), stockAntes - cant, "la matriz cede el stock");
+    const copia = await sql("select producto_id from sucursal_producto where sucursal_id = $1 and origen_id = $2", [
+      nuevaId,
+      producto.id,
+    ]);
+    const stockCopia = await sql("select stock::float as stock from productos where id = $1 and tenant_id = $2", [
+      copia.rows[0].producto_id,
+      libros,
+    ]);
+    assert.equal(stockCopia.rows[0].stock, cant, "la sucursal recibe el stock");
+    const movs = await sql(
+      `select tenant_id, cantidad::float as cantidad
+         from stock_movimientos
+        where referencia = 'transferencia' and created_at >= $2::timestamptz
+          and producto_id = any($1::text[])
+        order by cantidad`,
+      [[producto.id, copia.rows[0].producto_id], state.runStart],
+    );
+    assert.equal(movs.rows.length, 2, "un movimiento en cada libro");
+    assert.deepEqual(
+      movs.rows.map((m) => [m.tenant_id, m.cantidad]),
+      [
+        [TENANT, -cant],
+        [libros, cant],
+      ],
+    );
+
+    // Importar fichas: copia sin saldos y sin duplicar. La copia dedupea por
+    // nombre (igual que repoweb), así que la referencia son los nombres
+    // distintos: en la DEV compartida hay clientes homónimos.
+    const fichasCasa = await sql(
+      "select count(distinct lower(nombre))::int as n from clientes where tenant_id = $1 and activo = true",
+      [TENANT],
+    );
+    const imp = await api("POST", `/sucursales/${nuevaId}/importar-clientes`, { token: state.tokens.admin });
+    assert.equal(imp.status, 200, JSON.stringify(imp.data));
+    assert.equal(imp.data.data.copiados, fichasCasa.rows[0].n);
+    const imp2 = await api("POST", `/sucursales/${nuevaId}/importar-clientes`, { token: state.tokens.admin });
+    assert.equal(imp2.data.data.copiados, 0, "la segunda importación no duplica");
+    const saldos = await sql("select count(*)::int as n from cuenta_movimientos where tenant_id = $1", [libros]);
+    assert.equal(saldos.rows[0].n, 0, "no viajan saldos de cuenta corriente");
+    expectError(
+      await api("POST", `/sucursales/${nuevaId}/importar-clientes`, { token: state.tokens.vendedor }),
+      403,
+      null,
+    );
+
+    // El cruce del dueño ya incluye la sucursal nueva.
+    const listaFinal = await api("GET", "/sucursales", { token: state.tokens.admin });
+    const enCruce = listaFinal.data.data.cruce.find((c) => c.id === nuevaId);
+    assert.ok(enCruce, "el cruce incluye la sucursal");
+    assert.equal(enCruce.ventas, 0);
+    assert.equal(enCruce.tickets, 0);
   });
 });

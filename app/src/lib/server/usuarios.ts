@@ -13,11 +13,12 @@ export async function listUsuariosForStaff(staff: Staff) {
     email: string;
     rol: Rol;
     activo: boolean;
+    puede_cambiar: boolean;
     ultimo_login: string | null;
   }>`
-    select id, nombre, email, rol, activo, ultimo_login::text as ultimo_login
+    select id, nombre, email, rol, activo, puede_cambiar, ultimo_login::text as ultimo_login
     from staff
-    where tenant_id = ${staff.tenantId}
+    where tenant_id = ${staff.casaId}
     order by nombre
   `;
 }
@@ -44,9 +45,9 @@ export async function createUsuarioForStaff(
   `;
   await sql`
     insert into staff (id, tenant_id, user_id, nombre, email, rol, activo)
-    values (${newId("stf")}, ${staff.tenantId}, ${userId}, ${input.nombre.trim()}, ${email}, ${input.rol}, ${true})
+    values (${newId("stf")}, ${staff.casaId}, ${userId}, ${input.nombre.trim()}, ${email}, ${input.rol}, ${true})
   `;
-  await audit(staff.tenantId, staff, "alta_usuario", "staff", { email, rol: input.rol });
+  await audit(staff.casaId, staff, "alta_usuario", "staff", { email, rol: input.rol });
   return { ok: true as const };
 }
 
@@ -60,8 +61,8 @@ export async function toggleUsuarioForStaff(staff: Staff, input: { id: string; a
   const sql = await getSql();
   await sql`
     update staff set activo = ${input.activo}
-    where id = ${input.id} and tenant_id = ${staff.tenantId}
+    where id = ${input.id} and tenant_id = ${staff.casaId}
   `;
-  await audit(staff.tenantId, staff, "cambiar_usuario", "staff", input);
+  await audit(staff.casaId, staff, "cambiar_usuario", "staff", input);
   return { ok: true as const };
 }

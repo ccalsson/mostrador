@@ -30,17 +30,33 @@ export async function loadStaffByUserId(userId: string): Promise<Staff | null> {
     email: string;
     rol: Rol;
     activo: boolean;
+    puede_cambiar: boolean | null;
+    sucursal_id: string | null;
+    sucursal_nombre: string | null;
+    libros_tenant_id: string | null;
+    sucursal_activa: boolean | null;
   }>`
-    select id, tenant_id, user_id, nombre, email, rol, activo
-    from staff
-    where user_id = ${userId}
+    select s.id, s.tenant_id, s.user_id, s.nombre, s.email, s.rol, s.activo,
+           s.puede_cambiar,
+           su.id as sucursal_id, su.nombre as sucursal_nombre,
+           su.libros_tenant_id, su.activa as sucursal_activa
+    from staff s
+    left join sucursales su on su.id = s.sucursal_actual_id and su.tenant_id = s.tenant_id
+    where s.user_id = ${userId}
     limit 1
   `;
   const r = rows[0];
   if (!r || !r.activo) return null;
+  // Dentro de una sucursal, tenantId apunta a sus libros operativos; casaId
+  // siempre es el tenant de la casa (dueño de staff, sucursales y clientes).
+  const enSucursal = Boolean(r.sucursal_id && r.sucursal_activa && r.libros_tenant_id);
   return {
     id: r.id,
-    tenantId: r.tenant_id,
+    tenantId: enSucursal ? (r.libros_tenant_id as string) : r.tenant_id,
+    casaId: r.tenant_id,
+    sucursalId: enSucursal ? r.sucursal_id : null,
+    sucursalNombre: enSucursal ? (r.sucursal_nombre ?? "") : "",
+    puedeCambiar: r.rol === "admin" || r.puede_cambiar === true,
     userId: r.user_id,
     nombre: r.nombre,
     email: r.email,

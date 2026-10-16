@@ -23,10 +23,10 @@ con Flutter y con la web.
 ## Respuestas y errores
 
 - Envoltura estándar `{ data: ... }`; `GET /session` responde
-  `{ staff: { id, nombre, rol }, tenantId }` y `GET /catalogo`
-  `{ data, version }`.
+  `{ staff: { id, nombre, rol, puedeCambiar }, tenantId, casaId, sucursal }` y
+  `GET /catalogo` `{ data, version }`. `sucursal` es `{ id, nombre }` o `null`.
 - Creaciones (`POST /pedidos`, `/clientes`, `/productos`, `/remitos`,
-  `/usuarios`) responden `201`.
+  `/usuarios`, `/sucursales`) responden `201`.
 - Montos: números decimales (≤ 2 decimales). Fechas: ISO-8601 UTC.
 - Todas las respuestas incluyen `Vary: authorization`.
 
@@ -79,6 +79,12 @@ enviar un cuerpo válido.
 | `GET` | `/api/v1/usuarios` | admin | Lista de staff. |
 | `POST` | `/api/v1/usuarios` | admin | Alta de staff con rol explícito. |
 | `POST` | `/api/v1/usuarios/:id/toggle` | admin | Activa/desactiva staff. |
+| `POST` | `/api/v1/usuarios/:id/cambio-sucursal` | admin | Habilita o revoca (`{ puedeCambiar }`) el cambio de sucursal. |
+| `GET` | `/api/v1/sucursales` | cualquier staff | Lista del puesto; `cruce` (7 días) y `productos` sólo dueño. Crea la matriz al primer uso. |
+| `POST` | `/api/v1/sucursales` | admin | Alta `{ nombre, referencia? }` según cupo de Torre; copia catálogo con stock 0 y sin publicado online. |
+| `POST` | `/api/v1/sucursales/:id/usar` | staff habilitado | Cambia la sucursal activa (matriz o habilitada por el dueño). |
+| `POST` | `/api/v1/sucursales/:id/transferir` | admin | Pasa stock de la matriz a la sucursal (`{ productoId, cantidad }`). |
+| `POST` | `/api/v1/sucursales/:id/importar-clientes` | admin | Copia fichas de clientes de la casa a la sucursal (sin saldos). |
 | `GET` | `/api/v1/alertas` | cualquier staff | Alertas (stock bajo, caja, etc.). |
 | `POST` | `/api/v1/alertas/:id/leida` | cualquier staff | Marca alerta como leída. |
 | `GET` | `/api/v1/dashboard` | admin | Resumen; `?dias=N` ajusta la ventana. |
@@ -118,6 +124,20 @@ el mismo valor en `If-None-Match`, la respuesta es `304` sin payload. En la
 sincronización incremental, `version` debe persistirse sólo después de aplicar
 correctamente las filas recibidas. Los registros de límite pueden repetirse y
 deben resolverse con upsert por `id`; nunca se pierden cambios.
+
+## Sucursales
+
+El puesto principal es la casa; cada sucursal tiene sus propios libros
+operativos. La sesión expone `casaId` (siempre la casa) y, dentro de una
+sucursal, `tenantId` apunta a esos libros: catálogo, stock, caja, pedidos y
+tickets quedan aislados por sucursal sin cambiar las rutas. Los clientes y el
+staff viven en la casa; `GET /clientes` dentro de una sucursal lista las fichas
+de la sucursal y `POST /sucursales/:id/importar-clientes` copia fichas sin
+saldos. El alta de sucursales respeta el cupo de Torre (base incluye la
+matriz; cada línea `sucursal-extra` o de tipo `branch` suma una) y sólo el
+dueño puede crearlas, transferir stock e importar fichas. `POST
+/sucursales/:id/usar` sólo está disponible para quien tenga `puedeCambiar`
+(el dueño siempre; cajero y vendedor si el dueño los habilita).
 
 ## Idempotencia
 

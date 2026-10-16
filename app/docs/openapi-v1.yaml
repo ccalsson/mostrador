@@ -42,6 +42,7 @@ tags:
   - name: Remitos
   - name: Proveedores
   - name: Usuarios
+  - name: Sucursales
   - name: Alertas
   - name: Panel
   - name: Caja
@@ -867,6 +868,158 @@ paths:
         "403": { $ref: '#/components/responses/Forbidden' }
         "415": { $ref: '#/components/responses/UnsupportedMediaType' }
 
+  /usuarios/{id}/cambio-sucursal:
+    post:
+      tags: [Usuarios]
+      summary: Habilitar o revocar el cambio de sucursal
+      description: admin. Sólo para staff no admin del puesto.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [puedeCambiar]
+              properties:
+                puedeCambiar: { type: boolean }
+      responses:
+        "200":
+          description: Actualizado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DataOk' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "415": { $ref: '#/components/responses/UnsupportedMediaType' }
+
+  /sucursales:
+    get:
+      tags: [Sucursales]
+      summary: Listar sucursales del puesto
+      description: Cualquier staff. `cruce` (últimos 7 días) y `productos` sólo para el dueño. Crea la matriz al primer uso.
+      responses:
+        "200":
+          description: Sucursales.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DataSucursales' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Sucursales]
+      summary: Crear sucursal
+      description: admin. Respeta el cupo de Torre; copia el catálogo con stock 0 y sin publicado online.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [nombre]
+              properties:
+                nombre: { type: string, maxLength: 80 }
+                referencia: { type: string, maxLength: 160 }
+      responses:
+        "201":
+          description: Sucursal creada.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      id: { type: string }
+                      productos: { type: integer }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "415": { $ref: '#/components/responses/UnsupportedMediaType' }
+
+  /sucursales/{id}/usar:
+    post:
+      tags: [Sucursales]
+      summary: Cambiar la sucursal activa
+      description: Requiere `puedeCambiar` (el dueño siempre; cajero y vendedor si el dueño los habilita).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Sucursal activa cambiada.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DataSucursalId' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+
+  /sucursales/{id}/transferir:
+    post:
+      tags: [Sucursales]
+      summary: Transferir stock de la matriz a la sucursal
+      description: admin. Descuenta de la matriz y suma en la sucursal; deja movimientos en ambos libros.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, description: Sucursal que recibe. }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [productoId, cantidad]
+              properties:
+                productoId: { type: string }
+                cantidad: { type: number, minimum: 0, exclusiveMinimum: true }
+      responses:
+        "200":
+          description: Transferido.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DataOk' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "415": { $ref: '#/components/responses/UnsupportedMediaType' }
+
+  /sucursales/{id}/importar-clientes:
+    post:
+      tags: [Sucursales]
+      summary: Copiar fichas de clientes a la sucursal
+      description: admin. Copia nombre, teléfono y condición de cuenta corriente (sin saldos).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, description: Sucursal que recibe las fichas. }
+      responses:
+        "200":
+          description: Copiadas.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      copiados: { type: integer }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+
   /alertas:
     get:
       tags: [Alertas]
@@ -1068,12 +1221,21 @@ components:
         id: { type: string }
         nombre: { type: string }
         rol: { $ref: '#/components/schemas/Rol' }
+        puedeCambiar: { type: boolean, description: Puede cambiar de sucursal (el dueño siempre). }
     SessionResponse:
       type: object
-      required: [staff, tenantId]
+      required: [staff, tenantId, casaId]
       properties:
         staff: { $ref: '#/components/schemas/StaffResumen' }
-        tenantId: { type: string }
+        tenantId: { type: string, description: Libros operativos activos (la sucursal, o la casa si está en la matriz). }
+        casaId: { type: string, description: Siempre el tenant de la casa. }
+        sucursal:
+          nullable: true
+          description: Sucursal activa; `null` en la matriz.
+          type: object
+          properties:
+            id: { type: string }
+            nombre: { type: string }
     Producto:
       type: object
       properties:
@@ -1264,6 +1426,7 @@ components:
         email: { type: string }
         rol: { $ref: '#/components/schemas/Rol' }
         activo: { type: boolean }
+        puede_cambiar: { type: boolean }
         ultimo_login: { type: string, nullable: true, format: date-time }
     Alerta:
       type: object
@@ -1442,6 +1605,53 @@ components:
       type: object
       properties:
         data: { type: array, items: { $ref: '#/components/schemas/Usuario' } }
+    Sucursal:
+      type: object
+      properties:
+        id: { type: string }
+        nombre: { type: string }
+        referencia: { type: string }
+        esMatriz: { type: boolean }
+        activa: { type: boolean }
+        esActual: { type: boolean }
+    SucursalCruce:
+      type: object
+      properties:
+        id: { type: string }
+        nombre: { type: string }
+        ventas: { type: number }
+        tickets: { type: integer }
+        stockBajo: { type: integer }
+    SucursalesResumen:
+      type: object
+      properties:
+        incluidas: { type: integer }
+        extras: { type: integer }
+        cupo: { type: integer }
+        usadas: { type: integer }
+        puedeCrear: { type: boolean }
+        esDueno: { type: boolean }
+        sucursales: { type: array, items: { $ref: '#/components/schemas/Sucursal' } }
+        cruce: { type: array, items: { $ref: '#/components/schemas/SucursalCruce' } }
+        productos:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              nombre: { type: string }
+              stock: { type: number }
+    DataSucursales:
+      type: object
+      properties:
+        data: { $ref: '#/components/schemas/SucursalesResumen' }
+    DataSucursalId:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            id: { type: string }
     DataAlertas:
       type: object
       properties:

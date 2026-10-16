@@ -71,6 +71,14 @@ import {
 } from "@/lib/server/remitos";
 import { historialProductoForStaff, rankingCargadoresForStaff, resumenVentasProductosForStaff } from "@/lib/server/reportes";
 import { ajustarStockForStaff } from "@/lib/server/stock";
+import {
+  crearSucursalForStaff,
+  habilitarCambioSucursalForStaff,
+  importarClientesSucursalForStaff,
+  listarSucursalesForStaff,
+  transferirStockSucursalForStaff,
+  usarSucursalForStaff,
+} from "@/lib/server/sucursales";
 import { createUsuarioForStaff, listUsuariosForStaff, toggleUsuarioForStaff } from "@/lib/server/usuarios";
 import {
   catalogoClienteForClient,
@@ -332,7 +340,12 @@ const ROUTES: Entry[] = [
     method: "GET",
     path: ["session"],
     handler: async ({ staff }) =>
-      json({ staff: { id: staff.id, nombre: staff.nombre, rol: staff.rol }, tenantId: staff.tenantId }),
+      json({
+        staff: { id: staff.id, nombre: staff.nombre, rol: staff.rol, puedeCambiar: staff.puedeCambiar },
+        tenantId: staff.tenantId,
+        casaId: staff.casaId,
+        sucursal: staff.sucursalId ? { id: staff.sucursalId, nombre: staff.sucursalNombre } : null,
+      }),
   },
   {
     method: "GET",
@@ -729,6 +742,61 @@ const ROUTES: Entry[] = [
       if (typeof body.activo !== "boolean") throw new HttpError(400, "invalid_request", "activo debe ser booleano.");
       return json({ data: await toggleUsuarioForStaff(staff, { id: segments[1], activo: body.activo }) });
     },
+  },
+  {
+    method: "POST",
+    path: ["usuarios", ":", "cambio-sucursal"],
+    handler: async ({ request, segments, staff }) => {
+      const body = asRecord(await readJson(request));
+      if (typeof body.puedeCambiar !== "boolean") {
+        throw new HttpError(400, "invalid_request", "puedeCambiar debe ser booleano.");
+      }
+      return json({
+        data: await habilitarCambioSucursalForStaff(staff, { staffId: segments[1], puedeCambiar: body.puedeCambiar }),
+      });
+    },
+  },
+  {
+    method: "GET",
+    path: ["sucursales"],
+    handler: async ({ staff }) => json({ data: await listarSucursalesForStaff(staff) }),
+  },
+  {
+    method: "POST",
+    path: ["sucursales"],
+    handler: async ({ request, staff }) => {
+      const body = asRecord(await readJson(request));
+      const sucursal = await crearSucursalForStaff(staff, {
+        nombre: typeof body.nombre === "string" ? body.nombre : "",
+        referencia: typeof body.referencia === "string" ? body.referencia : "",
+      });
+      return json({ data: sucursal }, { status: 201 });
+    },
+  },
+  {
+    method: "POST",
+    path: ["sucursales", ":", "usar"],
+    handler: async ({ segments, staff }) => json({ data: await usarSucursalForStaff(staff, segments[1]) }),
+  },
+  {
+    method: "POST",
+    path: ["sucursales", ":", "transferir"],
+    handler: async ({ request, segments, staff }) => {
+      const body = asRecord(await readJson(request));
+      return json({
+        data: await transferirStockSucursalForStaff(staff, {
+          destinoId: segments[1],
+          productoId: asString(body.productoId, "productoId", 80),
+          cantidad: asNumber(body.cantidad, "cantidad"),
+        }),
+      });
+    },
+  },
+  {
+    method: "POST",
+    path: ["sucursales", ":", "importar-clientes"],
+    handler: async ({ segments, staff }) =>
+      json({ data: await importarClientesSucursalForStaff(staff, segments[1]) }),
   },
   {
     method: "GET",

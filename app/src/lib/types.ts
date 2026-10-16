@@ -21,6 +21,10 @@ export type MovimientoTipo =
 export type Staff = {
   id: string;
   tenantId: string;
+  casaId: string;
+  sucursalId: string | null;
+  sucursalNombre: string;
+  puedeCambiar: boolean;
   userId: string;
   nombre: string;
   email: string;
