@@ -2,6 +2,7 @@ import { getSql } from "@/lib/db";
 import { newId } from "@/lib/ids";
 import type { PedidoLineaInput } from "@/lib/server/catalog-pedidos";
 import { assertRole, audit, loadPedido, loadPedidos, mapProducto } from "@/lib/server/context";
+import { getCotizacion, precioEnArs } from "@/lib/server/moneda";
 import { hayReserva, reservarLineas, soltarReserva } from "@/lib/server/stock";
 import type { Pedido, PedidoEstado, Producto, Staff } from "@/lib/types";
 
@@ -172,21 +173,24 @@ export async function updatePedidoItemsForStaff(
     unidad: Producto["unidad"];
     unidad_label: string;
     precio: unknown;
+    moneda: unknown;
     stock: unknown;
     stock_minimo: unknown;
     alias: unknown;
     activo: boolean;
-  }>`select id, nombre, unidad, unidad_label, precio, stock, stock_minimo, alias, activo from productos where tenant_id = ${staff.tenantId}`;
+  }>`select id, nombre, unidad, unidad_label, precio, moneda, stock, stock_minimo, alias, activo from productos where tenant_id = ${staff.tenantId}`;
   const byId = new Map(productos.map((p) => [p.id, mapProducto(p)]));
+  const cotizacion = await getCotizacion();
   for (const line of input.items) {
     const prod = byId.get(line.productoId);
     if (!prod || line.cantidad <= 0) continue;
+    const precioArs = precioEnArs(prod.precio, prod.moneda, cotizacion);
     await sql`
       insert into pedido_items (
         id, pedido_id, producto_id, nombre_snapshot, cantidad, precio_unitario, unidad, unidad_label
       ) values (
         ${newId("itm")}, ${input.id}, ${prod.id}, ${prod.nombre}, ${line.cantidad},
-        ${prod.precio}, ${prod.unidad}, ${prod.unidadLabel}
+        ${precioArs}, ${prod.unidad}, ${prod.unidadLabel}
       )
     `;
   }

@@ -18,6 +18,7 @@ function empty(): Omit<Producto, "id" | "stock" | "stockBajo" | "orden"> {
     unidad: "bulto",
     unidadLabel: "cajón",
     precio: 0,
+    moneda: "USD",
     stockMinimo: 5,
     alias: [],
     activo: true,

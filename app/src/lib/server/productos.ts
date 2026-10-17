@@ -2,6 +2,7 @@ import { getSql } from "@/lib/db";
 import { newId } from "@/lib/ids";
 import { num } from "@/lib/money";
 import { assertRole, audit } from "@/lib/server/context";
+import type { Moneda } from "@/lib/server/moneda";
 import { applyStock } from "@/lib/server/stock";
 import { puedeAparecer } from "@/lib/torre/presencia";
 import type { Producto, Staff } from "@/lib/types";
@@ -12,6 +13,7 @@ export type SaveProductoInput = {
   unidad: Producto["unidad"];
   unidadLabel: string;
   precio: number;
+  moneda?: Moneda;
   stockMinimo: number;
   alias: string[];
   activo: boolean;
@@ -57,9 +59,10 @@ export async function saveProductoForStaff(staff: Staff, input: SaveProductoInpu
       });
     }
   } else {
+    const moneda = input.moneda ?? "USD";
     await sql.query(
-      `insert into productos (id, tenant_id, nombre, unidad, unidad_label, precio, stock, stock_minimo, alias, activo, publicado_online)
-       values ($1,$2,$3,$4,$5,$6,0,$7,$8::jsonb,$9,$10)`,
+      `insert into productos (id, tenant_id, nombre, unidad, unidad_label, precio, moneda, stock, stock_minimo, alias, activo, publicado_online)
+       values ($1,$2,$3,$4,$5,$6,$7,0,$8,$9::jsonb,$10,$11)`,
       [
         id,
         staff.tenantId,
@@ -67,6 +70,7 @@ export async function saveProductoForStaff(staff: Staff, input: SaveProductoInpu
         input.unidad,
         input.unidadLabel.trim(),
         input.precio,
+        moneda,
         input.stockMinimo,
         JSON.stringify(input.alias),
         input.activo,

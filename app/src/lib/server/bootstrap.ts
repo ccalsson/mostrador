@@ -99,8 +99,8 @@ async function seedCore() {
       const id = slugId("p", item.nombre);
       await sql.query(
         `insert into productos (
-           id, tenant_id, nombre, unidad, unidad_label, precio, stock, stock_minimo, alias, activo
-         ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb, true)`,
+           id, tenant_id, nombre, unidad, unidad_label, precio, moneda, stock, stock_minimo, alias, activo
+         ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb, true)`,
         [
           id,
           TENANT_ID,
@@ -108,6 +108,7 @@ async function seedCore() {
           item.unidad,
           item.unidadLabel,
           item.precio,
+          item.moneda,
           item.stock,
           item.stockMinimo,
           JSON.stringify(item.alias),

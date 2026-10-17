@@ -1,3 +1,5 @@
+import type { Moneda } from "./server/moneda";
+
 export type Rol = "admin" | "cajero" | "vendedor";
 export type Unidad = "bulto" | "kg";
 export type PedidoEstado =
@@ -53,6 +55,7 @@ export type Producto = {
   unidad: Unidad;
   unidadLabel: string;
   precio: number;
+  moneda: Moneda;
   stock: number;
   stockMinimo: number;
   alias: string[];

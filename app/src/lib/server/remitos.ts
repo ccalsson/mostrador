@@ -124,11 +124,12 @@ export async function crearRemitoForStaff(staff: Staff, input: CrearRemitoInput)
     unidad: Producto["unidad"];
     unidad_label: string;
     precio: unknown;
+    moneda: unknown;
     stock: unknown;
     stock_minimo: unknown;
     alias: unknown;
     activo: boolean;
-  }>`select id, nombre, unidad, unidad_label, precio, stock, stock_minimo, alias, activo from productos where tenant_id = ${staff.tenantId} and activo = true`;
+  }>`select id, nombre, unidad, unidad_label, precio, moneda, stock, stock_minimo, alias, activo from productos where tenant_id = ${staff.tenantId} and activo = true`;
   const productos = productosRows.map(mapProducto);
   for (const line of input.lineas) {
     const match = matchProduct(line.descripcion, productos);

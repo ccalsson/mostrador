@@ -43,6 +43,7 @@ import {
   mensajesDelPedidoForStaff,
   misMensajesPendientesForClient,
 } from "@/lib/server/mensajes";
+import { getCotizacion } from "@/lib/server/moneda";
 import { dashboardResumenForStaff, listAlertasForStaff, listAuditoriaForStaff, marcarAlertaLeidaForStaff } from "@/lib/server/panel";
 import {
   comprobantePedidoForStaff,
@@ -370,6 +371,14 @@ const ROUTES: Entry[] = [
         { data: catalogo.productos, version: catalogo.version },
         { headers: { "cache-control": "private, max-age=30", etag: etag ?? "" } },
       );
+    },
+  },
+  {
+    method: "GET",
+    path: ["cotizacion"],
+    handler: async () => {
+      const cotizacion = await getCotizacion();
+      return json({ usd_ars: cotizacion });
     },
   },
   {

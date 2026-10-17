@@ -86,6 +86,7 @@ export function mapProducto(r: {
   unidad: Producto["unidad"];
   unidad_label: string;
   precio: unknown;
+  moneda?: unknown;
   stock: unknown;
   stock_minimo: unknown;
   alias: unknown;
@@ -96,12 +97,14 @@ export function mapProducto(r: {
   const alias = parseAlias(r.alias);
   const stock = num(r.stock);
   const stockMinimo = num(r.stock_minimo);
+  const moneda = (r.moneda === "ARS" ? "ARS" : "USD") as import("@/lib/server/moneda").Moneda;
   return {
     id: r.id,
     nombre: r.nombre,
     unidad: r.unidad,
     unidadLabel: r.unidad_label,
     precio: num(r.precio),
+    moneda,
     stock,
     stockMinimo,
     alias,

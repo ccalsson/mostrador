@@ -1,6 +1,7 @@
 import { getSql } from "@/lib/db";
 import { newId } from "@/lib/ids";
 import { audit, assertRole, loadPedido, mapProducto } from "@/lib/server/context";
+import { getCotizacion, precioEnArs } from "@/lib/server/moneda";
 import type { Pedido, PedidoEstado, Producto, Staff } from "@/lib/types";
 
 export type PedidoLineaInput = { productoId: string; cantidad: number };
@@ -24,6 +25,7 @@ type ProductoRow = {
   unidad: Producto["unidad"];
   unidad_label: string;
   precio: unknown;
+  moneda: unknown;
   stock: unknown;
   stock_minimo: unknown;
   alias: unknown;
@@ -36,7 +38,7 @@ type ProductoRow = {
 export async function listProductosForStaff(staff: Staff): Promise<Producto[]> {
   const sql = await getSql();
   const rows = await sql<ProductoRow>`
-    select id, nombre, unidad, unidad_label, precio, stock, stock_minimo, alias, activo, publicado_online, orden
+    select id, nombre, unidad, unidad_label, precio, moneda, stock, stock_minimo, alias, activo, publicado_online, orden
     from productos
     where tenant_id = ${staff.tenantId}
     order by orden nulls last, lower(nombre)
@@ -63,13 +65,13 @@ export async function syncCatalogoForStaff(
   if (since && version && version <= since) return { version, productos: [] };
   const rows = since
     ? await sql<ProductoRow>`
-        select id, nombre, unidad, unidad_label, precio, stock, stock_minimo, alias, activo, publicado_online, orden
+        select id, nombre, unidad, unidad_label, precio, moneda, stock, stock_minimo, alias, activo, publicado_online, orden
         from productos
         where tenant_id = ${staff.tenantId} and updated_at >= ${since}::timestamptz
         order by orden nulls last, lower(nombre)
       `
     : await sql<ProductoRow>`
-        select id, nombre, unidad, unidad_label, precio, stock, stock_minimo, alias, activo, publicado_online, orden
+        select id, nombre, unidad, unidad_label, precio, moneda, stock, stock_minimo, alias, activo, publicado_online, orden
         from productos
         where tenant_id = ${staff.tenantId}
         order by orden nulls last, lower(nombre)
@@ -87,11 +89,12 @@ export async function crearPedidoForStaff(staff: Staff, input: CrearPedidoInput)
   if (input.items.length === 0) throw new Error("El pedido no tiene productos.");
   const sql = await getSql();
   const rows = await sql<ProductoRow>`
-    select id, nombre, unidad, unidad_label, precio, stock, stock_minimo, alias, activo, publicado_online, orden
+    select id, nombre, unidad, unidad_label, precio, moneda, stock, stock_minimo, alias, activo, publicado_online, orden
     from productos
     where tenant_id = ${staff.tenantId}
   `;
   const productos = new Map(rows.map((row) => [row.id, mapProducto(row)]));
+  const cotizacion = await getCotizacion();
   const pedidoId = newId("ped");
   const estado: PedidoEstado = "enviado";
   const vendedorId = staff.rol === "cajero" ? null : staff.id;
@@ -119,12 +122,13 @@ export async function crearPedidoForStaff(staff: Staff, input: CrearPedidoInput)
   for (const line of input.items) {
     const producto = productos.get(line.productoId);
     if (!producto || line.cantidad <= 0) continue;
+    const precioArs = precioEnArs(producto.precio, producto.moneda, cotizacion);
     await sql`
       insert into pedido_items (
         id, pedido_id, producto_id, nombre_snapshot, cantidad, precio_unitario, unidad, unidad_label
       ) values (
         ${newId("itm")}, ${pedidoId}, ${producto.id}, ${producto.nombre}, ${line.cantidad},
-        ${producto.precio}, ${producto.unidad}, ${producto.unidadLabel}
+        ${precioArs}, ${producto.unidad}, ${producto.unidadLabel}
       )
     `;
   }
