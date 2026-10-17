@@ -190,6 +190,9 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
     // Reset sucursal state: si una corrida anterior no limpió, el admin puede
     // quedar "parado" en una sucursal que ya no existe, rompiendo el test 26.
     await state.pool.query("update staff set sucursal_actual_id = null where tenant_id = $1", [TENANT]);
+    // Forzar gate de confirmación Mercado: sin RESEND_API_KEY el gate se
+    // deshabilita (opción B), pero el test 29 lo necesita activo.
+    process.env.RESEND_API_KEY ||= "re_test_e2e_fase5";
     const { rows } = await state.pool.query("select now() as now");
     state.runStart = new Date(rows[0].now).toISOString();
   });

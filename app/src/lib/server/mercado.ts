@@ -170,9 +170,16 @@ export async function registerBuyer(input: Record<string, unknown>, origen?: str
       values (${email}, ${"comprador"}, ${id}, ${passwordHash(password)})
     `;
   });
-  const confirmacion = origen
-    ? await pedirConfirmacionMercado(email, "comprador", origen)
-    : { aviso: "La cuenta quedó creada. Confirmá el correo antes de entrar.", enlace: null };
+  const resendConfigurado = Boolean(process.env.RESEND_API_KEY?.trim());
+  const confirmacion =
+    origen && resendConfigurado
+      ? await pedirConfirmacionMercado(email, "comprador", origen)
+      : {
+          aviso: resendConfigurado
+            ? "La cuenta quedó creada. Confirmá el correo antes de entrar."
+            : "La cuenta quedó creada. El correo de confirmación no se pudo enviar (Resend no configurado).",
+          enlace: null,
+        };
   return {
     pendiente: true,
     usuario: { id, nombre, email, perfil: "comprador", estadoIdentidad: "pendiente" },
@@ -199,9 +206,16 @@ export async function registerCourier(input: Record<string, unknown>, origen?: s
       values (${email}, ${"cargador"}, ${id}, ${passwordHash(password)})
     `;
   });
-  const confirmacion = origen
-    ? await pedirConfirmacionMercado(email, "cargador", origen)
-    : { aviso: "La cuenta quedó creada. Confirmá el correo antes de entrar.", enlace: null };
+  const resendConfigurado = Boolean(process.env.RESEND_API_KEY?.trim());
+  const confirmacion =
+    origen && resendConfigurado
+      ? await pedirConfirmacionMercado(email, "cargador", origen)
+      : {
+          aviso: resendConfigurado
+            ? "La cuenta quedó creada. Confirmá el correo antes de entrar."
+            : "La cuenta quedó creada. El correo de confirmación no se pudo enviar (Resend no configurado).",
+          enlace: null,
+        };
   return {
     pendiente: true,
     usuario: { id, nombre, email, perfil: "cargador" },
@@ -231,12 +245,15 @@ export async function signIn(input: Record<string, unknown>) {
     fail(401, "invalid_credentials", "Correo o contraseña incorrectos.");
   }
   const tabla = perfil === "comprador" ? "mercado_compradores" : "mercado_cargadores";
-  const verificado = await sql.query<{ email_verified: boolean }>(
-    `select email_verified from ${tabla} where id = $1 limit 1`,
-    [credentials[0]!.usuario_id],
-  );
-  if (!verificado[0]?.email_verified) {
-    fail(403, "email_not_verified", "Confirmá tu correo antes de entrar.");
+  const resendConfigurado = Boolean(process.env.RESEND_API_KEY?.trim());
+  if (resendConfigurado) {
+    const verificado = await sql.query<{ email_verified: boolean }>(
+      `select email_verified from ${tabla} where id = $1 limit 1`,
+      [credentials[0]!.usuario_id],
+    );
+    if (!verificado[0]?.email_verified) {
+      fail(403, "email_not_verified", "Confirmá tu correo antes de entrar.");
+    }
   }
   const actor = await actorFor(sql, perfil, credentials[0]!.usuario_id);
   const token = await persistSession(sql, perfil, actor.id);
