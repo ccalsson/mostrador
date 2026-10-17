@@ -26,7 +26,10 @@ const GRUPOS = [
   },
   {
     label: "Operación",
-    items: [{ to: "/torre/mercado", label: "Mostrador y Mercado" }],
+    items: [
+      { to: "/torre/mercado", label: "Mostrador y Mercado" },
+      { to: "/torre/super-al-toque", label: "Super al Toque" },
+    ],
   },
   {
     label: "Legal",
@@ -177,6 +180,7 @@ function claveDe(path: string) {
     ["/torre/publicidad", "publicidad"],
     ["/torre/finanzas", "finanzas"],
     ["/torre/mercado", "operacion"],
+    ["/torre/super-al-toque", "super-al-toque"],
     ["/torre/legal", "legal"],
     ["/torre/procesadores", "procesadores"],
     ["/torre/apps", "apps"],

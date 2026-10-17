@@ -53,6 +53,7 @@ import { Route as TorrePromocionesRouteImport } from './routes/torre.promociones
 import { Route as TorrePublicidadRouteImport } from './routes/torre.publicidad'
 import { Route as TorreServiciosRouteImport } from './routes/torre.servicios'
 import { Route as TorreSucursalesRouteImport } from './routes/torre.sucursales'
+import { Route as TorreSuperAlToqueRouteImport } from './routes/torre.super-al-toque'
 import { Route as TorreSuscripcionesRouteImport } from './routes/torre.suscripciones'
 import { Route as TorreTenantsRouteImport } from './routes/torre.tenants'
 import { Route as TorreVersionesRouteImport } from './routes/torre.versiones'
@@ -282,6 +283,11 @@ const TorreSucursalesRoute = TorreSucursalesRouteImport.update({
   path: '/sucursales',
   getParentRoute: () => TorreRoute,
 } as any)
+const TorreSuperAlToqueRoute = TorreSuperAlToqueRouteImport.update({
+  id: '/super-al-toque',
+  path: '/super-al-toque',
+  getParentRoute: () => TorreRoute,
+} as any)
 const TorreSuscripcionesRoute = TorreSuscripcionesRouteImport.update({
   id: '/suscripciones',
   path: '/suscripciones',
@@ -368,6 +374,7 @@ export interface FileRoutesByFullPath {
   '/torre/publicidad': typeof TorrePublicidadRoute
   '/torre/servicios': typeof TorreServiciosRoute
   '/torre/sucursales': typeof TorreSucursalesRoute
+  '/torre/super-al-toque': typeof TorreSuperAlToqueRoute
   '/torre/suscripciones': typeof TorreSuscripcionesRoute
   '/torre/tenants': typeof TorreTenantsRoute
   '/torre/versiones': typeof TorreVersionesRoute
@@ -421,6 +428,7 @@ export interface FileRoutesByTo {
   '/torre/publicidad': typeof TorrePublicidadRoute
   '/torre/servicios': typeof TorreServiciosRoute
   '/torre/sucursales': typeof TorreSucursalesRoute
+  '/torre/super-al-toque': typeof TorreSuperAlToqueRoute
   '/torre/suscripciones': typeof TorreSuscripcionesRoute
   '/torre/tenants': typeof TorreTenantsRoute
   '/torre/versiones': typeof TorreVersionesRoute
@@ -476,6 +484,7 @@ export interface FileRoutesById {
   '/torre/publicidad': typeof TorrePublicidadRoute
   '/torre/servicios': typeof TorreServiciosRoute
   '/torre/sucursales': typeof TorreSucursalesRoute
+  '/torre/super-al-toque': typeof TorreSuperAlToqueRoute
   '/torre/suscripciones': typeof TorreSuscripcionesRoute
   '/torre/tenants': typeof TorreTenantsRoute
   '/torre/versiones': typeof TorreVersionesRoute
@@ -532,6 +541,7 @@ export interface FileRouteTypes {
     | '/torre/publicidad'
     | '/torre/servicios'
     | '/torre/sucursales'
+    | '/torre/super-al-toque'
     | '/torre/suscripciones'
     | '/torre/tenants'
     | '/torre/versiones'
@@ -585,6 +595,7 @@ export interface FileRouteTypes {
     | '/torre/publicidad'
     | '/torre/servicios'
     | '/torre/sucursales'
+    | '/torre/super-al-toque'
     | '/torre/suscripciones'
     | '/torre/tenants'
     | '/torre/versiones'
@@ -639,6 +650,7 @@ export interface FileRouteTypes {
     | '/torre/publicidad'
     | '/torre/servicios'
     | '/torre/sucursales'
+    | '/torre/super-al-toque'
     | '/torre/suscripciones'
     | '/torre/tenants'
     | '/torre/versiones'
@@ -994,6 +1006,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TorreSucursalesRouteImport
       parentRoute: typeof TorreRoute
     }
+    '/torre/super-al-toque': {
+      id: '/torre/super-al-toque'
+      path: '/super-al-toque'
+      fullPath: '/torre/super-al-toque'
+      preLoaderRoute: typeof TorreSuperAlToqueRouteImport
+      parentRoute: typeof TorreRoute
+    }
     '/torre/suscripciones': {
       id: '/torre/suscripciones'
       path: '/suscripciones'
@@ -1081,6 +1100,7 @@ interface TorreRouteChildren {
   TorrePublicidadRoute: typeof TorrePublicidadRoute
   TorreServiciosRoute: typeof TorreServiciosRoute
   TorreSucursalesRoute: typeof TorreSucursalesRoute
+  TorreSuperAlToqueRoute: typeof TorreSuperAlToqueRoute
   TorreSuscripcionesRoute: typeof TorreSuscripcionesRoute
   TorreTenantsRoute: typeof TorreTenantsRoute
   TorreVersionesRoute: typeof TorreVersionesRoute
@@ -1104,6 +1124,7 @@ const TorreRouteChildren: TorreRouteChildren = {
   TorrePublicidadRoute: TorrePublicidadRoute,
   TorreServiciosRoute: TorreServiciosRoute,
   TorreSucursalesRoute: TorreSucursalesRoute,
+  TorreSuperAlToqueRoute: TorreSuperAlToqueRoute,
   TorreSuscripcionesRoute: TorreSuscripcionesRoute,
   TorreTenantsRoute: TorreTenantsRoute,
   TorreVersionesRoute: TorreVersionesRoute,
@@ -1148,12 +1169,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { createStart } from '@tanstack/react-start'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-  }
-}
