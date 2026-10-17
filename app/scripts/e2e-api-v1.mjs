@@ -187,6 +187,9 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
     }
 
     await ensureDemoAuthUsers();
+    // Reset sucursal state: si una corrida anterior no limpió, el admin puede
+    // quedar "parado" en una sucursal que ya no existe, rompiendo el test 26.
+    await state.pool.query("update staff set sucursal_actual_id = null where tenant_id = $1", [TENANT]);
     const { rows } = await state.pool.query("select now() as now");
     state.runStart = new Date(rows[0].now).toISOString();
   });
