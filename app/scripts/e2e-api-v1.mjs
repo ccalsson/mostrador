@@ -86,6 +86,13 @@ function approx(actual, expected, msg) {
 
 const round2 = (n) => Math.round(n * 100) / 100;
 
+// Réplica exacta de precioEnArs() en app/src/lib/server/moneda.ts:
+//   ARS = ceil(USD × cotización × 1.05 / 100) × 100.
+function arsDe(usd) {
+  const fx = state.cotizacion ?? 1600;
+  return Math.ceil((usd * fx * 1.05) / 100) * 100;
+}
+
 async function request(method, path, { token, body, headers } = {}) {
   const url = path.startsWith("http") ? path : new URL(path, BASE).toString();
   const init = { method, headers: { ...(headers ?? {}) } };
@@ -193,6 +200,11 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
     // Forzar gate de confirmación Mercado: sin RESEND_API_KEY el gate se
     // deshabilita (opción B), pero el test 29 lo necesita activo.
     process.env.RESEND_API_KEY ||= "re_test_e2e_fase5";
+    // Cotización actual para calcular precios ARS esperados (Fase 6).
+    const fxRows = await state.pool.query(
+      "select usd_ars from torre.saas_fx_rates order by as_of desc limit 1",
+    );
+    if (fxRows.rows[0]) state.cotizacion = Number(fxRows.rows[0].usd_ars);
     const { rows } = await state.pool.query("select now() as now");
     state.runStart = new Date(rows[0].now).toISOString();
   });
@@ -619,7 +631,7 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
     assert.equal(pedido.estado, "enviado");
     assert.equal(pedido.clientUuid, clientUuid);
     assert.equal(pedido.vendedorId, state.staffIds.vendedor);
-    approx(pedido.total, round2(2 * state.banana.precio));
+    approx(pedido.total, 2 * arsDe(state.banana.precio));
 
     approx(await stockOf(state.banana.id), state.bananaStock0, "crear pedido no debe mover stock");
 
@@ -805,7 +817,7 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
     });
     assert.equal(pedido.status, 201);
     state.p2 = pedido.data.data;
-    approx(state.p2.total, round2(state.morron.precio));
+    approx(state.p2.total, arsDe(state.morron.precio));
 
     const entregarAntes = await api("POST", `/pedidos/${state.p2.id}/entregar`, { token: state.tokens.vendedor });
     expectError(entregarAntes, 400, /ya cobrado/i);
