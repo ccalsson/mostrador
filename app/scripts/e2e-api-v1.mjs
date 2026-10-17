@@ -1202,24 +1202,36 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
     assert.equal(anon.data.error, "unauthorized");
 
     const marca = Date.now();
+    const emailCargador = `e2e-cargador-${marca}@e2e.example.com`;
     const regCargador = await mercado("POST", "/auth/registro-cargador", {
       body: {
         nombre: "E2E Cargador Legal",
-        email: `e2e-cargador-${marca}@e2e.example.com`,
+        email: emailCargador,
         password: "e2e-clave-123",
         telefono: "1000",
       },
     });
     assert.equal(regCargador.status, 201, JSON.stringify(regCargador.data));
-    const tokenCargador = regCargador.data.token;
+    assert.equal(regCargador.data.pendiente, true, "el alta del cargador queda pendiente");
+    state.mercadoUsuarioIds.push(regCargador.data.usuario.id);
+    // Confirmar y obtener token.
+    await state.pool.query(
+      "update mercado_cargadores set email_verified = true where id = $1",
+      [regCargador.data.usuario.id],
+    );
+    const ingresoCargador = await mercado("POST", "/auth/ingreso", {
+      body: { email: emailCargador, password: "e2e-clave-123", perfil: "cargador" },
+    });
+    assert.equal(ingresoCargador.status, 200, JSON.stringify(ingresoCargador.data));
+    const tokenCargador = ingresoCargador.data.token;
     assert.ok(tokenCargador);
     assert.equal(regCargador.data.usuario.perfil, "cargador");
-    state.mercadoUsuarioIds.push(regCargador.data.usuario.id);
 
+    const emailComprador = `e2e-comprador-${marca}@e2e.example.com`;
     const regComprador = await mercado("POST", "/auth/registro", {
       body: {
         nombre: "E2E Comprador Legal",
-        email: `e2e-comprador-${marca}@e2e.example.com`,
+        email: emailComprador,
         password: "e2e-clave-123",
         telefono: "2000",
         pais: "AR",
@@ -1228,10 +1240,20 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
       },
     });
     assert.equal(regComprador.status, 201, JSON.stringify(regComprador.data));
-    const tokenComprador = regComprador.data.token;
+    assert.equal(regComprador.data.pendiente, true, "el alta del comprador queda pendiente");
+    state.mercadoUsuarioIds.push(regComprador.data.usuario.id);
+    // Confirmar y obtener token.
+    await state.pool.query(
+      "update mercado_compradores set email_verified = true where id = $1",
+      [regComprador.data.usuario.id],
+    );
+    const ingresoComprador = await mercado("POST", "/auth/ingreso", {
+      body: { email: emailComprador, password: "e2e-clave-123", perfil: "comprador" },
+    });
+    assert.equal(ingresoComprador.status, 200, JSON.stringify(ingresoComprador.data));
+    const tokenComprador = ingresoComprador.data.token;
     assert.ok(tokenComprador);
     assert.equal(regComprador.data.usuario.perfil, "comprador");
-    state.mercadoUsuarioIds.push(regComprador.data.usuario.id);
 
     const docsCargador = await mercado("GET", "/legal/documentos", { token: tokenCargador });
     assert.equal(docsCargador.status, 200, JSON.stringify(docsCargador.data));
@@ -2410,8 +2432,18 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
       },
     });
     assert.equal(registro.status, 201, JSON.stringify(registro.data));
-    const token = registro.data.token;
+    assert.equal(registro.data.pendiente, true, "el alta queda pendiente");
     state.mercadoUsuarioIds.push(registro.data.usuario.id);
+    // Confirmar y obtener token.
+    await state.pool.query(
+      "update mercado_compradores set email_verified = true where id = $1",
+      [registro.data.usuario.id],
+    );
+    const ingreso = await mercado("POST", "/auth/ingreso", {
+      body: { email, password: "e2e-clave-123", perfil: "comprador" },
+    });
+    assert.equal(ingreso.status, 200, JSON.stringify(ingreso.data));
+    const token = ingreso.data.token;
 
     const png1x1 =
       "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
@@ -2430,10 +2462,11 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
 
     // Comprador ajeno para el caso 403 (con identidad propia cargada).
     const dniAjeno = `9${String(stamp).slice(-7)}`;
+    const emailAjeno = `e2e-${marca}-ajeno@e2e.example.com`;
     const regAjeno = await mercado("POST", "/auth/registro", {
       body: {
         nombre: "E2E M9g Ajeno",
-        email: `e2e-${marca}-ajeno@e2e.example.com`,
+        email: emailAjeno,
         password: "e2e-clave-123",
         telefono: "3001",
         pais: "AR",
@@ -2442,8 +2475,18 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
       },
     });
     assert.equal(regAjeno.status, 201, JSON.stringify(regAjeno.data));
-    const tokenAjeno = regAjeno.data.token;
+    assert.equal(regAjeno.data.pendiente, true, "el alta del ajeno queda pendiente");
     state.mercadoUsuarioIds.push(regAjeno.data.usuario.id);
+    // Confirmar y obtener token.
+    await state.pool.query(
+      "update mercado_compradores set email_verified = true where id = $1",
+      [regAjeno.data.usuario.id],
+    );
+    const ingresoAjeno = await mercado("POST", "/auth/ingreso", {
+      body: { email: emailAjeno, password: "e2e-clave-123", perfil: "comprador" },
+    });
+    assert.equal(ingresoAjeno.status, 200, JSON.stringify(ingresoAjeno.data));
+    const tokenAjeno = ingresoAjeno.data.token;
     const identidadAjeno = await mercado("POST", "/identidad", {
       token: tokenAjeno,
       body: {
@@ -2692,10 +2735,11 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
     const png1x1 =
       "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
     const altaComprador = async (sufijo, nombre, telefono, dni) => {
+      const email = `e2e-${marca}-${sufijo}@e2e.example.com`;
       const reg = await mercado("POST", "/auth/registro", {
         body: {
           nombre,
-          email: `e2e-${marca}-${sufijo}@e2e.example.com`,
+          email,
           password: "e2e-clave-123",
           telefono,
           pais: "AR",
@@ -2704,9 +2748,21 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
         },
       });
       assert.equal(reg.status, 201, JSON.stringify(reg.data));
+      assert.equal(reg.data.pendiente, true, "el alta queda pendiente");
       state.mercadoUsuarioIds.push(reg.data.usuario.id);
+      // Confirmar el correo directamente en la base (simula el click en el enlace).
+      await state.pool.query(
+        "update mercado_compradores set email_verified = true where id = $1",
+        [reg.data.usuario.id],
+      );
+      // Ingresar para obtener el token.
+      const ingreso = await mercado("POST", "/auth/ingreso", {
+        body: { email, password: "e2e-clave-123", perfil: "comprador" },
+      });
+      assert.equal(ingreso.status, 200, JSON.stringify(ingreso.data));
+      const token = ingreso.data.token;
       const doc = await mercado("POST", "/identidad", {
-        token: reg.data.token,
+        token,
         body: {
           pais: "AR",
           tipoDocumento: "DNI",
@@ -2716,7 +2772,7 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
         },
       });
       assert.equal(doc.status, 200, JSON.stringify(doc.data));
-      return reg.data.token;
+      return token;
     };
 
     let pedidoA = null;
@@ -3259,5 +3315,67 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
 
     // Limpieza: user, ficha y verification.
     state.portalUserIds.push(fichaOk.data.data.userId);
+  });
+
+  it("29. mercado: alta sin confirmar → 403, confirmar con token → ingreso 200, reenviar (F5)", async () => {
+    const mercado = (method, path, opts) => request(method, `/api/mercado/v1${path}`, opts);
+    const stamp = Date.now();
+    const email = `mconfirm.${stamp}@frutasroman.com`;
+    const password = "clave-mconfirm-29";
+
+    // Alta comprador: pendiente=true, sin token, enlace en DEV.
+    const alta = await mercado("POST", "/auth/registro", {
+      body: {
+        nombre: "E2E M29 Comprador",
+        email,
+        password,
+        telefono: `119999${String(stamp).slice(-5)}`,
+        pais: "AR",
+        tipoDocumento: "DNI",
+        numeroDocumento: `m29${String(stamp).slice(-6)}`,
+      },
+    });
+    assert.equal(alta.status, 201, JSON.stringify(alta.data));
+    assert.equal(alta.data.pendiente, true);
+    assert.ok(alta.data.enlace, "El enlace de confirmación debe venir en DEV");
+    state.mercadoUsuarioIds.push(alta.data.usuario.id);
+
+    // Sin confirmar: el ingreso rechaza con 403 email_not_verified.
+    const ingresoBloqueado = await mercado("POST", "/auth/ingreso", {
+      body: { email, password, perfil: "comprador" },
+    });
+    assert.equal(ingresoBloqueado.status, 403, JSON.stringify(ingresoBloqueado.data));
+    assert.equal(ingresoBloqueado.data.error, "email_not_verified");
+
+    // Confirmar con token inválido: error claro.
+    expectError(
+      await mercado("POST", "/auth/confirmar", { body: { token: "no-es-token-valido", perfil: "comprador" } }),
+      400,
+      /no sirve/i,
+    );
+
+    // Confirmar con token válido: ok.
+    const token = new URL(alta.data.enlace).searchParams.get("token");
+    const confirmar = await mercado("POST", "/auth/confirmar", { body: { token, perfil: "comprador" } });
+    assert.equal(confirmar.status, 200, JSON.stringify(confirmar.data));
+    assert.equal(confirmar.data.ok, true);
+
+    // Después de confirmar, el ingreso responde con 200 y token.
+    const ingresoOk = await mercado("POST", "/auth/ingreso", {
+      body: { email, password, perfil: "comprador" },
+    });
+    assert.equal(ingresoOk.status, 200, JSON.stringify(ingresoOk.data));
+    assert.ok(ingresoOk.data.token, "Debe devolver un token de sesión");
+
+    // Reenviar con correo ya confirmado: aviso genérico sin revelar estado.
+    const reenviar = await mercado("POST", "/auth/reenviar", { body: { email, perfil: "comprador" } });
+    assert.equal(reenviar.status, 200, JSON.stringify(reenviar.data));
+    assert.match(reenviar.data.aviso, /pendiente/i);
+
+    // Reenviar con correo inexistente: mismo aviso (no enumera).
+    const reenviarFake = await mercado("POST", "/auth/reenviar", {
+      body: { email: "no-existe-m29@frutasroman.com", perfil: "comprador" },
+    });
+    assert.equal(reenviarFake.status, 200, JSON.stringify(reenviarFake.data));
   });
 });

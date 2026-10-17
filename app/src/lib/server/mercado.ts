@@ -4,6 +4,7 @@ import { getSql } from "@/lib/db";
 import type { Sql } from "@/lib/db";
 import { newId } from "@/lib/ids";
 import { num } from "@/lib/money";
+import { pedirConfirmacionMercado } from "@/lib/seguridad/confirmar-mercado";
 import { claveAceptable, correoAceptable } from "@/lib/seguridad/correo";
 import { cupoFirme } from "@/lib/seguridad/cupo-db";
 import { reservarLineas, soltarReserva } from "@/lib/server/stock";
@@ -141,7 +142,7 @@ async function ensureEmailAvailable(sql: Sql, email: string) {
   if (rows[0]) fail(409, "email_in_use", "Ese correo ya tiene una cuenta de Mercado.");
 }
 
-export async function registerBuyer(input: Record<string, unknown>) {
+export async function registerBuyer(input: Record<string, unknown>, origen?: string) {
   const nombre = textValue(input.nombre, "nombre");
   const email = emailValue(input.email);
   const password = claveNueva(input.password, email);
@@ -155,47 +156,58 @@ export async function registerBuyer(input: Record<string, unknown>) {
   }
   const id = newId("mco");
   const sql = await getSql();
-  const token = await sql.transaction(async (tx) => {
+  await sql.transaction(async (tx) => {
     await ensureEmailAvailable(tx, email);
     await tx`
       insert into mercado_compradores (
-        id, nombre, email, telefono, pais, tipo_documento, numero_documento
+        id, nombre, email, telefono, pais, tipo_documento, numero_documento, email_verified
       ) values (
-        ${id}, ${nombre}, ${email}, ${telefono}, ${pais}, ${tipoDocumento}, ${numeroDocumento}
+        ${id}, ${nombre}, ${email}, ${telefono}, ${pais}, ${tipoDocumento}, ${numeroDocumento}, ${false}
       )
     `;
     await tx`
       insert into mercado_credenciales (email, perfil, usuario_id, password_hash)
       values (${email}, ${"comprador"}, ${id}, ${passwordHash(password)})
     `;
-    return persistSession(tx, "comprador", id);
   });
+  const confirmacion = origen
+    ? await pedirConfirmacionMercado(email, "comprador", origen)
+    : { aviso: "La cuenta quedó creada. Confirmá el correo antes de entrar.", enlace: null };
   return {
-    token,
+    pendiente: true,
     usuario: { id, nombre, email, perfil: "comprador", estadoIdentidad: "pendiente" },
+    aviso: confirmacion.aviso,
+    enlace: confirmacion.enlace,
   };
 }
 
-export async function registerCourier(input: Record<string, unknown>) {
+export async function registerCourier(input: Record<string, unknown>, origen?: string) {
   const nombre = textValue(input.nombre, "nombre");
   const email = emailValue(input.email);
   const password = claveNueva(input.password, email);
   const telefono = textValue(input.telefono, "telefono", 40);
   const id = newId("mca");
   const sql = await getSql();
-  const token = await sql.transaction(async (tx) => {
+  await sql.transaction(async (tx) => {
     await ensureEmailAvailable(tx, email);
     await tx`
-      insert into mercado_cargadores (id, nombre, email, telefono)
-      values (${id}, ${nombre}, ${email}, ${telefono})
+      insert into mercado_cargadores (id, nombre, email, telefono, email_verified)
+      values (${id}, ${nombre}, ${email}, ${telefono}, ${false})
     `;
     await tx`
       insert into mercado_credenciales (email, perfil, usuario_id, password_hash)
       values (${email}, ${"cargador"}, ${id}, ${passwordHash(password)})
     `;
-    return persistSession(tx, "cargador", id);
   });
-  return { token, usuario: { id, nombre, email, perfil: "cargador" } };
+  const confirmacion = origen
+    ? await pedirConfirmacionMercado(email, "cargador", origen)
+    : { aviso: "La cuenta quedó creada. Confirmá el correo antes de entrar.", enlace: null };
+  return {
+    pendiente: true,
+    usuario: { id, nombre, email, perfil: "cargador" },
+    aviso: confirmacion.aviso,
+    enlace: confirmacion.enlace,
+  };
 }
 
 export async function signIn(input: Record<string, unknown>) {
@@ -217,6 +229,14 @@ export async function signIn(input: Record<string, unknown>) {
   `;
   if (!passwordMatches(password, credentials[0]?.password_hash ?? null)) {
     fail(401, "invalid_credentials", "Correo o contraseña incorrectos.");
+  }
+  const tabla = perfil === "comprador" ? "mercado_compradores" : "mercado_cargadores";
+  const verificado = await sql.query<{ email_verified: boolean }>(
+    `select email_verified from ${tabla} where id = $1 limit 1`,
+    [credentials[0]!.usuario_id],
+  );
+  if (!verificado[0]?.email_verified) {
+    fail(403, "email_not_verified", "Confirmá tu correo antes de entrar.");
   }
   const actor = await actorFor(sql, perfil, credentials[0]!.usuario_id);
   const token = await persistSession(sql, perfil, actor.id);

@@ -41,6 +41,11 @@ import type { MercadoPerfil } from "@/lib/server/mercado";
 import { ipDe, rechazarCupo } from "@/lib/seguridad/cupo";
 import { cupoFirme } from "@/lib/seguridad/cupo-db";
 import { verificarTurnstile } from "@/lib/seguridad/turnstile";
+import {
+  confirmarTokenMercado,
+  reenviarSiPendienteMercado,
+} from "@/lib/seguridad/confirmar-mercado";
+import { correoAceptable } from "@/lib/seguridad/correo";
 
 const HEADERS = {
   "content-type": "application/json; charset=utf-8",
@@ -316,10 +321,12 @@ async function handle(method: "GET" | "POST", request: Request, splat?: string) 
     const registro =
       method === "POST" && (ruta === "auth/registro" || ruta === "auth/registro-cargador");
     const ingreso = method === "POST" && ruta === "auth/ingreso";
+    const confirmarReenviar =
+      method === "POST" && (ruta === "auth/confirmar" || ruta === "auth/reenviar");
     const golpe = await cupoFirme(
-      `${registro ? "registro" : ingreso ? "ingreso" : publico ? "lectura" : "uso"}:${ip}`,
-      registro ? 80 : ingreso ? 40 : publico ? 600 : 120,
-      registro ? 60 * 60 * 1000 : ingreso ? 15 * 60 * 1000 : 60 * 1000,
+      `${confirmarReenviar ? "confirmar" : registro ? "registro" : ingreso ? "ingreso" : publico ? "lectura" : "uso"}:${ip}`,
+      confirmarReenviar ? 40 : registro ? 80 : ingreso ? 40 : publico ? 600 : 120,
+      confirmarReenviar ? 15 * 60 * 1000 : registro ? 60 * 60 * 1000 : ingreso ? 15 * 60 * 1000 : 60 * 1000,
     );
     if (!golpe.ok) return rechazarCupo(golpe.reintento);
     if (registro) {
@@ -333,8 +340,11 @@ async function handle(method: "GET" | "POST", request: Request, splat?: string) 
       }
       const humano = await verificarTurnstile(textoDe(data, "captcha"), ip);
       if (!humano.ok) throw new RouteError(400, "captcha", humano.motivo);
+      const origen = mercadoWebBaseUrl(request);
       return json(
-        await (ruta === "auth/registro" ? registerBuyer(data) : registerCourier(data)),
+        await (ruta === "auth/registro"
+          ? registerBuyer(data, origen)
+          : registerCourier(data, origen)),
         { status: 201 },
       );
     }
@@ -346,6 +356,31 @@ async function handle(method: "GET" | "POST", request: Request, splat?: string) 
     }
     if (method === "POST" && ruta === "auth/restablecer") {
       return json(await restablecer(await bodyOf(request)));
+    }
+    if (method === "POST" && ruta === "auth/confirmar") {
+      const body = await bodyOf(request);
+      const token = typeof body.token === "string" ? body.token.trim() : "";
+      const perfil = body.perfil;
+      if (perfil !== "comprador" && perfil !== "cargador") {
+        throw new RouteError(400, "invalid_request", "perfil debe ser comprador o cargador.");
+      }
+      return json(await confirmarTokenMercado(token, perfil));
+    }
+    if (method === "POST" && ruta === "auth/reenviar") {
+      const golpe = await cupoFirme(`reenviar-mercado:${ip}`, 10, 15 * 60 * 1000);
+      if (!golpe.ok) return rechazarCupo(golpe.reintento);
+      const body = await bodyOf(request);
+      const correo = correoAceptable(typeof body.email === "string" ? body.email : "");
+      const perfil = body.perfil;
+      if (perfil !== "comprador" && perfil !== "cargador") {
+        throw new RouteError(400, "invalid_request", "perfil debe ser comprador o cargador.");
+      }
+      if (correo.ok) {
+        await reenviarSiPendienteMercado(correo.email, perfil, mercadoWebBaseUrl(request)).catch(
+          () => undefined,
+        );
+      }
+      return json({ aviso: "Si ese correo está pendiente, le llega otro enlace." });
     }
     if (method === "POST" && ruta === "auth/google") {
       return startGoogle(request, await bodyOf(request));
