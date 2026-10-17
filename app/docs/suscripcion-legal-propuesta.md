@@ -5,10 +5,14 @@
 > comercial/contractual, sin mover físicamente el schema):
 >
 > - **Parte A** (Bearer staff, solo rol `admin`): `GET /api/v1/suscripcion`,
->   `GET /api/v1/suscripcion/contrato?version=`,
+>   `GET /api/v1/suscripcion/contrato?version=&documento=`,
 >   `GET /api/v1/suscripcion/contrato/historial`,
 >   `POST /api/v1/suscripcion/contrato/aceptar` (con `Idempotency-Key`;
 >   dedupe por (tenant, versión) vía índice único parcial).
+>   **Fase 7 (2026-10-17):** dos aceptaciones del tenant (`uso_app` y
+>   `addons_servicios`); `GET /suscripcion` responde `documentos[]`,
+>   `pendientes[]` y `pendiente` (primero), y `documento`/`documentoId` eligen
+>   cuál se lee o acepta.
 > - **Parte B** (Bearer mercado, perfil del token): `GET /api/mercado/v1/legal/documentos`
 >   (404 `sin_documentos` si nada publicado → empty-state de la app),
 >   `GET /api/mercado/v1/legal/documentos/{id}?version=`,
@@ -73,21 +77,44 @@ parte, aunque existan endpoints o datos.
   "precioVigente": { "moneda": "ARS", "monto": 25000, "periodo": "mensual" },
   "condicionesComerciales": { "resumen": "...", "actualizado": "2026-09-01" },
   "contratoVigente": {
-    "documentoId": "contrato-marco",
+    "documentoId": "doc_saas",
     "version": 3,
     "hash": "sha256:...",
     "estado": "vigente",
     "aceptadoPorMi": true,
     "fechaAceptacion": "2026-09-02T10:00:00Z"
   },
+  "documentos": [
+    { "documentoId": "doc_saas", "titulo": "Condiciones de uso de la app",
+      "tipo": "uso_app", "version": 3, "hash": "sha256:...",
+      "estado": "pendiente | aceptado | sin_publicar",
+      "aceptadoPorMi": false, "fechaAceptacion": null },
+    { "documentoId": "doc_addons", "titulo": "Add-ons y servicios",
+      "tipo": "addons_servicios", "version": 1, "hash": "sha256:...",
+      "estado": "pendiente | aceptado | sin_publicar",
+      "aceptadoPorMi": false, "fechaAceptacion": null }
+  ],
+  "pendientes": [
+    { "documentoId": "doc_saas", "tipo": "uso_app", "version": 3, "hash": "sha256:..." }
+  ],
   "pendiente": {
-    "hayPendiente": false,
-    "documentoId": null,
-    "version": null,
-    "hash": null
+    "hayPendiente": true,
+    "documentoId": "doc_saas",
+    "version": 3,
+    "hash": "sha256:..."
   }
 } }
 ```
+
+**Dos aceptaciones del tenant (Fase 7, 2026-10-17).** Un puesto suscribe dos
+documentos propios, independientes del contrato del canal de la Parte B:
+`uso_app` (audiencia `saas_b2b`, "uso de la app") y `addons_servicios`
+(audiencia `other`, "add-ons o servicios"). Torre los publica; el backend lee
+el estado vigente de cada uno. `documentos` los lista a ambos, `pendientes`
+son los que aún no se aceptaron, y `pendiente` (singular) apunta al primero
+para que la app muestre un aviso. `contratoVigente` es el documento `uso_app`
+(compatibilidad con la forma original). `POST /suscripcion/contrato/aceptar`
+acepta cualquiera de los dos según `documentoId` (por defecto `uso_app`).
 
 Errores: `401 token_invalido`, `403 rol_no_permitido`,
 `404 sin_suscripcion` (tenant sin suscripción creada: la app muestra
@@ -95,13 +122,15 @@ Errores: `401 token_invalido`, `403 rol_no_permitido`,
 
 ### A.2 — Documento de contrato (contenido)
 
-`GET /suscripcion/contrato` → versión vigente.
+`GET /suscripcion/contrato` → versión vigente del documento `uso_app`
+(por defecto).
+`GET /suscripcion/contrato?documento=doc_addons` → el documento de add-ons.
 `GET /suscripcion/contrato?version=2` → versión histórica (si el backend lo
 ofrece; si no, `404 version_no_encontrada`).
 
 ```json
 { "data": {
-  "documentoId": "contrato-marco",
+  "documentoId": "doc_saas",
   "version": 3,
   "hash": "sha256:...",
   "estado": "vigente | reemplazada",
@@ -124,15 +153,16 @@ Errores: `401`, `403 rol_no_permitido`, `404 contrato_no_encontrado`.
 
 ```json
 { "data": { "entradas": [
-  { "documentoId": "contrato-marco", "version": 3, "hash": "sha256:...",
-    "tipo": "contrato | anexo", "estado": "vigente",
+  { "documentoId": "doc_saas", "version": 3, "hash": "sha256:...",
+    "tipo": "uso_app | addons_servicios", "estado": "vigente",
     "fechaDesde": "2026-09-01", "fechaHasta": null,
     "aceptacion": { "fecha": "2026-09-02T10:00:00Z",
       "aceptadoPor": "uuid-del-staff" } }
 ] } }
 ```
 
-Solo lectura. Errores: `401`, `403 rol_no_permitido`.
+Incluye las versiones de los dos documentos del tenant (`uso_app` y
+`addons_servicios`). Solo lectura. Errores: `401`, `403 rol_no_permitido`.
 
 ### A.4 — Aceptar contrato/anexo pendiente
 
@@ -140,10 +170,12 @@ Solo lectura. Errores: `401`, `403 rol_no_permitido`.
 (UUID v4 generado por la app, reutilizado en reintentos):
 
 ```json
-{ "documentoId": "contrato-marco", "version": 3, "hash": "sha256:..." }
+{ "documentoId": "doc_saas", "version": 3, "hash": "sha256:..." }
 ```
 
-El backend valida que esa versión siga vigente y que el hash coincida con el
+`documentoId` elige cuál de los dos documentos se acepta (`doc_saas` para
+uso de la app, `doc_addons` para add-ons/servicios). El backend valida que
+esa versión siga vigente y que el hash coincida con el
 suyo; registra **tenant_id, staff_id, documento, versión, hash aceptado,
 fecha del servidor** y fila en la tabla de auditoría. Repetir la misma
 `Idempotency-Key` (o aceptar dos veces la misma versión) devuelve la
@@ -152,7 +184,7 @@ aceptación existente sin duplicar.
 `200`
 
 ```json
-{ "data": { "aceptacionId": "uuid", "documentoId": "contrato-marco",
+{ "data": { "aceptacionId": "uuid", "documentoId": "doc_saas",
   "version": 3, "fecha": "2026-10-07T15:30:00Z",
   "contratoVigente": { "aceptadoPorMi": true } } }
 ```

@@ -169,30 +169,29 @@ export async function resumenSuscripcionForStaff(staff: Staff) {
     where g.tenant_id = ${torreTenantId}
   `;
 
-  const docRows = await sql<{ id: string; reaccept_on_change: boolean }>`
-    select id, reaccept_on_change from torre.saas_legal_documents
-    where audience = 'saas_b2b'
-    order by created_at, id
-    limit 1
-  `;
-  const doc = docRows[0];
-  const versiones = doc ? await versionesDe(sql, doc.id) : [];
-  const vigente = [...versiones].reverse().find((v) => v.status === "published");
-  const acceptances = vigente
-    ? await sql<{ snapshot_hash: string; accepted_at: string }>`
-        select snapshot_hash, accepted_at from torre.saas_contract_acceptances
-        where tenant_id = ${torreTenantId} and version_id = ${vigente.id}
-        order by accepted_at desc
-      `
-    : [];
-  const acceptedHashes = acceptances.map((row) => row.snapshot_hash);
-  const pendiente = vigente && doc
-    ? pendienteDeAceptacion({
-        reacceptOnChange: doc.reaccept_on_change,
-        publishedHash: vigente.content_hash,
-        acceptedHashes,
-      })
-    : false;
+  // Dos aceptaciones del tenant: "uso de la app" (saas_b2b) y "add-ons o
+  // servicios" (other). Torre los publica; acá se lee el estado de cada uno.
+  const docs = await docsTenantPublicados(sql);
+  const estados = await Promise.all(docs.map((d) => estadoDocTenant(sql, torreTenantId, d)));
+  const idxUso = docs.findIndex((d) => d.tipo === "uso_app");
+  const docUso = idxUso >= 0 ? docs[idxUso] : null;
+  const estadoUso = idxUso >= 0 ? estados[idxUso] : null;
+
+  const documentos = docs.map((d, i) => {
+    const e = estados[i];
+    return {
+      documentoId: d.id,
+      titulo: d.title,
+      tipo: d.tipo,
+      version: e.vigente ? e.vigente.version : null,
+      hash: e.vigente ? e.vigente.content_hash : null,
+      estado: e.vigente ? (e.pendiente ? "pendiente" : "aceptado") : "sin_publicar",
+      aceptadoPorMi: e.vigente ? e.acceptedHashes.includes(e.vigente.content_hash) : false,
+      fechaAceptacion: e.acceptances[0]?.accepted_at ?? null,
+    };
+  });
+  const pendientes = documentos.filter((d) => d.estado === "pendiente");
+  const primerPendiente = pendientes[0] ?? null;
 
   const today = hoy();
   const vigentesMercado = lines.filter((line) => {
@@ -251,42 +250,88 @@ export async function resumenSuscripcionForStaff(staff: Staff) {
         ? { resumen: condiciones.map((c) => c.conditions).join(" · "), actualizado: condiciones[0].startsOn }
         : null,
     contratoVigente:
-      vigente && doc
+      estadoUso?.vigente && docUso
         ? {
-            documentoId: doc.id,
-            version: vigente.version,
-            hash: vigente.content_hash,
+            documentoId: docUso.id,
+            version: estadoUso.vigente.version,
+            hash: estadoUso.vigente.content_hash,
             estado: "vigente",
-            aceptadoPorMi: acceptedHashes.includes(vigente.content_hash),
-            fechaAceptacion: acceptances[0]?.accepted_at ?? null,
+            aceptadoPorMi: estadoUso.acceptedHashes.includes(estadoUso.vigente.content_hash),
+            fechaAceptacion: estadoUso.acceptances[0]?.accepted_at ?? null,
           }
         : null,
+    documentos,
+    pendientes: pendientes.map((d) => ({ documentoId: d.documentoId, tipo: d.tipo, version: d.version, hash: d.hash })),
     pendiente: {
-      hayPendiente: pendiente,
-      documentoId: pendiente && doc ? doc.id : null,
-      version: pendiente && vigente ? vigente.version : null,
-      hash: pendiente && vigente ? vigente.content_hash : null,
+      hayPendiente: pendientes.length > 0,
+      documentoId: primerPendiente ? primerPendiente.documentoId : null,
+      version: primerPendiente ? primerPendiente.version : null,
+      hash: primerPendiente ? primerPendiente.hash : null,
     },
   };
 }
 
-async function documentoB2B(sql: Sql) {
-  const docRows = await sql<{ id: string; title: string }>`
-    select id, title from torre.saas_legal_documents
-    where audience = 'saas_b2b'
-    order by created_at, id
-    limit 1
-  `;
-  return docRows[0] ?? null;
+type DocTenant = {
+  id: string;
+  title: string;
+  audience: string;
+  reaccept_on_change: boolean;
+  tipo: string;
+};
+
+// Documentos legales propios del tenant (parte A). Uso de la app = saas_b2b;
+// add-ons o servicios = other. Uno por audiencia, el más antiguo (el que
+// sembró Torre).
+const AUDIENCIAS_TENANT = [
+  { audience: "saas_b2b", tipo: "uso_app" },
+  { audience: "other", tipo: "addons_servicios" },
+] as const;
+
+async function docsTenantPublicados(sql: Sql): Promise<DocTenant[]> {
+  const out: DocTenant[] = [];
+  for (const { audience, tipo } of AUDIENCIAS_TENANT) {
+    const rows = await sql<{ id: string; title: string; reaccept_on_change: boolean }>`
+      select id, title, reaccept_on_change from torre.saas_legal_documents
+      where audience = ${audience}
+      order by created_at, id
+      limit 1
+    `;
+    if (rows[0]) out.push({ ...rows[0], audience, tipo });
+  }
+  return out;
 }
 
-export async function contratoDocumentoForStaff(staff: Staff, versionInt?: number) {
+async function estadoDocTenant(sql: Sql, torreTenantId: string, doc: DocTenant) {
+  const versiones = await versionesDe(sql, doc.id);
+  const vigente = [...versiones].reverse().find((v) => v.status === "published") ?? null;
+  const acceptances = vigente
+    ? await sql<{ snapshot_hash: string; accepted_at: string }>`
+        select snapshot_hash, accepted_at from torre.saas_contract_acceptances
+        where tenant_id = ${torreTenantId} and version_id = ${vigente.id}
+        order by accepted_at desc
+      `
+    : [];
+  const acceptedHashes = acceptances.map((row) => row.snapshot_hash);
+  const pendiente = vigente
+    ? pendienteDeAceptacion({
+        reacceptOnChange: doc.reaccept_on_change,
+        publishedHash: vigente.content_hash,
+        acceptedHashes,
+      })
+    : false;
+  return { versiones, vigente, acceptances, acceptedHashes, pendiente };
+}
+
+export async function contratoDocumentoForStaff(staff: Staff, versionInt?: number, documentoId?: string) {
   assertAdmin(staff);
   const sql = await getSql();
   if (!(await torreTenantIdDe(sql, staff.tenantId))) {
     fail(404, "contrato_no_encontrado", "No hay contrato para este puesto.");
   }
-  const doc = await documentoB2B(sql);
+  const docs = await docsTenantPublicados(sql);
+  const doc = documentoId
+    ? docs.find((d) => d.id === documentoId) ?? null
+    : docs.find((d) => d.tipo === "uso_app") ?? docs[0] ?? null;
   if (!doc) fail(404, "contrato_no_encontrado", "No hay contrato para este puesto.");
   const versiones = await versionesDe(sql, doc.id);
   const publicadas = versiones.filter((v) => v.status === "published");
@@ -313,32 +358,37 @@ export async function contratoDocumentoForStaff(staff: Staff, versionInt?: numbe
 export async function historialContratoForStaff(staff: Staff) {
   assertAdmin(staff);
   const sql = await getSql();
-  const doc = await documentoB2B(sql);
-  if (!doc) return { entradas: [] };
-  const versiones = (await versionesDe(sql, doc.id)).filter((v) => v.status !== "draft");
-  const publicadas = versiones.filter((v) => v.status === "published");
-  const actual = publicadas[publicadas.length - 1] ?? null;
+  const torreTenantId = (await torreTenantIdDe(sql, staff.tenantId)) ?? "";
+  const docs = await docsTenantPublicados(sql);
+  if (docs.length === 0) return { entradas: [] };
   const aceptaciones = await sql<{ version_id: string; user_id: string; accepted_at: string }>`
     select version_id, user_id, accepted_at from torre.saas_contract_acceptances
-    where tenant_id = ${(await torreTenantIdDe(sql, staff.tenantId)) ?? ""}
+    where tenant_id = ${torreTenantId}
     order by accepted_at desc
   `;
-  const entradas = versiones.map((row) => {
-    const aceptacion = aceptaciones.find((a) => a.version_id === row.id);
-    return {
-      documentoId: doc.id,
-      version: row.version,
-      hash: row.content_hash,
-      tipo: "contrato",
-      estado: row.id === actual?.id ? "vigente" : "reemplazada",
-      fechaDesde: row.published_at ? String(row.published_at).slice(0, 10) : "",
-      fechaHasta: null,
-      aceptacion: aceptacion
-        ? { fecha: aceptacion.accepted_at, aceptadoPor: aceptacion.user_id }
-        : null,
-    };
-  });
-  return { entradas };
+  const porDoc = await Promise.all(
+    docs.map(async (doc) => {
+      const versiones = (await versionesDe(sql, doc.id)).filter((v) => v.status !== "draft");
+      const publicadas = versiones.filter((v) => v.status === "published");
+      const actual = publicadas[publicadas.length - 1] ?? null;
+      return versiones.map((row) => {
+        const aceptacion = aceptaciones.find((a) => a.version_id === row.id);
+        return {
+          documentoId: doc.id,
+          version: row.version,
+          hash: row.content_hash,
+          tipo: doc.tipo,
+          estado: row.id === actual?.id ? "vigente" : "reemplazada",
+          fechaDesde: row.published_at ? String(row.published_at).slice(0, 10) : "",
+          fechaHasta: null,
+          aceptacion: aceptacion
+            ? { fecha: aceptacion.accepted_at, aceptadoPor: aceptacion.user_id }
+            : null,
+        };
+      });
+    }),
+  );
+  return { entradas: porDoc.flat() };
 }
 
 export async function aceptarContratoForStaff(
@@ -351,10 +401,9 @@ export async function aceptarContratoForStaff(
   const sql = await getSql();
   const torreTenantId = await torreTenantIdDe(sql, staff.tenantId);
   if (!torreTenantId) fail(404, "version_no_encontrada", "No existe esa versión del contrato.");
-  const doc = await documentoB2B(sql);
-  if (!doc || doc.id !== input.documentoId) {
-    fail(404, "version_no_encontrada", "No existe esa versión del contrato.");
-  }
+  const docs = await docsTenantPublicados(sql);
+  const doc = docs.find((d) => d.id === input.documentoId) ?? null;
+  if (!doc) fail(404, "version_no_encontrada", "No existe esa versión del contrato.");
   const versiones = await versionesDe(sql, doc.id);
   const row = versiones.find((v) => v.version === input.version);
   if (!row) fail(404, "version_no_encontrada", "No existe esa versión del contrato.");

@@ -888,7 +888,8 @@ const ROUTES: Entry[] = [
       if (version !== undefined && (!Number.isInteger(version) || version <= 0)) {
         throw new HttpError(400, "cuerpo_invalido", "version debe ser un entero positivo.");
       }
-      return json({ data: await contratoDocumentoForStaff(staff, version) });
+      const documento = url.searchParams.get("documento");
+      return json({ data: await contratoDocumentoForStaff(staff, version, documento ?? undefined) });
     },
   },
   {

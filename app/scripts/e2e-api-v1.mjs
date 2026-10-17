@@ -1091,6 +1091,14 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
     assert.ok(a1.precioVigente.monto > 0);
     assert.equal(a1.precioVigente.periodo, "mensual");
     assert.equal(typeof a1.pendiente.hayPendiente, "boolean");
+    // Fase 7: dos aceptaciones del tenant (uso de la app + add-ons/servicios).
+    assert.ok(Array.isArray(a1.documentos) && a1.documentos.length === 2, "debe exponer los dos documentos del tenant");
+    const tiposDocs = a1.documentos.map((d) => d.tipo).sort();
+    assert.deepEqual(tiposDocs, ["addons_servicios", "uso_app"]);
+    const docAddons = a1.documentos.find((d) => d.tipo === "addons_servicios");
+    assert.ok(["pendiente", "aceptado"].includes(docAddons.estado), JSON.stringify(docAddons));
+    assert.match(docAddons.hash, HEX64);
+    assert.ok(Number.isInteger(docAddons.version) && docAddons.version >= 1);
     assert.ok(a1.contratoVigente, "doc_saas publicado debería dar contrato vigente");
     assert.equal(a1.contratoVigente.documentoId, "doc_saas");
     assert.equal(a1.contratoVigente.estado, "vigente");
@@ -1211,6 +1219,37 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
     assert.ok(vigente.aceptacion, "la aceptación del admin no figura en el historial");
     assert.ok(vigente.aceptacion.fecha);
     assert.ok(typeof vigente.aceptacion.aceptadoPor === "string" && vigente.aceptacion.aceptadoPor.length > 0);
+
+    // ---- Fase 7: segunda aceptación (add-ons y servicios) por /api/v1 ----
+    const contratoAddons = await api("GET", `/suscripcion/contrato?documento=${docAddons.documentoId}`, {
+      token: state.tokens.admin,
+    });
+    assert.equal(contratoAddons.status, 200, JSON.stringify(contratoAddons.data));
+    assert.equal(contratoAddons.data.data.documentoId, docAddons.documentoId);
+    assert.equal(contratoAddons.data.data.hash, docAddons.hash);
+    assert.equal(contratoAddons.data.data.version, docAddons.version);
+
+    const aceptarAddons = await api("POST", "/suscripcion/contrato/aceptar", {
+      token: state.tokens.admin,
+      headers: { "idempotency-key": randomUUID() },
+      body: { documentoId: docAddons.documentoId, version: docAddons.version, hash: docAddons.hash },
+    });
+    assert.equal(aceptarAddons.status, 200, JSON.stringify(aceptarAddons.data));
+    assert.equal(aceptarAddons.data.data.documentoId, docAddons.documentoId);
+
+    const resumenAddonsOk = await api("GET", "/suscripcion", { token: state.tokens.admin });
+    const docAddonsAhora = resumenAddonsOk.data.data.documentos.find((d) => d.tipo === "addons_servicios");
+    assert.equal(docAddonsAhora.estado, "aceptado", "tras aceptar, add-ons debe quedar aceptado");
+    assert.equal(docAddonsAhora.aceptadoPorMi, true);
+
+    // Un rol que no es dueño no puede aceptar la segunda condición.
+    const aceptarAddonsProhibido = await api("POST", "/suscripcion/contrato/aceptar", {
+      token: state.tokens.vendedor,
+      headers: { "idempotency-key": randomUUID() },
+      body: { documentoId: docAddons.documentoId, version: docAddons.version, hash: docAddons.hash },
+    });
+    expectError(aceptarAddonsProhibido, 403, null);
+    assert.equal(aceptarAddonsProhibido.data.error, "rol_no_permitido");
 
     // ---- Parte B: /api/mercado/v1/legal (perfil del token) ----
     const mercado = (method, path, opts) => request(method, `/api/mercado/v1${path}`, opts);
