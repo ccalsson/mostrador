@@ -13,8 +13,10 @@
 // propios, comprobante y mensajes), Mercado al Toque (avisos públicos,
 // cancelación de pedido con restitución de reserva y condición comercial
 // congelada en pedidos.condicion) y sucursales (cupo de Torre, libros
-// aislados, cambio de sucursal y transferencia de stock), más acceso cruzado
-// denegado (staff y compradores de un tenant/usuario contra recursos ajenos).
+// aislados, cambio de sucursal y transferencia de stock), creativos (saldo de
+// la casa, piezas que habilita Torre, tanda de cuatro textos y cupo compartido
+// con la web), más acceso cruzado denegado (staff y compradores de un
+// tenant/usuario contra recursos ajenos).
 // Los datos que crea se limpian en `after` tomando el reloj de la base
 // (runStart) como referencia, para no tocar el seed demo. Las versiones
 // publicadas y las aceptaciones legales son inmutables por diseño (trigger
@@ -67,6 +69,9 @@ const state = {
   afipConfigPrev: undefined,
   sucursalE2E: null,
   sucursalStaffFlags: {},
+  creativosAdId: null,
+  creativosSaldoPrev: undefined,
+  creativosPedidoIds: [],
 };
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -360,6 +365,32 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
         if (e.id) await pool.query("delete from sucursal_producto where sucursal_id = $1", [e.id]);
         if (e.id) await pool.query("delete from sucursales where id = $1", [e.id]);
         if (e.libros) await pool.query("delete from tenants where id = $1", [e.libros]);
+      }
+
+      // (q) creativos del test 27: el aviso prestado de Torre, el pedido con
+      // sus variantes, el cupo de la casa (para no dejar hambreada a la web) y
+      // el saldo tal como estaba (o sin fila si la casa nunca pidió).
+      if (state.creativosAdId) {
+        await pool.query("delete from torre.saas_ads where id = $1", [state.creativosAdId]);
+      }
+      if (state.creativosPedidoIds.length) {
+        await pool.query("delete from creativos_variantes where pedido_id = any($1::text[])", [
+          state.creativosPedidoIds,
+        ]);
+        await pool.query("delete from creativos_pedidos where id = any($1::text[])", [
+          state.creativosPedidoIds,
+        ]);
+      }
+      await pool.query("delete from seguridad_cupo where clave = $1", [`creativos:${TENANT}`]);
+      if (state.creativosSaldoPrev !== undefined) {
+        if (state.creativosSaldoPrev === null) {
+          await pool.query("delete from creativos_saldo where tenant_id = $1", [TENANT]);
+        } else {
+          await pool.query(
+            "update creativos_saldo set creditos = $2, updated_at = now() where tenant_id = $1",
+            [TENANT, state.creativosSaldoPrev],
+          );
+        }
       }
     } finally {
       await pool.end();
@@ -3021,5 +3052,141 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
     assert.ok(enCruce, "el cruce incluye la sucursal");
     assert.equal(enCruce.ventas, 0);
     assert.equal(enCruce.tickets, 0);
+  });
+
+  it("27. creativos: saldo de la casa, piezas que habilitó Torre y foto con cuatro textos (F3)", async () => {
+    const sql = (text, params) => state.pool.query(text, params);
+
+    // La habilitación de piezas depende de Torre: se presta un aviso vigente y
+    // se limpia al terminar. Sin aviso, ni banner ni push estarían prendidos.
+    const torre = await sql(
+      "select id from torre.saas_tenants where operational_tenant_ref = $1 and status = 'active' limit 1",
+      [TENANT],
+    );
+    assert.ok(torre.rows[0], "el puesto está vinculado a Torre");
+    const aviso = await sql(
+      "select id from torre.saas_products where kind = 'advertising' and status = 'active' limit 1",
+    );
+    assert.ok(aviso.rows[0], "Torre tiene un producto de banner activo");
+    const adId = `ad_e2e_creat_${Date.now()}`;
+    state.creativosAdId = adId;
+    await sql(
+      `insert into torre.saas_ads (id, product_id, tenant_id, placement, starts_on, ends_on, price, currency, status)
+       values ($1, $2, $3, 'home', current_date, current_date + 1, 0, 'USD', 'active')`,
+      [adId, aviso.rows[0].id, torre.rows[0].id],
+    );
+
+    // El saldo de la casa es del test: se captura, se fuerza y se devuelve.
+    const saldoPrevio = await sql("select creditos from creativos_saldo where tenant_id = $1", [TENANT]);
+    state.creativosSaldoPrev = saldoPrevio.rows[0] ? Number(saldoPrevio.rows[0].creditos) : null;
+    await sql(
+      `insert into creativos_saldo (tenant_id, creditos) values ($1, 0)
+       on conflict (tenant_id) do update set creditos = 0, updated_at = now()`,
+      [TENANT],
+    );
+    await sql("delete from seguridad_cupo where clave = $1", [`creativos:${TENANT}`]);
+
+    // El dueño ve el estado; caja y venta no tienen ni lectura de saldo.
+    const estado = await api("GET", "/creativos", { token: state.tokens.admin });
+    assert.equal(estado.status, 200, JSON.stringify(estado.data));
+    const e = estado.data.data;
+    assert.equal(e.costo, 4, "una foto cuesta 4 créditos");
+    assert.equal(e.textos, 4, "la tanda trae cuatro lecturas");
+    assert.deepEqual(
+      e.paquetes.map((pack) => [pack.id, pack.creditos]),
+      [
+        ["prod_creditos_50", 50],
+        ["prod_creditos_100", 100],
+      ],
+    );
+    assert.ok(e.piezas.includes("banner"), "el banner que Torre tiene vigente");
+    assert.equal(e.creditos, 0);
+    assert.ok(Array.isArray(e.pedidos));
+    expectError(await api("GET", "/creativos", { token: state.tokens.cajero }), 403, null);
+    expectError(
+      await api("POST", "/creativos", { token: state.tokens.vendedor, body: { formato: "banner", brief: "tomate perita" } }),
+      403,
+      null,
+    );
+
+    // Validaciones antes de gastar proveedor.
+    expectError(
+      await api("POST", "/creativos", { token: state.tokens.admin, body: { formato: "banner", brief: "corto" } }),
+      400,
+      /Contá un poco más/i,
+    );
+    expectError(
+      await api("POST", "/creativos", { token: state.tokens.admin, body: { formato: "gigante", brief: "tomate perita del día" } }),
+      400,
+      /no se pide desde acá/i,
+    );
+    if (!e.piezas.includes("push")) {
+      expectError(
+        await api("POST", "/creativos", { token: state.tokens.admin, body: { formato: "push", brief: "tomate perita del día" } }),
+        400,
+        /todavía no habilitó/i,
+      );
+    }
+    expectError(
+      await api("POST", "/creativos", { token: state.tokens.admin, body: { formato: "banner", brief: "tomate perita del día" } }),
+      400,
+      /No alcanzan los créditos/i,
+    );
+
+    // Con créditos pero sin proveedor configurado el pedido falla sin descontar.
+    await sql("update creativos_saldo set creditos = 20 where tenant_id = $1", [TENANT]);
+    const pedido = await api("POST", "/creativos", {
+      token: state.tokens.admin,
+      body: { formato: "banner", brief: "tomate perita, cajón de hoy, precio de puesto" },
+    });
+    const auditos = await sql(
+      "select count(*)::int as n from auditoria where tenant_id = $1 and accion = 'pedir_creativos' and created_at >= $2::timestamptz",
+      [TENANT, state.runStart],
+    );
+    const hayProveedor = Boolean(process.env.DEEPSEEK_API_KEY?.trim() && process.env.QWEN_API_KEY?.trim());
+    if (pedido.status === 200) {
+      const creado = pedido.data.data;
+      assert.ok(creado.variantes.length >= 2, "la tanda sale con sus lecturas");
+      assert.equal(creado.creditos, 4);
+      assert.equal(creado.saldo, 16, "descuenta los 4 créditos");
+      assert.equal(creado.formato, "banner");
+      state.creativosPedidoIds.push(creado.id);
+      assert.equal(auditos.rows[0].n, 1, "queda auditado");
+      const trasExito = await api("GET", "/creativos", { token: state.tokens.admin });
+      assert.equal(trasExito.data.data.creditos, 16);
+      assert.ok(trasExito.data.data.pedidos.some((p) => p.id === creado.id), "el pedido figura en el listado");
+    } else if (hayProveedor) {
+      // Con proveedor configurado puede fallar la llamada (502) o venir una
+      // respuesta que no arma tanda (422); en ambos casos no se descuenta.
+      assert.ok(
+        [422, 502].includes(pedido.status),
+        `esperaba 422/502 y llegó ${pedido.status}: ${JSON.stringify(pedido.data)}`,
+      );
+      const saldoFallido = await sql("select creditos from creativos_saldo where tenant_id = $1", [TENANT]);
+      assert.equal(saldoFallido.rows[0].creditos, 20, "un fallo del proveedor no descuenta");
+      assert.equal(auditos.rows[0].n, 0, "sin pedido no hay auditoría");
+    } else {
+      expectError(pedido, 503, /no están disponibles en este entorno/i);
+      assert.equal(pedido.data.error, "creativos_unavailable");
+      const saldoFallido = await sql("select creditos from creativos_saldo where tenant_id = $1", [TENANT]);
+      assert.equal(saldoFallido.rows[0].creditos, 20, "sin proveedor no se gasta crédito");
+      assert.equal(auditos.rows[0].n, 0, "sin pedido no hay auditoría");
+    }
+
+    // El cupo es por casa y compartido con la web: 12 pedidos por hora. Los
+    // POST anteriores ya abrieron la fila, así que se fuerza con upsert.
+    await sql("update creativos_saldo set creditos = 20 where tenant_id = $1", [TENANT]);
+    await sql(
+      `insert into seguridad_cupo (clave, n, vence) values ($1, 12, now() + interval '1 hour')
+       on conflict (clave) do update set n = 12, vence = now() + interval '1 hour'`,
+      [`creativos:${TENANT}`],
+    );
+    const restante = await api("POST", "/creativos", {
+      token: state.tokens.admin,
+      body: { formato: "banner", brief: "palta madura, caja de a kilo" },
+    });
+    expectError(restante, 429, /Demasiados pedidos/i);
+    assert.equal(restante.data.error, "cupo_agotado");
+    await sql("delete from seguridad_cupo where clave = $1", [`creativos:${TENANT}`]);
   });
 });

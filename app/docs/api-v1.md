@@ -85,6 +85,8 @@ enviar un cuerpo válido.
 | `POST` | `/api/v1/sucursales/:id/usar` | staff habilitado | Cambia la sucursal activa (matriz o habilitada por el dueño). |
 | `POST` | `/api/v1/sucursales/:id/transferir` | admin | Pasa stock de la matriz a la sucursal (`{ productoId, cantidad }`). |
 | `POST` | `/api/v1/sucursales/:id/importar-clientes` | admin | Copia fichas de clientes de la casa a la sucursal (sin saldos). |
+| `GET` | `/api/v1/creativos` | admin | Saldo de la casa, costo por foto, paquetes, piezas que habilitó Torre y últimos 8 pedidos con sus textos. |
+| `POST` | `/api/v1/creativos` | admin | Pide una foto con hasta cuatro lecturas (`{ formato, brief }`); descuenta 4 créditos sólo si el proveedor devolvió la pieza. |
 | `GET` | `/api/v1/alertas` | cualquier staff | Alertas (stock bajo, caja, etc.). |
 | `POST` | `/api/v1/alertas/:id/leida` | cualquier staff | Marca alerta como leída. |
 | `GET` | `/api/v1/dashboard` | admin | Resumen; `?dias=N` ajusta la ventana. |
@@ -138,6 +140,23 @@ matriz; cada línea `sucursal-extra` o de tipo `branch` suma una) y sólo el
 dueño puede crearlas, transferir stock e importar fichas. `POST
 /sucursales/:id/usar` sólo está disponible para quien tenga `puedeCambiar`
 (el dueño siempre; cajero y vendedor si el dueño los habilita).
+
+## Creativos
+
+Los creativos viven en la casa, no en la sucursal: el saldo, los pedidos y el
+cupo se indexan por `casaId`. Una foto cuesta 4 créditos y trae hasta cuatro
+lecturas del mismo aviso; el texto no se cobra aparte. Sólo el dueño pide piezas
+y sólo las que Torre ya habilitó: `banner` requiere un aviso vigente
+(`scheduled`/`active` con `ends_on >= current_date`) y `push` un paquete de
+envíos con saldo (`quantity > consumed`). El pedido recorre en este orden —
+brief mínimo de 8 caracteres, pieza habilitada, cupo de 12 pedidos por hora y
+por puesto (comparte el contador `seguridad_cupo` con la web), crédito
+suficiente, texto (DeepSeek), foto (Qwen) — y el descuento es atómico con
+`creditos >= 4`: si el proveedor falla antes de la foto no se descuenta nada.
+`creativos_unavailable` (503) avisa que el entorno no tiene
+`DEEPSEEK_API_KEY`/`QWEN_API_KEY`; `502` y `422` significan que el proveedor
+respondió mal y tampoco descontaron. El saldo se recarga con los paquetes
+`prod_creditos_50`/`prod_creditos_100`, que suma Torre al habilitar el pago.
 
 ## Idempotencia
 

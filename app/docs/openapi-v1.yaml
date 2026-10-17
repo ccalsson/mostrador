@@ -43,6 +43,7 @@ tags:
   - name: Proveedores
   - name: Usuarios
   - name: Sucursales
+  - name: Creativos
   - name: Alertas
   - name: Panel
   - name: Caja
@@ -1020,6 +1021,50 @@ paths:
         "401": { $ref: '#/components/responses/Unauthorized' }
         "403": { $ref: '#/components/responses/Forbidden' }
 
+  /creativos:
+    get:
+      tags: [Creativos]
+      summary: Saldo, piezas habilitadas y últimos pedidos
+      description: admin. Lee el saldo de la casa, las piezas que Torre habilitó y los últimos 8 pedidos con sus variantes.
+      responses:
+        "200":
+          description: Estado de creativos.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DataCreativos' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Creativos]
+      summary: Pedir una foto con sus textos
+      description: >
+        admin. Una foto y hasta cuatro lecturas del mismo aviso. Requiere que Torre
+        tenga la pieza habilitada y crédito suficiente. La foto se paga sólo cuando el
+        proveedor devolvió imagen y textos; cualquier fallo anterior no descuenta.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [formato, brief]
+              properties:
+                formato: { type: string, enum: [banner, push] }
+                brief: { type: string, maxLength: 400, description: Qué tiene que decir la pieza (mínimo 8 caracteres). }
+      responses:
+        "200":
+          description: Pedido creado con sus variantes.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DataCreativoPedido' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "422": { $ref: '#/components/responses/CreativosRespuestaInvalida' }
+        "429": { $ref: '#/components/responses/CreativosCupo' }
+        "502": { $ref: '#/components/responses/CreativosProveedor' }
+        "503": { $ref: '#/components/responses/CreativosUnavailable' }
+
   /alertas:
     get:
       tags: [Alertas]
@@ -1190,6 +1235,30 @@ components:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
           example: { error: ocr_unavailable, message: El lector de fotos no está disponible en este entorno. }
+    CreativosCupo:
+      description: "12 pedidos por hora y por puesto (`cupo_agotado`); la web y la API comparten el contador."
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { error: cupo_agotado, message: Demasiados pedidos. Esperá un momento. }
+    CreativosRespuestaInvalida:
+      description: El proveedor respondió pero la tanda no sirvió para armar la pieza; no se descontaron créditos.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { error: creativos_texto_invalido }
+    CreativosProveedor:
+      description: Fallo DeepSeek o Qwen; no se descontaron créditos.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { error: creativos_provider_error }
+    CreativosUnavailable:
+      description: "`DEEPSEEK_API_KEY` o `QWEN_API_KEY` no configuradas en el servidor (`creativos_unavailable`)."
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { error: creativos_unavailable, message: Los creativos no están disponibles en este entorno. }
 
   schemas:
     Error:
@@ -1676,3 +1745,52 @@ components:
       type: object
       properties:
         data: { $ref: '#/components/schemas/OkResult' }
+    CreativoVariante:
+      type: object
+      properties:
+        id: { type: string }
+        n: { type: integer }
+        titulo: { type: string, maxLength: 80 }
+        texto: { type: string, maxLength: 180 }
+        imagen: { type: string, description: URL del proveedor o data URI con la foto embebida. }
+    CreativoPedido:
+      type: object
+      properties:
+        id: { type: string }
+        formato: { type: string, enum: [banner, push] }
+        cantidad: { type: integer, description: Cantidad de textos de la tanda. }
+        creditos: { type: integer }
+        brief: { type: string }
+        estado: { type: string }
+        createdAt: { type: string, format: date-time }
+        variantes: { type: array, items: { $ref: '#/components/schemas/CreativoVariante' } }
+    DataCreativos:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            creditos: { type: integer, description: Saldo de la casa. }
+            costo: { type: integer, description: Créditos que descuenta una foto. }
+            textos: { type: integer, description: Lecturas que trae una tanda. }
+            paquetes:
+              type: array
+              items:
+                type: object
+                properties:
+                  id: { type: string }
+                  creditos: { type: integer }
+                  usd: { type: number }
+            piezas: { type: array, items: { type: string, enum: [banner, push] }, description: Piezas que Torre tiene habilitadas. }
+            pedidos: { type: array, items: { $ref: '#/components/schemas/CreativoPedido' } }
+    DataCreativoPedido:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            id: { type: string }
+            formato: { type: string, enum: [banner, push] }
+            creditos: { type: integer }
+            saldo: { type: integer, description: Créditos que quedan después del descuento. }
+            variantes: { type: array, items: { $ref: '#/components/schemas/CreativoVariante' } }

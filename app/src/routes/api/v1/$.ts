@@ -10,6 +10,7 @@ import {
   type PedidoLineaInput,
 } from "@/lib/server/catalog-pedidos";
 import { createClienteForStaff, anotarPagoCuentaForStaff, cuentaClienteForStaff, listClientesForStaff, updateClienteForStaff } from "@/lib/server/clientes";
+import { CreativosError, estadoCreativosForStaff, pedirCreativosForStaff } from "@/lib/server/creativos";
 import {
   emitirFacturaForStaff,
   emitirNotaCreditoForStaff,
@@ -797,6 +798,28 @@ const ROUTES: Entry[] = [
     path: ["sucursales", ":", "importar-clientes"],
     handler: async ({ segments, staff }) =>
       json({ data: await importarClientesSucursalForStaff(staff, segments[1]) }),
+  },
+  {
+    method: "GET",
+    path: ["creativos"],
+    handler: async ({ staff }) => json({ data: await estadoCreativosForStaff(staff) }),
+  },
+  {
+    method: "POST",
+    path: ["creativos"],
+    handler: async ({ request, staff }) => {
+      const body = asRecord(await readJson(request));
+      try {
+        const pedido = await pedirCreativosForStaff(staff, {
+          formato: asString(body.formato, "formato", 20),
+          brief: body.brief,
+        });
+        return json({ data: pedido });
+      } catch (error) {
+        if (error instanceof CreativosError) throw new HttpError(error.status, error.code, error.message);
+        throw error;
+      }
+    },
   },
   {
     method: "GET",
