@@ -364,7 +364,14 @@ async function handle(method: "GET" | "POST", request: Request, splat?: string) 
       if (perfil !== "comprador" && perfil !== "cargador") {
         throw new RouteError(400, "invalid_request", "perfil debe ser comprador o cargador.");
       }
-      return json(await confirmarTokenMercado(token, perfil));
+      try {
+        return json(await confirmarTokenMercado(token, perfil));
+      } catch (err) {
+        if (err instanceof Error && !(err instanceof MercadoError) && !(err instanceof RouteError)) {
+          throw new RouteError(400, "invalid_token", err.message);
+        }
+        throw err;
+      }
     }
     if (method === "POST" && ruta === "auth/reenviar") {
       const golpe = await cupoFirme(`reenviar-mercado:${ip}`, 10, 15 * 60 * 1000);

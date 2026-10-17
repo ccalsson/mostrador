@@ -1271,13 +1271,13 @@ export async function findGoogleCredential(
     if (perfil === "comprador") {
       await tx`
         insert into mercado_compradores (
-          id, nombre, email, telefono, pais, tipo_documento, numero_documento
-        ) values (${id}, ${nombre}, ${email}, ${telefono || ""}, ${"AR"}, ${"DNI"}, ${""})
+          id, nombre, email, telefono, pais, tipo_documento, numero_documento, email_verified
+        ) values (${id}, ${nombre}, ${email}, ${telefono || ""}, ${"AR"}, ${"DNI"}, ${""}, ${true})
       `;
     } else {
       await tx`
-        insert into mercado_cargadores (id, nombre, email, telefono)
-        values (${id}, ${nombre}, ${email}, ${telefono || ""})
+        insert into mercado_cargadores (id, nombre, email, telefono, email_verified)
+        values (${id}, ${nombre}, ${email}, ${telefono || ""}, ${true})
       `;
     }
     await tx`
