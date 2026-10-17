@@ -77,6 +77,7 @@ export type Cliente = {
   activo?: boolean;
   userId?: string | null;
   saldo?: number;
+  origen?: "puesto" | "mercado";
 };
 
 export type PedidoItem = {

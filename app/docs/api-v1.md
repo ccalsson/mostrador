@@ -58,7 +58,7 @@ enviar un cuerpo válido.
 | `POST` | `/api/v1/pedidos/:id/anular` | admin, cajero | Anula pedido con motivo; repone stock o libera reserva. |
 | `GET` | `/api/v1/cobros/:id/ticket` | cualquier staff | Contenido del ticket emitido. |
 | `POST` | `/api/v1/cobros/:id/anular` | admin, cajero | Anula venta con motivo; repone stock y reversa cuenta. |
-| `GET` | `/api/v1/clientes` | cualquier staff | Lista de clientes. |
+| `GET` | `/api/v1/clientes` | cualquier staff | Lista de clientes. Incluye además, como filas de solo lectura (`id` `merc:<compradorId>`, `origen: "mercado"`, `cuentaCorriente: false`), a los compradores de Mercado que le compraron a este puesto; se excluye al que ya está dado de alta como cliente con el mismo email (Fase 8). |
 | `POST` | `/api/v1/clientes` | cualquier staff | Alta rápida `{ nombre, telefono?, cuentaCorriente? }`. |
 | `GET` | `/api/v1/clientes/:id/cuenta` | admin | Saldo y últimos movimientos de cuenta corriente. |
 | `POST` | `/api/v1/productos` | admin | Alta/edición de producto (con stock inicial opcional; `publicadoOnline` exige tier Presencia/Pro en Torre). |

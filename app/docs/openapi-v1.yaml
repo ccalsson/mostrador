@@ -358,7 +358,7 @@ paths:
     get:
       tags: [Clientes]
       summary: Listar clientes
-      description: Cualquier staff.
+      description: Cualquier staff. Incluye clientes del puesto más compradores de Mercado que le compraron (filas de solo lectura `origen: mercado`, `id` `merc:<compradorId>`); se excluye al comprador ya dado de alta con el mismo email.
       responses:
         "200":
           description: Clientes ordenados por nombre.
@@ -1410,6 +1410,7 @@ components:
         activo: { type: boolean }
         userId: { type: string, nullable: true, description: Usuario del portal vinculado. }
         saldo: { type: number, description: Suma de movimientos de cuenta corriente (0 sin CC). }
+        origen: { type: string, enum: [puesto, mercado], description: `'mercado'` = comprador de Mercado que le compró al puesto; fila de solo lectura, `id` `merc:<compradorId>`, no editable ni con cuenta corriente. }
     ClienteCreado:
       type: object
       properties:

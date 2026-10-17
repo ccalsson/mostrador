@@ -2627,6 +2627,37 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
       // La reserva descontó stock.
       approx(await stockOf(productoId), stockInicial - 2, "la reserva debe descontar stock");
 
+      // Fase 8: el comprador de Mercado que le compró al puesto aparece en la
+      // lista de clientes del puesto como fila de solo lectura (id
+      // 'merc:<id>', origen 'mercado'), y se dedupea si además está dado de
+      // alta como cliente del puesto con el mismo email.
+      const buyerId = registro.data.usuario.id;
+      const clientesMerc = await api("GET", "/clientes", { token: state.tokens.admin });
+      assert.equal(clientesMerc.status, 200, JSON.stringify(clientesMerc.data));
+      const filaMerc = clientesMerc.data.data.find((c) => c.id === `merc:${buyerId}`);
+      assert.ok(filaMerc, "el comprador de Mercado debe aparecer en /clientes del puesto");
+      assert.equal(filaMerc.origen, "mercado");
+      assert.equal(filaMerc.nombre, "E2E M9g Comprador");
+      assert.equal(filaMerc.cuentaCorriente, false);
+      const cliDedupe = `e2e-cli-${marca}`;
+      await state.pool.query(
+        "insert into clientes (id, tenant_id, nombre, email) values ($1, $2, $3, $4)",
+        [cliDedupe, TENANT, "E2E M9g Comprador", email],
+      );
+      try {
+        const clientesDedup = await api("GET", "/clientes", { token: state.tokens.admin });
+        assert.ok(
+          !clientesDedup.data.data.some((c) => c.id === `merc:${buyerId}`),
+          "no debe duplicarse: el comprador ya está dado de alta como cliente",
+        );
+        assert.ok(
+          clientesDedup.data.data.some((c) => c.id === cliDedupe),
+          "el cliente real dado de alta debe listarse",
+        );
+      } finally {
+        await state.pool.query("delete from clientes where id = $1", [cliDedupe]);
+      }
+
       // Cancelación feliz: ok, estado cancelado, stock restituido y auditoría.
       const cancelA = await mercado("POST", `/pedidos/${pedidoA.id}/cancelar`, { token });
       assert.equal(cancelA.status, 200, JSON.stringify(cancelA.data));

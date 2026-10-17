@@ -28,7 +28,7 @@ export async function listClientesForStaff(staff: Staff): Promise<Cliente[]> {
     where c.tenant_id = ${staff.tenantId}
     order by lower(c.nombre)
   `;
-  return rows.map(
+  const propios: Cliente[] = rows.map(
     (r): Cliente => ({
       id: r.id,
       nombre: r.nombre,
@@ -41,8 +41,43 @@ export async function listClientesForStaff(staff: Staff): Promise<Cliente[]> {
       activo: r.activo,
       userId: r.user_id,
       saldo: num(r.saldo),
+      origen: "puesto",
     }),
   );
+
+  // Compradores de Mercado que ya le compraron a este puesto. Son de solo
+  // lectura: viven en mercado_compradores y se ven por sus pedidos
+  // (origen='mercado_al_toque'), no en la tabla clientes. Se excluye al que ya
+  // está dado de alta como cliente del puesto (mismo email) para no duplicar.
+  const compradores = await sql<{ id: string; nombre: string; telefono: string; email: string }>`
+    select mc.id, mc.nombre, mc.telefono, mc.email
+    from mercado_compradores mc
+    join pedidos p on p.comprador_mercado_id = mc.id
+    where p.origen = 'mercado_al_toque' and p.tenant_id = ${staff.tenantId}
+      and not exists (
+        select 1 from clientes c
+        where c.tenant_id = ${staff.tenantId}
+          and c.email is not null and lower(c.email) = lower(mc.email)
+      )
+    group by mc.id, mc.nombre, mc.telefono, mc.email
+    order by lower(mc.nombre)
+  `;
+  const deApp: Cliente[] = compradores.map((r): Cliente => ({
+    id: `merc:${r.id}`,
+    nombre: r.nombre,
+    telefono: r.telefono,
+    email: r.email,
+    cuit: null,
+    direccion: null,
+    cuentaCorriente: false,
+    condicionIva: "consumidor_final",
+    activo: true,
+    userId: null,
+    saldo: 0,
+    origen: "mercado",
+  }));
+
+  return [...propios, ...deApp].sort((a, b) => a.nombre.toLowerCase().localeCompare(b.nombre.toLowerCase()));
 }
 
 export async function createClienteForStaff(
