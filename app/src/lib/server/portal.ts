@@ -6,6 +6,7 @@ import { num } from "@/lib/money";
 import { createCredentialUser, ensureBootstrapped, SinAccesoError } from "@/lib/server/bootstrap";
 import { loadPedido, loadPedidos, mapProducto } from "@/lib/server/context";
 import { claveAceptable, correoAceptable } from "@/lib/seguridad/correo";
+import { pedirConfirmacion } from "@/lib/seguridad/confirmar";
 import { reservarLineas, soltarReserva } from "@/lib/server/stock";
 import { condicionOperativa } from "@/lib/torre/presencia";
 import type { FormaPago, Producto } from "@/lib/types";
@@ -66,6 +67,12 @@ const FICHA_SQL = `
 export async function fichaActivaPorUsuario(userId: string): Promise<Ficha> {
   await ensureBootstrapped();
   const sql = await getSql();
+  const verificado = await sql<{ emailVerified: boolean }>`
+    select "emailVerified" from "user" where id = ${userId} limit 1
+  `;
+  if (!verificado[0]?.emailVerified) {
+    throw new SinAccesoError("Confirmá el correo antes de entrar.");
+  }
   const rows = await sql.query<Parameters<typeof mapFicha>[0]>(
     `${FICHA_SQL} from clientes c where c.user_id = $1 limit 1`,
     [userId],
@@ -90,6 +97,7 @@ export async function registrarClienteForPublic(data: {
   telefono: string;
   cuit: string;
   direccion: string;
+  origen: string;
 }) {
   await ensureBootstrapped();
   const correo = correoAceptable(data.email);
@@ -107,7 +115,7 @@ export async function registrarClienteForPublic(data: {
     select id from staff where lower(email) = ${email} limit 1
   `;
   if (staff[0]) throw new Error("Ese correo pertenece al puesto. Usá otro.");
-  const userId = await createCredentialUser(email, data.password, nombre);
+  const userId = await createCredentialUser(email, data.password, nombre, false);
   const id = newId("cli");
   await sql`
     insert into clientes (id, tenant_id, nombre, telefono, email, cuit, direccion, cuenta_corriente, activo, user_id)
@@ -115,7 +123,8 @@ export async function registrarClienteForPublic(data: {
       ${id}, ${TENANT_ID}, ${nombre}, ${telefono}, ${email}, ${cuit}, ${direccion}, ${false}, ${true}, ${userId}
     )
   `;
-  return { id };
+  const confirmacion = await pedirConfirmacion(email, data.origen);
+  return { id, pendiente: true, aviso: confirmacion.aviso, enlace: confirmacion.enlace };
 }
 
 export async function recordarUsuarioForPublic(dato: string) {

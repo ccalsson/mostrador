@@ -16,16 +16,22 @@ function RegistroPage() {
   const [cuit, setCuit] = useState("");
   const [direccion, setDireccion] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [aviso, setAviso] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
     setError(null);
+    setAviso(null);
     try {
-      await registrarCliente({
+      const resultado = await registrarCliente({
         data: { nombre, email, password, telefono, cuit, direccion },
       });
+      if (resultado.pendiente) {
+        setAviso(resultado.aviso ?? "Revisá tu correo para confirmar la cuenta.");
+        return;
+      }
       const { error: err } = await authClient.signIn.email({ email: email.trim().toLowerCase(), password });
       if (err) throw new Error(err.message ?? "La cuenta quedó creada, pero no pude entrar.");
       await authClient.getSession();
@@ -35,6 +41,20 @@ function RegistroPage() {
     } finally {
       setBusy(false);
     }
+  }
+
+  if (aviso) {
+    return (
+      <main className="min-h-dvh bg-paper px-4 py-8">
+        <div className="mx-auto max-w-md rounded-xl border border-line border-t-4 border-t-leaf bg-surface p-6 text-center">
+          <h1 className="font-display text-2xl font-semibold text-leaf-2">Cuenta creada</h1>
+          <p className="mt-3 text-sm text-muted">{aviso}</p>
+          <Link to="/login" className="mt-4 inline-block text-sm font-medium text-leaf">
+            Ir al ingreso
+          </Link>
+        </div>
+      </main>
+    );
   }
 
   return (

@@ -1,4 +1,5 @@
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import { correoRecuperacion, enviarPorResend } from "@/lib/correo/recuperacion";
 import { getSql } from "@/lib/db";
 import type { Sql } from "@/lib/db";
 import { newId } from "@/lib/ids";
@@ -308,9 +309,12 @@ export async function solicitarRecuperacion(input: Record<string, unknown>) {
       values (${newId("mrt")}, ${email}, ${tokenHash(token)}, now() + ${`${RESET_TTL_MINUTOS} minutes`}::interval)
     `;
     const base = process.env.BETTER_AUTH_URL?.trim() || "http://localhost:8080";
-    console.log(
-      `[mercado] Recuperación de contraseña para ${email}: ${base}/reset-password?mercado=${token}`,
-    );
+    const enlace = `${base}/reset-password?mercado=${token}`;
+    const from = process.env.RESEND_FROM?.trim() ?? "";
+    const enviado = await enviarPorResend(correoRecuperacion(email, enlace, from));
+    if (!enviado && process.env.VERCEL !== "1") {
+      console.log(`[mercado] Recuperación de contraseña para ${email}: ${enlace}`);
+    }
   }
   return { ok: true, mensaje: "Si el correo tiene una cuenta, el enlace fue generado." };
 }

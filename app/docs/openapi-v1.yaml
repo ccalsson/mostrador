@@ -1171,6 +1171,76 @@ paths:
         "401": { $ref: '#/components/responses/Unauthorized' }
         "403": { $ref: '#/components/responses/Forbidden' }
 
+  /portal/confirmar:
+    post:
+      tags: [Portal]
+      summary: Confirmar correo del cliente
+      description: |
+        Público. Confirma el correo con el token del enlace de registro.
+        Error 400 si el token es inválido o venció.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string }
+      responses:
+        "200":
+          description: Correo confirmado.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      ok: { type: boolean, enum: [true] }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "415": { $ref: '#/components/responses/UnsupportedMediaType' }
+
+  /portal/reenviar:
+    post:
+      tags: [Portal]
+      summary: Reenviar correo de confirmación
+      description: |
+        Público. Reenvía el correo de confirmación si el cliente está
+        pendiente. Limitado a 20 solicitudes por hora por IP. Siempre
+        devuelve el mismo mensaje sin revelar si el correo existe.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, maxLength: 200 }
+      responses:
+        "200":
+          description: Mensaje genérico enviado.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      aviso: { type: string }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "415": { $ref: '#/components/responses/UnsupportedMediaType' }
+        "429":
+          description: Límite de reenvíos alcanzado (20/h por IP).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
 components:
   securitySchemes:
     bearerAuth:

@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { getRequest } from "@tanstack/react-start/server";
 import { hashPassword } from "better-auth/crypto";
 import { authMiddleware } from "@/lib/auth/middleware";
 import { TENANT_ID } from "@/lib/catalog";
@@ -8,6 +9,7 @@ import { num } from "@/lib/money";
 import { createCredentialUser, ensureBootstrapped, ensureStaffForUser } from "@/lib/server/bootstrap";
 import { audit, loadPedido, loadPedidos, mapProducto } from "@/lib/server/context";
 import { reservarLineas, soltarReserva } from "@/lib/server/stock";
+import { pedirConfirmacion, origenDe } from "@/lib/seguridad/confirmar";
 import type { Cliente, FormaPago, Producto } from "@/lib/types";
 import { esCondicion } from "@/lib/afip-calc";
 
@@ -101,7 +103,7 @@ export const registrarCliente = createServerFn({ method: "POST" })
       select id from staff where lower(email) = ${email} limit 1
     `;
     if (staff[0]) throw new Error("Ese correo pertenece al puesto. Usá otro.");
-    const userId = await createCredentialUser(email, data.password, nombre);
+    const userId = await createCredentialUser(email, data.password, nombre, false);
     const id = newId("cli");
     await sql`
       insert into clientes (id, tenant_id, nombre, telefono, email, cuit, direccion, cuenta_corriente, activo, user_id)
@@ -109,7 +111,10 @@ export const registrarCliente = createServerFn({ method: "POST" })
         ${id}, ${TENANT_ID}, ${nombre}, ${telefono}, ${email}, ${cuit}, ${direccion}, ${false}, ${true}, ${userId}
       )
     `;
-    return { id };
+    const request = getRequest();
+    const origen = request ? origenDe(request) : "http://127.0.0.1:8080";
+    const confirmacion = await pedirConfirmacion(email, origen);
+    return { id, pendiente: true, aviso: confirmacion.aviso, enlace: confirmacion.enlace };
   });
 
 export const recordarUsuario = createServerFn({ method: "POST" })

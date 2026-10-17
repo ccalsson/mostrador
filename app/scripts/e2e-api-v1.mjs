@@ -9,14 +9,15 @@
 // remitos (incluido OCR por foto con 503 controlado sin XAI_API_KEY),
 // proveedores, caja, auditoría, suscripción/contratos + legal del
 // canal (torre), facturación ARCA (config/emisión sin credenciales reales),
-// mensajería del pedido, portal de clientes (registro, catálogo, pedidos
-// propios, comprobante y mensajes), Mercado al Toque (avisos públicos,
-// cancelación de pedido con restitución de reserva y condición comercial
-// congelada en pedidos.condicion) y sucursales (cupo de Torre, libros
-// aislados, cambio de sucursal y transferencia de stock), creativos (saldo de
-// la casa, piezas que habilita Torre, tanda de cuatro textos y cupo compartido
-// con la web), más acceso cruzado denegado (staff y compradores de un
-// tenant/usuario contra recursos ajenos).
+// mensajería del pedido, portal de clientes (registro con confirmación de
+// correo, catálogo, pedidos propios, comprobante y mensajes), Mercado al Toque
+// (avisos públicos, cancelación de pedido con restitución de reserva y
+// condición comercial congelada en pedidos.condicion), sucursales (cupo de
+// Torre, libros aislados, cupo de la casa y transferencia de stock),
+// creativos (saldo de la casa, piezas habilitadas por Torre y foto con cuatro
+// textos) y confirmación de correo (alta pendiente → 403 sin confirmar →
+// confirmar con token → 200 → reenviar con cupo), más acceso cruzado denegado
+// (staff y compradores de un tenant/usuario contra recursos ajenos).
 // Los datos que crea se limpian en `after` tomando el reloj de la base
 // (runStart) como referencia, para no tocar el seed demo. Las versiones
 // publicadas y las aceptaciones legales son inmutables por diseño (trigger
@@ -338,12 +339,15 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
 
       // (o) usuarios del portal de clientes del test 22: ficha, credential y
       // user. Sus pedidos/movimientos/mensajes/alertas ya se borraron con
-      // (c)/(e) y las sesiones con (h).
+      // (c)/(e) y las sesiones con (h). Las filas de verification de la
+      // confirmación se limpian por email (prefijo portal.*).
       if (state.portalUserIds.length) {
         await pool.query("delete from clientes where user_id = any($1::text[])", [state.portalUserIds]);
         await pool.query('delete from account where "userId" = any($1::text[])', [state.portalUserIds]);
         await pool.query('delete from "user" where id = any($1::text[])', [state.portalUserIds]);
       }
+      await pool.query("delete from verification where identifier like 'mail:portal.%'");
+      await pool.query("delete from verification where identifier like 'mail:confirm.%'");
 
       // (p) sucursal del test 26: staff de vuelta a la casa, libros operativos,
       // copias, rama de Torre y línea de cupo. La matriz queda (es estado
@@ -2092,6 +2096,15 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
     const alta = await api("POST", "/portal/registro", { body: registroBody });
     assert.equal(alta.status, 201, JSON.stringify(alta.data));
     assert.match(alta.data.data.id, /^cli[-_]/);
+    assert.equal(alta.data.data.pendiente, true);
+
+    // Confirmar el correo con el enlace que devuelve el alta (DEV sin Resend).
+    assert.ok(alta.data.data.enlace, "El enlace de confirmación debe venir en DEV");
+    const tokenConfirmar = new URL(alta.data.data.enlace).searchParams.get("token");
+    assert.ok(tokenConfirmar && tokenConfirmar.length >= 20);
+    const confirmar = await api("POST", "/portal/confirmar", { body: { token: tokenConfirmar } });
+    assert.equal(confirmar.status, 200, JSON.stringify(confirmar.data));
+    assert.equal(confirmar.data.data.ok, true);
 
     // Validaciones: datos incompletos, clave corta, correo de staff.
     expectError(
@@ -2345,6 +2358,8 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
       },
     });
     assert.equal(altaB.status, 201, JSON.stringify(altaB.data));
+    const tokenConfirmarB = new URL(altaB.data.data.enlace).searchParams.get("token");
+    await api("POST", "/portal/confirmar", { body: { token: tokenConfirmarB } });
     const tokenB = await signIn(emailB, "clave-portal-b22");
     const fichaB = await api("GET", "/portal/ficha", { token: tokenB });
     assert.equal(fichaB.status, 200, JSON.stringify(fichaB.data));
@@ -3188,5 +3203,61 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
     expectError(restante, 429, /Demasiados pedidos/i);
     assert.equal(restante.data.error, "cupo_agotado");
     await sql("delete from seguridad_cupo where clave = $1", [`creativos:${TENANT}`]);
+  });
+
+  it("28. portal: alta sin confirmar → 403, confirmar con token → 200, reenviar con cupo (F4)", async () => {
+    const stamp = Date.now();
+    const email = `confirm.${stamp}@frutasroman.com`;
+    const body = {
+      nombre: "Cliente Confirm 28",
+      email,
+      password: "clave-confirm-28",
+      telefono: `117777${String(stamp).slice(-5)}`,
+      cuit: `cf${stamp}`,
+      direccion: "Calle Confirm 28",
+    };
+
+    // Alta: devuelve pendiente y enlace en DEV.
+    const alta = await api("POST", "/portal/registro", { body });
+    assert.equal(alta.status, 201, JSON.stringify(alta.data));
+    assert.equal(alta.data.data.pendiente, true);
+    assert.ok(alta.data.data.enlace, "El enlace de confirmación debe venir en DEV");
+
+    // Sin confirmar: el login funciona (Better Auth no bloquea), pero el portal
+    // rechaza con 403 porque fichaActivaPorUsuario exige emailVerified.
+    const tokenSinConfirmar = await signIn(email, "clave-confirm-28");
+    const fichaBloqueada = await api("GET", "/portal/ficha", { token: tokenSinConfirmar });
+    assert.equal(fichaBloqueada.status, 403, JSON.stringify(fichaBloqueada.data));
+    assert.match(fichaBloqueada.data.message, /Confirmá/i);
+
+    // Confirmar con token inválido: error claro.
+    expectError(
+      await api("POST", "/portal/confirmar", { body: { token: "no-es-token-valido" } }),
+      400,
+      /no sirve/i,
+    );
+
+    // Confirmar con token válido: ok.
+    const token = new URL(alta.data.data.enlace).searchParams.get("token");
+    const confirmar = await api("POST", "/portal/confirmar", { body: { token } });
+    assert.equal(confirmar.status, 200, JSON.stringify(confirmar.data));
+    assert.equal(confirmar.data.data.ok, true);
+
+    // Después de confirmar, el portal responde con 200.
+    const fichaOk = await api("GET", "/portal/ficha", { token: tokenSinConfirmar });
+    assert.equal(fichaOk.status, 200, JSON.stringify(fichaOk.data));
+    assert.equal(fichaOk.data.data.email, email);
+
+    // Reenviar: responde aviso genérico sin revelar si el correo existe.
+    const reenviar = await api("POST", "/portal/reenviar", { body: { email } });
+    assert.equal(reenviar.status, 200, JSON.stringify(reenviar.data));
+    assert.match(reenviar.data.data.aviso, /pendiente/i);
+
+    // Reenviar con correo inexistente: mismo aviso (no enumera).
+    const reenviarFake = await api("POST", "/portal/reenviar", { body: { email: "no-existe@frutasroman.com" } });
+    assert.equal(reenviarFake.status, 200, JSON.stringify(reenviarFake.data));
+
+    // Limpieza: user, ficha y verification.
+    state.portalUserIds.push(fichaOk.data.data.userId);
   });
 });

@@ -25,6 +25,7 @@ import { bearer, genericOAuth } from "better-auth/plugins";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
 import { randomBytes } from "node:crypto";
 import { Pool } from "pg";
+import { correoRecuperacion, enviarPorResend } from "@/lib/correo/recuperacion";
 import { ensureDbReady, getPglite } from "../db";
 import { emailAndPasswordEnabled } from "./email-password";
 import { pgliteDialect } from "./pglite-dialect";
@@ -151,7 +152,9 @@ export const auth = betterAuth({
           enabled: true,
           forgetPasswordCallbackPath: "/reset-password",
           sendResetPassword: async ({ user, url }: { user: { email: string }; url: string }) => {
-            console.log(`[auth] Recuperación de contraseña para ${user.email}: ${url}`);
+            const from = process.env.RESEND_FROM?.trim() ?? "";
+            const enviado = await enviarPorResend(correoRecuperacion(user.email, url, from));
+            if (!enviado) console.log(`[auth] Recuperación de contraseña para ${user.email}: ${url}`);
           },
         },
       }

@@ -105,9 +105,11 @@ enviar un cuerpo válido.
 | `GET` | `/api/v1/pedidos/:id/mensajes` | admin | Mensajes del pedido; `?antes=<ISO-8601>` pagina hacia atrás y marca los del cliente como leídos. |
 | `POST` | `/api/v1/pedidos/:id/mensajes` | admin | Envía un mensaje del puesto al cliente (`{ cuerpo }`). |
 | `GET` | `/api/v1/mensajes/conversaciones` | admin | Conversaciones del puesto ordenadas por último mensaje. |
-| `POST` | `/api/v1/portal/registro` | público | Registra un cliente y crea su credencial. |
+| `POST` | `/api/v1/portal/registro` | público | Registra un cliente y crea su credencial. Responde `{ data: { pendiente, aviso, enlace? } }`; `enlace` solo aparece en DEV cuando Resend no está configurado. |
 | `POST` | `/api/v1/portal/recordar` | público | Busca usuario por CUIT o teléfono y devuelve correo enmascarado. |
 | `POST` | `/api/v1/portal/recuperar` | público | Recupera clave de cliente por correo + CUIT. |
+| `POST` | `/api/v1/portal/confirmar` | público | Confirma el correo con el token del enlace de registro. Cuerpo: `{ token }`. Responde `{ data: { ok: true } }`. Error 400 si el token es inválido o venció. |
+| `POST` | `/api/v1/portal/reenviar` | público | Reenvía el correo de confirmación si está pendiente. Cuerpo: `{ email }`. Responde `{ data: { aviso } }`. Limitado a 20/h por IP. Siempre devuelve el mismo mensaje (no revela si el correo existe). |
 | `GET` | `/api/v1/portal/catalogo` | cliente | Catálogo activo del tenant de la ficha. |
 | `GET` | `/api/v1/portal/ficha` | cliente | Ficha del cliente autenticado y condición de cuenta corriente del plan. |
 | `POST` | `/api/v1/portal/ficha` | cliente | Actualiza los datos personales de la ficha. |

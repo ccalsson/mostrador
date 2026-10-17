@@ -14,6 +14,7 @@ import { Route as AuditoriaRouteImport } from './routes/auditoria'
 import { Route as CajaRouteImport } from './routes/caja'
 import { Route as CierreRouteImport } from './routes/cierre'
 import { Route as ClientesRouteImport } from './routes/clientes'
+import { Route as ConfirmarRouteImport } from './routes/confirmar'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as PortalRouteImport } from './routes/portal'
@@ -56,6 +57,11 @@ const CierreRoute = CierreRouteImport.update({
 const ClientesRoute = ClientesRouteImport.update({
   id: '/clientes',
   path: '/clientes',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ConfirmarRoute = ConfirmarRouteImport.update({
+  id: '/confirmar',
+  path: '/confirmar',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DashboardRoute = DashboardRouteImport.update({
@@ -155,6 +161,7 @@ export interface FileRoutesByFullPath {
   '/caja': typeof CajaRoute
   '/cierre': typeof CierreRoute
   '/clientes': typeof ClientesRoute
+  '/confirmar': typeof ConfirmarRoute
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
   '/portal': typeof PortalRoute
@@ -180,6 +187,7 @@ export interface FileRoutesByTo {
   '/caja': typeof CajaRoute
   '/cierre': typeof CierreRoute
   '/clientes': typeof ClientesRoute
+  '/confirmar': typeof ConfirmarRoute
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
   '/portal': typeof PortalRoute
@@ -206,6 +214,7 @@ export interface FileRoutesById {
   '/caja': typeof CajaRoute
   '/cierre': typeof CierreRoute
   '/clientes': typeof ClientesRoute
+  '/confirmar': typeof ConfirmarRoute
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
   '/portal': typeof PortalRoute
@@ -233,6 +242,7 @@ export interface FileRouteTypes {
     | '/caja'
     | '/cierre'
     | '/clientes'
+    | '/confirmar'
     | '/dashboard'
     | '/login'
     | '/portal'
@@ -258,6 +268,7 @@ export interface FileRouteTypes {
     | '/caja'
     | '/cierre'
     | '/clientes'
+    | '/confirmar'
     | '/dashboard'
     | '/login'
     | '/portal'
@@ -283,6 +294,7 @@ export interface FileRouteTypes {
     | '/caja'
     | '/cierre'
     | '/clientes'
+    | '/confirmar'
     | '/dashboard'
     | '/login'
     | '/portal'
@@ -309,6 +321,7 @@ export interface RootRouteChildren {
   CajaRoute: typeof CajaRoute
   CierreRoute: typeof CierreRoute
   ClientesRoute: typeof ClientesRoute
+  ConfirmarRoute: typeof ConfirmarRoute
   DashboardRoute: typeof DashboardRoute
   LoginRoute: typeof LoginRoute
   PortalRoute: typeof PortalRoute
@@ -363,6 +376,13 @@ declare module '@tanstack/react-router' {
       path: '/clientes'
       fullPath: '/clientes'
       preLoaderRoute: typeof ClientesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/confirmar': {
+      id: '/confirmar'
+      path: '/confirmar'
+      fullPath: '/confirmar'
+      preLoaderRoute: typeof ConfirmarRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/dashboard': {
@@ -511,6 +531,7 @@ const rootRouteChildren: RootRouteChildren = {
   CajaRoute: CajaRoute,
   CierreRoute: CierreRoute,
   ClientesRoute: ClientesRoute,
+  ConfirmarRoute: ConfirmarRoute,
   DashboardRoute: DashboardRoute,
   LoginRoute: LoginRoute,
   PortalRoute: PortalRoute,

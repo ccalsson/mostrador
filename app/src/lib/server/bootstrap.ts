@@ -39,14 +39,19 @@ async function seedAuthUser(email: string, password: string, name: string) {
   return insertCredentialUser(email, password, name);
 }
 
-export async function createCredentialUser(email: string, password: string, name: string) {
+export async function createCredentialUser(
+  email: string,
+  password: string,
+  name: string,
+  verificado = true,
+) {
   const sql = await getSql();
   const existing = await sql<{ id: string }>`select id from "user" where lower(email) = lower(${email}) limit 1`;
   if (existing[0]) throw new Error("Ese correo ya está usado.");
-  return insertCredentialUser(email, password, name);
+  return insertCredentialUser(email, password, name, verificado);
 }
 
-async function insertCredentialUser(email: string, password: string, name: string) {
+async function insertCredentialUser(email: string, password: string, name: string, verificado = true) {
   const sql = await getSql();
   const existing = await sql<{ id: string }>`select id from "user" where email = ${email} limit 1`;
   if (existing[0]) return existing[0].id;
@@ -54,7 +59,7 @@ async function insertCredentialUser(email: string, password: string, name: strin
   const now = new Date().toISOString();
   await sql`
     insert into "user" (id, name, email, "emailVerified", image, "createdAt", "updatedAt")
-    values (${id}, ${name}, ${email}, ${true}, ${null}, ${now}::timestamptz, ${now}::timestamptz)
+    values (${id}, ${name}, ${email}, ${verificado}, ${null}, ${now}::timestamptz, ${now}::timestamptz)
   `;
   const hash = await hashPassword(password);
   const accId = newId("acc").replace("acc_", "");

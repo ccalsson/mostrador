@@ -99,6 +99,8 @@ import {
 import type { FormaPago, PedidoEstado, Rol, Staff } from "@/lib/types";
 import { ipDe, rechazarCupo } from "@/lib/seguridad/cupo";
 import { cupoFirme } from "@/lib/seguridad/cupo-db";
+import { confirmarToken, origenDe, reenviarSiPendiente } from "@/lib/seguridad/confirmar";
+import { correoAceptable } from "@/lib/seguridad/correo";
 import { verificarTurnstile } from "@/lib/seguridad/turnstile";
 
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8" };
@@ -1044,8 +1046,33 @@ const ROUTES: Entry[] = [
         telefono: asString(body.telefono, "telefono", 40),
         cuit: asString(body.cuit, "cuit", 20),
         direccion: asString(body.direccion, "direccion", 200),
+        origen: origenDe(request),
       });
       return json({ data: cliente }, { status: 201 });
+    },
+  },
+  {
+    method: "POST",
+    path: ["portal", "confirmar"],
+    audience: "public",
+    handler: async ({ request }) => {
+      const body = asRecord(await readJson(request));
+      const token = asString(body.token, "token", 200);
+      return json({ data: await confirmarToken(token) });
+    },
+  },
+  {
+    method: "POST",
+    path: ["portal", "reenviar"],
+    audience: "public",
+    handler: async ({ request }) => {
+      const ip = ipDe(request);
+      const golpe = await cupoFirme(`reenvio:${ip}`, 20, 60 * 60 * 1000);
+      if (!golpe.ok) return rechazarCupo(golpe.reintento);
+      const body = asRecord(await readJson(request));
+      const correo = correoAceptable(asStringOpcional(body.email) ?? "");
+      if (correo.ok) await reenviarSiPendiente(correo.email, origenDe(request)).catch(() => undefined);
+      return json({ data: { aviso: "Si ese correo está pendiente, le llega otro enlace." } });
     },
   },
   {
