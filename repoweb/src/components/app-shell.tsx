@@ -259,7 +259,8 @@ export function AppShell({ children, title, ancho }: { children: ReactNode; titl
             <h1 className="mt-1 font-display text-[1.65rem] leading-none font-semibold tracking-tight">{title}</h1>
           </div>
         ) : null}
-        <PuertaLegal modo="mostrador">{children}</PuertaLegal>
+        {/* Aceptar las condiciones es acto del dueño; la central API rechaza a los otros roles. */}
+        {staff.rol === "admin" ? <PuertaLegal modo="mostrador">{children}</PuertaLegal> : children}
       </main>
       <a
         href="/login"

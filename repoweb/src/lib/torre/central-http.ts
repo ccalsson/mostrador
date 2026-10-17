@@ -8,6 +8,7 @@ import { audienciasDe, beneficioVigente, hashDocumento, pendienteDeAceptacion } 
 import { precioEfectivo } from "@/lib/torre/comercial";
 import { condicionOperativa } from "@/lib/torre/presencia";
 import { leerSesion } from "@/lib/mercado/servicio";
+import type { Rol } from "@/lib/types";
 
 export class CentralError extends Error {
   constructor(
@@ -21,7 +22,7 @@ export class CentralError extends Error {
 }
 
 type Actor =
-  | { kind: "mostrador"; torreTenantId: string; userId: string; email: string }
+  | { kind: "mostrador"; torreTenantId: string; userId: string; email: string; rol: Rol }
   | { kind: "mercado"; perfil: "comprador" | "cargador"; userId: string; email: string };
 
 function json(body: unknown, status = 200) {
@@ -48,7 +49,7 @@ async function resolver(request: Request): Promise<Actor> {
         limit 1
       `;
       if (!tenants[0]) throw new CentralError("Este puesto no está vinculado a un tenant de Torre.", 404, "tenant_not_linked");
-      return { kind: "mostrador", torreTenantId: tenants[0].id, userId: user.id, email: staff.email };
+      return { kind: "mostrador", torreTenantId: tenants[0].id, userId: user.id, email: staff.email, rol: staff.rol };
     }
   }
   try {
@@ -197,6 +198,7 @@ export async function handleCentral(request: Request) {
     const actor = await resolver(request);
     if (request.method === "GET" && (ruta === "subscription" || ruta === "addons")) {
       if (actor.kind !== "mostrador") throw new CentralError("Esto es de la relación comercial del puesto.", 403, "not_a_tenant");
+      if (actor.rol !== "admin") throw new CentralError("Solo el dueño del puesto puede ver esto.", 403, "rol_no_permitido");
       const sub = await suscripcionDe(actor.torreTenantId);
       if (!sub) throw new CentralError("No hay suscripción para este puesto.", 404, "subscription_not_found");
       if (ruta === "addons") {
@@ -206,6 +208,7 @@ export async function handleCentral(request: Request) {
     }
     if (request.method === "GET" && ruta === "capabilities") {
       if (actor.kind !== "mostrador") throw new CentralError("Esto es de la relación comercial del puesto.", 403, "not_a_tenant");
+      if (actor.rol !== "admin") throw new CentralError("Solo el dueño del puesto puede ver esto.", 403, "rol_no_permitido");
       const sql = await getSql();
       const refs = await sql<{ ref: string | null }>`
         select operational_tenant_ref as ref from torre.saas_tenants where id = ${actor.torreTenantId} limit 1
@@ -229,6 +232,9 @@ export async function handleCentral(request: Request) {
 }
 
 async function leerDocumentos(actor: Actor, ruta: string) {
+  if (actor.kind === "mostrador" && actor.rol !== "admin") {
+    throw new CentralError("Solo el dueño del puesto puede ver esto.", 403, "rol_no_permitido");
+  }
   const perfil = actor.kind === "mostrador" ? "mostrador" : actor.perfil;
   const permitidas = new Set<string>(audienciasDe(perfil));
   const sql = await getSql();
@@ -325,6 +331,7 @@ async function aceptarDocumento(actor: Actor, id: string, request: Request) {
   const ip = (request.headers.get("x-forwarded-for") || "").split(",")[0]?.trim() || "";
   const userAgent = (request.headers.get("user-agent") || "").slice(0, 300);
   if (actor.kind === "mostrador") {
+    if (actor.rol !== "admin") throw new CentralError("Solo el dueño del puesto puede aceptar contratos.", 403, "rol_no_permitido");
     const rows = await sql<{ id: string; tenant_id: string; status: string; snapshot_body: string; snapshot_hash: string; version_id: string }>`
       select id, tenant_id, status, snapshot_body, snapshot_hash, version_id
       from torre.saas_tenant_contracts where id = ${id} limit 1

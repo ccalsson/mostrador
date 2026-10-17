@@ -6,6 +6,8 @@ import { PGlite } from "@electric-sql/pglite";
 const migration = await readFile(new URL("../migrations/0011_torre_control.sql", import.meta.url), "utf8");
 const base = await readFile(new URL("../migrations/0008_torre.sql", import.meta.url), "utf8");
 const control = await readFile(new URL("../src/lib/torre/control-fn.ts", import.meta.url), "utf8");
+const central = await readFile(new URL("../src/lib/torre/central-http.ts", import.meta.url), "utf8");
+const roles = await readFile(new URL("../src/lib/torre/roles.ts", import.meta.url), "utf8");
 
 test("0011 no crea FK hacia tablas operativas", () => {
   assert.doesNotMatch(migration, /references\s+(public\.)?(tenants|productos|clientes|pedidos|cobros|staff)\b/i);
@@ -22,6 +24,14 @@ test("las funciones nuevas de Torre pasan por torreGuard", () => {
   const guarded = [...control.matchAll(/\.middleware\(\[torreGuard\]\)/g)].length;
   assert.equal(guarded, fns.length);
   assert.doesNotMatch(control, /\bfrom\s+(public\.)?(pedidos|productos|clientes|cobros)\b/);
+});
+
+test("la central API de la Torre es sólo del dueño y sin rol no se deja pasar", () => {
+  const guardas = [...central.matchAll(/rol_no_permitido/g)].length;
+  assert.ok(guardas >= 4, `subscription, capabilities, lecturas y aceptación deben exigir admin (hay ${guardas})`);
+  assert.match(central, /actor\.rol !== "admin"/);
+  assert.match(central, /actor\.kind === "mostrador" && actor\.rol !== "admin"/);
+  assert.doesNotMatch(roles, /role\s*\|\|\s*"administracion"/, "sin fila en saas_access no puede heredar el rol más ancho");
 });
 
 test("el catálogo inicial y el flujo comercial viven en Postgres", async () => {
