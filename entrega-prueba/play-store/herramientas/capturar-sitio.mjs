@@ -1,12 +1,13 @@
 // Captura el sitio legal con emulación real de viewport por CDP.
 // --window-size no sirve: Chrome impone un ancho mínimo de ventana y recorta la imagen.
-// Uso: node capturar-sitio.mjs <directorio-salida> [url-base]
+// Uso: node capturar-sitio.mjs <directorio-salida> [url-base] [prefijo]
 import { spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { Buffer } from 'node:buffer';
 
 const salida = process.argv[2];
 const base = process.argv[3] || 'http://localhost:8099';
+const prefijo = process.argv[4] || '';
 const chrome = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const puerto = 9334;
 mkdirSync(salida, { recursive: true });
@@ -62,9 +63,9 @@ for (const [nombre, ruta, ancho, alto] of capturas) {
     expression: 'document.documentElement.scrollWidth + "x" + innerWidth', returnByValue: true,
   });
   const { data } = await cmd('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true });
-  const destino = `${salida}\\${nombre}.png`;
+  const destino = `${salida}\\${prefijo}${nombre}.png`;
   writeFileSync(destino, Buffer.from(data, 'base64'));
-  console.log(`${nombre}.png  viewport ${ancho}x${alto}  scrollWidth ${desborde.result.value}`);
+  console.log(`${prefijo}${nombre}.png  viewport ${ancho}x${alto}  scrollWidth ${desborde.result.value}`);
 }
 
 ws.close();

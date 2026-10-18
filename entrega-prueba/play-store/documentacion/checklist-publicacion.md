@@ -52,21 +52,39 @@ El paquete apunta a `https://mostrador-api.vercel.app` conectado a la base **Neo
 - [ ] `API_BASE_URL` de producción y rebuild de los AAB con ese valor
 - [ ] Cuentas demo que un revisor pueda usar sin romper datos reales, o registro abierto
 
-## 5. Sitio legal publicado (en curso)
+## 5. Sitio legal publicado (verificado)
 
-`https://mostrador-xi.vercel.app/apps/…` responde 404 hasta que la carpeta
-`repoweb/public/apps/` llegue al deploy.
+Commit `0f7bb96` en `convergence/p0-backend-authz` → deploy de Vercel. Comprobado con `curl`
+el 2026-10-18: las doce rutas responden **200**, sin 307 a login.
 
-- [ ] Publicar y verificar las cuatro URLs con `curl -I` (200, no 307 a login)
-- [ ] Probar los enlaces desde la app instalada
+```
+/apps/  /apps/index.html  /apps/privacidad.html  /apps/condiciones.html
+/apps/soporte.html  /apps/eliminar-cuenta.html  /apps/sitio.js  /apps/config-publica.js
+/apps/assets/sitio.css  /apps/assets/mostrador.png  /apps/assets/mercado.png
+/apps/assets/fonts/Fraunces-SemiBold.ttf
+```
+
+- [x] Cuatro URLs públicas verificadas en producción (200)
+- [x] Render sin desborde horizontal a 390 y 1440 px → `verificacion/produccion-sitio-*.png`
+- [x] Enlace probado desde la app instalada: el APK de release de Mercado abre Chrome en
+      `mostrador-xi.vercel.app/apps/privacidad.html?app=mercado` → `app-privacidad-produccion.png`
+- [ ] Quitar la barra BORRADOR recién cuando se completen los puntos 2 y 3
+
+## 5.1 URL que va en Play Console
+
+| Campo | Valor |
+|---|---|
+| Política de privacidad (ambas apps) | `https://mostrador-xi.vercel.app/apps/privacidad.html?app=mostrador` y `?app=mercado` |
+| Sitio web (opcional) | `https://mostrador-xi.vercel.app/apps/` |
+| Correo de soporte | pendiente, punto 2 |
+
 
 ## 6. Play Console (cuenta)
 
 - [ ] Cuenta de desarrollador creada y verificada (arancel único, verificación de identidad de Google)
 - [ ] Decidir si Play gestiona la clave de firma (App Signing, recomendado): los keystore
       actuales son de subida y provisorios
-- [ ] Volver a subir si se cambia el `applicationId`: `com.frutasroman.puesto_flutter` y
-      `ar.grok.mostrador.mercado_al_toque` quedan atados a la cuenta para siempre
+- [ ] Decidir el `applicationId` definitivo **antes** de la primera subida (ver riesgo arriba)
 - [ ] Prueba interna → cerrada → producción
 
 ## 7. Formularios por app
@@ -81,9 +99,17 @@ El paquete apunta a `https://mostrador-api.vercel.app` conectado a la base **Neo
 
 ## 8. Riesgos conocidos
 
+- **`applicationId` antes de la primera subida, no después.** En Play el nombre de paquete es
+  la identidad permanente de la app: no se puede editar nunca, ni migrar. Los valores actuales
+  son `ar.grok.mostrador.mercado_al_toque` y `com.frutasroman.puesto_flutter`
+  ([build.gradle.kts:30](file:///C:/Users/claud/Desktop/claudio/personal/mostrador/clients/mercado_flutter/android/app/build.gradle.kts#L30)).
+  El primero lleva la marca de un tercero que no es el titular del puesto y el segundo es un
+  apellido con sufijo de andamiaje. Cambiarlos ahora es un `applicationId` nuevo + rebuild;
+  cambiarlos después de publicar implica perder la app, sus reseñas y sus installs.
 - La selfie y la foto del documento que pide Mercado al Toque son **datos de identidad**;
   Play los trata como sensibles y hay que declararlos con su finalidad y si se cifran en tránsito.
 - El OCR de remitos usa un proveedor externo: si el puesto lo activa, aparece una cesión más
   que declarar.
-- Los enlaces de `eliminar-cuenta.html` y `soporte.html` no funcionan hasta completar el punto 2;
-  un revisor que los pruebe va a encontrar la página en borrador.
+- Los botones de contacto de `eliminar-cuenta.html` y `soporte.html` siguen deshabilitados hasta
+  completar el punto 2; un revisor que los pruebe va a encontrar la página en borrador.
+

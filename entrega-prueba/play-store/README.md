@@ -27,3 +27,8 @@ variables, `build.gradle.kts` corta el build release en vez de firmar con debug.
 Leer `documentacion/checklist-publicacion.md`. El paquete está listo para **subir a una
 prueba interna**, no para producción: faltan las decisiones del titular que la propia
 página legal marca como pendientes.
+
+El sitio legal ya está publicado y verificado en
+`https://mostrador-xi.vercel.app/apps/`; las fuentes están en `repoweb/public/apps/` y se
+sirven sin build ni dependencias.
+
