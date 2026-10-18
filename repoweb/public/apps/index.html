@@ -3,15 +3,18 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer">
 <title>Mostrador · Gestión del puesto y Mercado al Toque</title>
-<meta name="description" content="Mostrador gestiona el puesto del Mercado Central de Posadas y Mercado al Toque conecta a compradores y cargadores con ese puesto.">
+<meta name="description" content="Mostrador gestiona el puesto del Mercado Central de Posadas y Mercado al Toque conecta a compradores y cargadores con ese puesto. Planes, add-ons y documentos legales.">
 <link rel="stylesheet" href="assets/sitio.css">
+<!-- Marca al CSS que el revelado está habilitado; se pone acá para que no haya parpadeo. -->
+<script>document.documentElement.className='js';</script>
 </head>
 <body data-page="inicio">
+<div class="scroll-progress" aria-hidden="true"></div>
 <div class="skip-link"><a href="#contenido">Saltar al contenido</a></div>
 <div class="draft-bar"><div class="container"><span data-draft-status>Borrador: faltan datos del responsable y la revisión legal.</span><a href="#legal">Ir a los documentos</a></div></div>
 <header class="site-header"><div class="container header-inner">
 <a class="brand" data-app-link href="index.html"><img src="assets/mostrador.png" alt=""><div><strong>Mostrador</strong><small data-app-name>Mostrador</small></div></a>
-<nav class="site-nav"><a data-app-link href="condiciones.html">Condiciones</a><a data-app-link href="privacidad.html">Privacidad</a><a data-app-link href="soporte.html">Soporte</a><a data-app-link href="eliminar-cuenta.html">Eliminar cuenta</a></nav>
+<nav class="site-nav"><a href="#planes">Planes</a><a data-app-link href="condiciones.html">Condiciones</a><a data-app-link href="privacidad.html">Privacidad</a><a data-app-link href="soporte.html">Soporte</a><a data-app-link href="eliminar-cuenta.html">Eliminar cuenta</a></nav>
 </div></header>
 
 <main id="contenido">
@@ -92,6 +95,30 @@
 
 <section class="section"><div class="container">
 <div class="section-heading">
+<div>
+<p class="eyebrow">En pantalla</p>
+<h2>La versión que está en prueba</h2>
+</div>
+<p>Capturas tomadas del paquete candidato sobre un teléfono Android y del sitio de gestión. No son renders: es lo que abre la app hoy.</p>
+</div>
+<div class="shots">
+<figure class="shot phone reveal">
+<div class="shot-screen"><img src="assets/capturas/mostrador-arranque.png" alt="Pantalla de arranque de Mostrador: la letra M clara sobre un fondo grafito." width="1080" height="1920" loading="lazy"></div>
+<figcaption><strong>Arranque</strong><span>Mostrador · Android</span></figcaption>
+</figure>
+<figure class="shot phone reveal">
+<div class="shot-screen"><img src="assets/capturas/mercado-ingreso.png" alt="Pantalla de ingreso de Mercado al Toque con el acceso de comprador y el de cargador." width="1080" height="1920" loading="lazy"></div>
+<figcaption><strong>Ingreso del mercado</strong><span>Mercado al Toque · Android</span></figcaption>
+</figure>
+<figure class="shot wide reveal">
+<div class="shot-screen"><img src="assets/capturas/puesto-web.png" alt="Pantalla de ingreso de la web de gestión del puesto." width="1440" height="900" loading="lazy"></div>
+<figcaption><strong>Web de gestión</strong><span>El dueño, desde el navegador</span></figcaption>
+</figure>
+</div>
+</div></section>
+
+<section class="section"><div class="container">
+<div class="section-heading">
 <h2>Cómo funciona una venta</h2>
 <p>El pedido que se confirma en la app es un pedido al puesto. La app registra; el puesto atiende.</p>
 </div>
@@ -100,6 +127,120 @@
 <li><span class="step-number">02</span><h3>Se prepara y se mueve</h3><p>El puesto prepara y asigna la tarea. El cargador la acepta y marca la entrega cuando la hace.</p></li>
 <li><span class="step-number">03</span><h3>Se cobra con el puesto</h3><p>El pago, el comprobante y la cuenta corriente los maneja el puesto. La app no procesa tarjetas ni retiene dinero.</p></li>
 </ol>
+</div></section>
+
+<section class="section" id="planes"><div class="container">
+<div class="section-heading">
+<div>
+<p class="eyebrow">Planes y precios</p>
+<h2>Cuatro planes, una línea base por puesto</h2>
+</div>
+<p>El puesto contrata una línea base y paga una instalación la primera vez. Los add-ons se suman aparte, uno por uno.</p>
+</div>
+<p class="scroll-hint">La tabla se desplaza hacia la derecha →</p>
+
+<div class="table-wrap matrix-wrap reveal">
+<table class="matrix">
+<caption>Precios de lista en dólares por puesto. La instalación se cobra una sola vez.</caption>
+<thead>
+<tr>
+<th scope="col"><span class="sr-only">Concepto</span></th>
+<th scope="col"><span class="plan-name">Básico</span><span class="plan-kicker">El puesto, solo</span></th>
+<th scope="col" class="is-featured"><span class="plan-badge">Con Mercado al Toque</span><span class="plan-name">Pro</span><span class="plan-kicker">Puesto + compradores y cargadores</span></th>
+<th scope="col"><span class="plan-name">Premium</span><span class="plan-kicker">Pro y más herramientas</span></th>
+<th scope="col"><span class="plan-name">Multi-Sucursal</span><span class="plan-kicker">Varias bocas</span></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<th scope="row">Precio por mes</th>
+<td><span class="amount">62</span><span class="unit">USD / mes</span></td>
+<td class="is-featured"><span class="amount">93</span><span class="unit">USD / mes</span></td>
+<td><span class="amount">136</span><span class="unit">USD / mes</span></td>
+<td><span class="amount">186</span><span class="unit">USD / mes</span></td>
+</tr>
+<tr>
+<th scope="row">Instalación</th>
+<td><span class="flat">sin cargo</span></td>
+<td class="is-featured"><span class="amount small">309</span><span class="unit">USD, una vez</span></td>
+<td><span class="amount small">309</span><span class="unit">USD, una vez</span></td>
+<td><span class="amount small">495</span><span class="unit">USD, una vez</span></td>
+</tr>
+<tr>
+<th scope="row">Puesto: catálogo, stock, caja, remitos y reportes</th>
+<td><span class="yes">Incluido</span></td>
+<td class="is-featured"><span class="yes">Incluido</span></td>
+<td><span class="yes">Incluido</span></td>
+<td><span class="yes">Incluido</span></td>
+</tr>
+<tr>
+<th scope="row">Publicación del puesto en Mercado al Toque</th>
+<td><span class="no">No</span></td>
+<td class="is-featured"><span class="yes">Sí</span></td>
+<td><span class="yes">Sí</span></td>
+<td><span class="no">No</span></td>
+</tr>
+<tr>
+<th scope="row">Cuenta corriente con los clientes</th>
+<td><span class="no">No</span></td>
+<td class="is-featured"><span class="yes">Sí</span></td>
+<td><span class="yes">Sí</span></td>
+<td><span class="no">No</span></td>
+</tr>
+<tr class="quote-row">
+<th scope="row">Cómo lo describe el catálogo</th>
+<td>Abono mensual del puesto. Dueño, cajero, vendedor, stock, caja y reportes.</td>
+<td class="is-featured">Abono mensual. Incluye Mercado al Toque con cuenta corriente, reportes y prioridad.</td>
+<td>Abono mensual. Todo Pro, con más herramientas del puesto.</td>
+<td>Abono mensual del puesto con varias sucursales.</td>
+</tr>
+</tbody>
+</table>
+</div>
+
+<div class="price-notes reveal">
+<div>
+<h3>Cómo se cobra</h3>
+<p>El precio de lista está en dólares. En pesos se convierte al momento de cobrar: el dólar oficial del día más el 5&nbsp;%, redondeado para arriba. El puesto ve el total en pesos antes de confirmar.</p>
+</div>
+<div>
+<h3>El precio que vale</h3>
+<p>Estos números son de referencia. El precio aplicable es el del catálogo al confirmar el servicio, y la instalación se paga una sola vez. Un puesto que ya contrató una línea conserva ese precio aunque el catálogo cambie.</p>
+</div>
+<div>
+<h3>Empezar sin pagar Pro</h3>
+<p>El trial de Pro dura 21 días y no se contrata: lo habilita la Torre. Hasta entonces el puesto funciona con lo que ya tenga contratado.</p>
+</div>
+</div>
+
+<div class="section-heading add-ons-heading">
+<div>
+<p class="eyebrow">Add-ons</p>
+<h2>Se suman al plan, uno por vez</h2>
+</div>
+<p>La Torre habilita cada add-on después de ver el pago. Hasta entonces no se prende, y rigen las mismas condiciones de uso y la misma privacidad ya aceptadas.</p>
+</div>
+
+<div class="table-wrap reveal">
+<table class="addons">
+<caption>Add-ons y servicios del catálogo comercial.</caption>
+<thead>
+<tr><th scope="col">Add-on</th><th scope="col">Qué es</th><th scope="col">Precio</th><th scope="col">Se cobra</th></tr>
+</thead>
+<tbody>
+<tr><th scope="row">Usuario adicional</th><td>Un usuario más del puesto, con su propio acceso y rol.</td><td><span class="amount small">9</span><span class="unit">USD</span></td><td>por usuario, por mes</td></tr>
+<tr><th scope="row">Créditos de creativos · 50</th><td>50 créditos para generar piezas de difusión. Torre los suma cuando habilita el pago.</td><td><span class="amount small">5,99</span><span class="unit">USD</span></td><td>una vez</td></tr>
+<tr><th scope="row">Créditos de creativos · 100</th><td>100 créditos para generar piezas de difusión. Torre los suma cuando habilita el pago.</td><td><span class="amount small">9,99</span><span class="unit">USD</span></td><td>una vez</td></tr>
+<tr><th scope="row">Banner principal rotativo</th><td>Una semana en la portada de Mercado al Toque.</td><td><span class="amount small">49</span><span class="unit">USD</span></td><td>por semana</td></tr>
+<tr><th scope="row">Push promocional extra</th><td>Un envío promocional extra. Torre anota el cupo.</td><td><span class="amount small">19</span><span class="unit">USD</span></td><td>por envío</td></tr>
+<tr><th scope="row">Capacitación presencial extra</th><td>Una visita de capacitación, fuera de la incluida.</td><td><span class="amount small">31</span><span class="unit">USD</span></td><td>por visita</td></tr>
+<tr><th scope="row">Migración de datos</th><td>Pasar clientes y productos desde Excel o papel.</td><td><span class="amount small">62</span><span class="unit">USD</span></td><td>por puesta</td></tr>
+<tr><th scope="row">Comprador en Mercado al Toque</th><td>La cuenta del comprador del puesto.</td><td><span class="flat">sin abono</span></td><td>—</td></tr>
+<tr><th scope="row">Cargador en Mercado al Toque</th><td>La cuenta del cargador. La comisión de la entrega es aparte y la fija el puesto.</td><td><span class="flat">sin abono</span></td><td>comisión por entrega</td></tr>
+</tbody>
+</table>
+</div>
+<p class="micro footnote">La comisión del cargador es un porcentaje sobre la entrega: se acuerda una banda, no un importe cerrado. La app no procesa tarjetas ni retiene dinero; el cobro, el comprobante y la cuenta corriente los maneja el puesto.</p>
 </div></section>
 
 <section class="section" id="legal"><div class="container">

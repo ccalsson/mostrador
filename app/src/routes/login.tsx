@@ -51,13 +51,13 @@ function Login() {
 
   if (isPending) {
     return (
-      <div className="relative grid min-h-dvh place-items-center bg-paper md:bg-[#16241a]">
+      <div className="relative grid min-h-dvh place-items-center bg-paper md:bg-[#131c28]">
         <img
           src="/puesto.jpg"
           alt=""
           className="absolute inset-0 hidden h-full w-full object-cover object-top md:block"
         />
-        <p className="relative rounded-md bg-paper/90 px-3 py-1.5 text-sm text-muted md:bg-[#16241a]/80 md:text-leaf-fg">
+        <p className="relative rounded-md bg-paper/90 px-3 py-1.5 text-sm text-muted md:bg-[#131c28]/80 md:text-leaf-fg">
           Cargando…
         </p>
       </div>
@@ -65,13 +65,13 @@ function Login() {
   }
 
   return (
-    <main className="relative min-h-dvh bg-paper md:overflow-hidden md:bg-[#16241a]">
+    <main className="relative min-h-dvh bg-paper md:overflow-hidden md:bg-[#131c28]">
       <img
         src="/puesto.jpg"
         alt=""
         className="pointer-events-none absolute inset-0 hidden h-full w-full object-cover object-top md:block"
       />
-      <div className="pointer-events-none absolute inset-0 hidden bg-gradient-to-b from-transparent from-40% via-[#16241a]/70 to-[#16241a] md:block" />
+      <div className="pointer-events-none absolute inset-0 hidden bg-gradient-to-b from-transparent from-40% via-[#131c28]/70 to-[#131c28] md:block" />
       <div className="fixed top-3 right-3 z-10">
         <TemaBoton tono="pagina" />
       </div>

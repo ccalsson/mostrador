@@ -7,25 +7,26 @@
   --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
   --font-display: "Fraunces", "Times New Roman", serif;
 
-  --color-paper: #f3ede1;
-  --color-paper-2: #e7ddcc;
-  --color-surface: #fffaf2;
-  --color-ink: #1a1612;
-  --color-ink-soft: #3d352c;
-  --color-muted: #6d6559;
-  --color-line: #d6ccbb;
-  --color-leaf: #1b5e3b;
-  --color-leaf-2: #0f3d26;
-  --color-leaf-fg: #f4efe4;
-  --color-terra: #b5471a;
-  --color-ok: #2c6b45;
-  --color-warn-bg: #f4e1d4;
-  --color-ok-bg: #dce8e0;
-  --color-naranja: #c46b14;
-  --color-ambar: #c9a227;
-  --color-alerta: #9b2330;
-  --color-btn: #145c38;
-  --color-btn-fg: #f6e7c4;
+  /* Nombres de token históricos: leaf es grafito y terra es el azul de acción. */
+  --color-paper: #f5f6f8;
+  --color-paper-2: #e9edf3;
+  --color-surface: #ffffff;
+  --color-ink: #1f2937;
+  --color-ink-soft: #374151;
+  --color-muted: #5b6a7e;
+  --color-line: #dfe4ea;
+  --color-leaf: #263449;
+  --color-leaf-2: #131c28;
+  --color-leaf-fg: #f2f5f9;
+  --color-terra: #1d5fd4;
+  --color-ok: #157347;
+  --color-warn-bg: #fdf1dc;
+  --color-ok-bg: #e0f0e7;
+  --color-naranja: #9a4708;
+  --color-ambar: #7d5800;
+  --color-alerta: #b42318;
+  --color-btn: #263449;
+  --color-btn-fg: #f2f5f9;
 
   --radius-sm: 8px;
   --radius-md: 12px;
@@ -112,25 +113,25 @@
 
 html.dark {
   color-scheme: dark;
-  --color-paper: #0e1412;
-  --color-paper-2: #151c19;
-  --color-surface: #1b2421;
-  --color-ink: #f4f7f5;
-  --color-ink-soft: #d5ddd8;
-  --color-muted: #93a099;
-  --color-line: #2c3833;
-  --color-leaf: #3ddc84;
-  --color-leaf-2: #101816;
-  --color-leaf-fg: #f4f7f5;
-  --color-terra: #e17a45;
-  --color-ok: #3ddc84;
-  --color-warn-bg: #3a261e;
-  --color-ok-bg: #143024;
-  --color-naranja: #e39245;
+  --color-paper: #0e1116;
+  --color-paper-2: #161b22;
+  --color-surface: #1b212b;
+  --color-ink: #e9eef5;
+  --color-ink-soft: #cbd5e1;
+  --color-muted: #94a3b8;
+  --color-line: #2a3340;
+  --color-leaf: #6ea8fe;
+  --color-leaf-2: #10151c;
+  --color-leaf-fg: #0e1116;
+  --color-terra: #7cc0f5;
+  --color-ok: #4cc38a;
+  --color-warn-bg: #3a2a14;
+  --color-ok-bg: #10281c;
+  --color-naranja: #f0954a;
   --color-ambar: #e3c56a;
-  --color-alerta: #e07078;
-  --color-btn: #145c38;
-  --color-btn-fg: #f6e7c4;
+  --color-alerta: #f0736d;
+  --color-btn: #1d5fd4;
+  --color-btn-fg: #ffffff;
 }
 
 html.dark select,

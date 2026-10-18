@@ -7,23 +7,24 @@
   --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
   --font-display: "Fraunces", "Times New Roman", serif;
 
-  --color-paper: #f3ede1;
-  --color-paper-2: #e7ddcc;
-  --color-surface: #fffaf2;
-  --color-ink: #1a1612;
-  --color-ink-soft: #3d352c;
-  --color-muted: #6d6559;
-  --color-line: #d6ccbb;
-  --color-leaf: #1b5e3b;
-  --color-leaf-2: #0f3d26;
-  --color-leaf-fg: #f4efe4;
-  --color-terra: #b5471a;
-  --color-ok: #2c6b45;
-  --color-warn-bg: #f4e1d4;
-  --color-ok-bg: #dce8e0;
-  --color-naranja: #c46b14;
-  --color-ambar: #c9a227;
-  --color-alerta: #9b2330;
+  /* Nombres de token históricos: leaf es grafito y terra es el azul de acción. */
+  --color-paper: #f5f6f8;
+  --color-paper-2: #e9edf3;
+  --color-surface: #ffffff;
+  --color-ink: #1f2937;
+  --color-ink-soft: #374151;
+  --color-muted: #5b6a7e;
+  --color-line: #dfe4ea;
+  --color-leaf: #263449;
+  --color-leaf-2: #131c28;
+  --color-leaf-fg: #f2f5f9;
+  --color-terra: #1d5fd4;
+  --color-ok: #157347;
+  --color-warn-bg: #fdf1dc;
+  --color-ok-bg: #e0f0e7;
+  --color-naranja: #9a4708;
+  --color-ambar: #7d5800;
+  --color-alerta: #b42318;
 
   --radius-sm: 8px;
   --radius-md: 12px;
@@ -63,23 +64,23 @@
 
 html.dark {
   color-scheme: dark;
-  --color-paper: #14110e;
-  --color-paper-2: #241e18;
-  --color-surface: #1c1814;
-  --color-ink: #f3ede1;
-  --color-ink-soft: #ddd2c3;
-  --color-muted: #b3a394;
-  --color-line: #3d342c;
-  --color-leaf: #3fa36e;
-  --color-leaf-2: #0e3324;
-  --color-leaf-fg: #f4efe4;
-  --color-terra: #e17a45;
-  --color-ok: #8fd4ae;
-  --color-warn-bg: #3a261e;
-  --color-ok-bg: #1a3328;
-  --color-naranja: #e39245;
+  --color-paper: #0e1116;
+  --color-paper-2: #161b22;
+  --color-surface: #1b212b;
+  --color-ink: #e9eef5;
+  --color-ink-soft: #cbd5e1;
+  --color-muted: #94a3b8;
+  --color-line: #2a3340;
+  --color-leaf: #6ea8fe;
+  --color-leaf-2: #10151c;
+  --color-leaf-fg: #0e1116;
+  --color-terra: #7cc0f5;
+  --color-ok: #4cc38a;
+  --color-warn-bg: #3a2a14;
+  --color-ok-bg: #10281c;
+  --color-naranja: #f0954a;
   --color-ambar: #e3c56a;
-  --color-alerta: #e07078;
+  --color-alerta: #f0736d;
 }
 
 html.dark select,

@@ -55,6 +55,25 @@ const cmd = (method, params = {}) => new Promise((r, j) => {
 });
 
 await cmd('Page.enable');
+await cmd('Runtime.enable');
+
+// captureBeyondViewport no scrolllea la página: sin este barrido previo los .reveal
+// bajo el pliegue quedan con opacity 0 y salen en blanco en la captura completa.
+async function barrer(alto) {
+  const total = await cmd('Runtime.evaluate', { expression: 'document.documentElement.scrollHeight', returnByValue: true });
+  const altoDocumento = total.result.value;
+  for (let y = 0; y < altoDocumento; y += Math.floor(alto / 3)) {
+    await cmd('Runtime.evaluate', { expression: `window.scrollTo(0, ${y})`, returnByValue: true });
+    await esperar(160);
+  }
+  await cmd('Runtime.evaluate', { expression: 'window.scrollTo(0, 0)', returnByValue: true });
+  await esperar(900);
+  const sinDisparar = await cmd('Runtime.evaluate', {
+    expression: "document.querySelectorAll('.reveal:not(.in)').length", returnByValue: true,
+  });
+  return sinDisparar.result.value;
+}
+
 for (const [nombre, ruta, ancho, alto] of capturas) {
   await cmd('Emulation.setDeviceMetricsOverride', { width: ancho, height: alto, deviceScaleFactor: 2, mobile: ancho < 700 });
   await cmd('Page.navigate', { url: base + ruta });
@@ -62,10 +81,11 @@ for (const [nombre, ruta, ancho, alto] of capturas) {
   const desborde = await cmd('Runtime.evaluate', {
     expression: 'document.documentElement.scrollWidth + "x" + innerWidth', returnByValue: true,
   });
+  const sinDisparar = await barrer(alto);
   const { data } = await cmd('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true });
   const destino = `${salida}\\${prefijo}${nombre}.png`;
   writeFileSync(destino, Buffer.from(data, 'base64'));
-  console.log(`${prefijo}${nombre}.png  viewport ${ancho}x${alto}  scrollWidth ${desborde.result.value}`);
+  console.log(`${prefijo}${nombre}.png  viewport ${ancho}x${alto}  scrollWidth ${desborde.result.value}  revealSinDisparar ${sinDisparar}`);
 }
 
 ws.close();

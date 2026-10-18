@@ -18,7 +18,7 @@ export const Route = createRootRoute({
         name: "description",
         content: "Mostrador, tu gestión inteligente.",
       },
-      { name: "theme-color", content: "#1B5E3B" },
+      { name: "theme-color", content: "#263449" },
     ],
     links: [
       { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" },

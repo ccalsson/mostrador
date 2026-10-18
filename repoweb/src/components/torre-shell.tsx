@@ -90,21 +90,21 @@ export function TorreShell({ title, children }: { title: string; children: React
 
   return (
     <div className="torre-app min-h-dvh bg-paper text-ink">
-      <header className="sticky top-0 z-30 border-b border-[#e3c56a]/25 bg-[#12100e] text-[#f4efe4]">
+      <header className="sticky top-0 z-30 border-b border-[#7cc0f5]/25 bg-[#131c28] text-[#f2f5f9]">
         <div className="mx-auto flex w-full max-w-6xl items-center gap-4 px-4 py-2.5 sm:px-6">
           <Link to="/torre" className="shrink-0 border-r border-white/10 pr-4" onClick={() => setAbierto(null)}>
-            <p className="text-[10px] font-medium tracking-[0.16em] text-[#e3c56a] uppercase">Consola</p>
+            <p className="text-[10px] font-medium tracking-[0.16em] text-[#7cc0f5] uppercase">Consola</p>
             <p className="font-display text-lg leading-none font-semibold tracking-tight">Torre</p>
           </Link>
           <nav className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
             <Link
               to="/torre"
               onClick={() => setAbierto(null)}
-              className={cn("shrink-0 rounded-[10px] px-3 py-2 text-sm", tablero ? "bg-white/15" : "text-[#f4efe4]/75")}
+              className={cn("shrink-0 rounded-[10px] px-3 py-2 text-sm", tablero ? "bg-white/15" : "text-[#f2f5f9]/75")}
             >
               Tablero
               {avisos > 0 ? (
-                <span className="ml-2 inline-flex min-w-5 justify-center rounded-full bg-[#e3c56a] px-1.5 text-[11px] font-medium text-[#14110e]">{avisos}</span>
+                <span className="ml-2 inline-flex min-w-5 justify-center rounded-full bg-[#7cc0f5] px-1.5 text-[11px] font-medium text-[#0e1116]">{avisos}</span>
               ) : null}
             </Link>
             {GRUPOS.map((grupo) => {
@@ -114,13 +114,13 @@ export function TorreShell({ title, children }: { title: string; children: React
                 <div key={grupo.label} className="relative shrink-0">
                   <button
                     type="button"
-                    className={cn("rounded-[10px] px-3 py-2 text-sm", activo || abierto === grupo.label ? "bg-white/15" : "text-[#f4efe4]/75")}
+                    className={cn("rounded-[10px] px-3 py-2 text-sm", activo || abierto === grupo.label ? "bg-white/15" : "text-[#f2f5f9]/75")}
                     onClick={() => setAbierto((actual) => (actual === grupo.label ? null : grupo.label))}
                   >
                     {grupo.label}
                   </button>
                   {abierto === grupo.label ? (
-                    <div className={cn("absolute top-full z-50 mt-2 min-w-56 rounded-[10px] border border-white/10 bg-[#1a1612] py-1 shadow-xl", aLaDerecha ? "right-0" : "left-0")}>
+                    <div className={cn("absolute top-full z-50 mt-2 min-w-56 rounded-[10px] border border-white/10 bg-[#1b212b] py-1 shadow-xl", aLaDerecha ? "right-0" : "left-0")}>
                       {grupo.items.map((item) => (
                         <Link
                           key={item.to}
@@ -128,7 +128,7 @@ export function TorreShell({ title, children }: { title: string; children: React
                           onClick={() => setAbierto(null)}
                           className={cn(
                             "block rounded-md px-3 py-2 text-sm",
-                            path.startsWith(item.to) ? "bg-white/15" : "text-[#f4efe4]/80",
+                            path.startsWith(item.to) ? "bg-white/15" : "text-[#f2f5f9]/80",
                           )}
                         >
                           {item.label}
@@ -140,7 +140,7 @@ export function TorreShell({ title, children }: { title: string; children: React
               );
             })}
           </nav>
-          <button type="button" className="shrink-0 text-xs text-[#f4efe4]/70" onClick={() => void signOut("/torre/login")}>
+          <button type="button" className="shrink-0 text-xs text-[#f2f5f9]/70" onClick={() => void signOut("/torre/login")}>
             Salir
           </button>
         </div>

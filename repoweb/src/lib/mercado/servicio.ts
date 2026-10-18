@@ -406,9 +406,9 @@ export async function volverDeGoogle(request: Request) {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Mercado al Toque</title>
-<body style="font-family:sans-serif;background:#F3EDE1;color:#1C1917;padding:32px">
+<body style="font-family:sans-serif;background:#F5F6F8;color:#1F2937;padding:32px">
 <p>Listo. Volvé a la app.</p>
-<p><a href="${destino}" style="display:inline-block;background:#1B5E3B;color:#F3EDE1;padding:12px 16px;text-decoration:none">Abrir Mercado al Toque</a></p>
+<p><a href="${destino}" style="display:inline-block;background:#263449;color:#F2F5F9;padding:12px 16px;text-decoration:none">Abrir Mercado al Toque</a></p>
 <script>location.replace(${JSON.stringify(destino)})</script>
 </body>`;
   return new Response(html, {

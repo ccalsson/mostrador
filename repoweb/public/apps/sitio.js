@@ -158,4 +158,32 @@
     if (status && !button.disabled) status.textContent = 'Enlace a la ficha de Google Play configurada por el titular.';
   });
   if (document.body.dataset.page !== 'inicio') document.title = document.body.dataset.title + ' | ' + name;
+
+  // Capa de movimiento: sólo agrega. Sin IntersectionObserver o con el movimiento
+  // reducido el contenido queda visible, nunca esperando un evento que no llega.
+  var progreso = document.querySelector('.scroll-progress');
+  var cabecera = document.querySelector('.site-header');
+  function alDesplazar() {
+    var recorrido = document.documentElement.scrollHeight - window.innerHeight;
+    if (progreso) progreso.style.setProperty('--p', recorrido > 0 ? Math.min(1, window.scrollY / recorrido) : 0);
+    if (cabecera) cabecera.classList.toggle('is-scrolled', window.scrollY > 8);
+  }
+  window.addEventListener('scroll', alDesplazar, { passive: true });
+  window.addEventListener('resize', alDesplazar);
+  alDesplazar();
+
+  var revelables = [].slice.call(document.querySelectorAll('.reveal'));
+  var reducido = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reducido || typeof window.IntersectionObserver !== 'function') {
+    revelables.forEach(function (elemento) { elemento.classList.add('in'); });
+  } else {
+    var observador = new IntersectionObserver(function (entradas) {
+      entradas.forEach(function (entrada) {
+        if (!entrada.isIntersecting) return;
+        entrada.target.classList.add('in');
+        observador.unobserve(entrada.target);
+      });
+    }, { rootMargin: '0px 0px -10% 0px', threshold: 0.08 });
+    revelables.forEach(function (elemento) { observador.observe(elemento); });
+  }
 })();

@@ -347,10 +347,10 @@ function desplazarSlider(el: HTMLDivElement | null, n: number) {
 
 const FOTOS = ["/slides/citricos.jpg", "/slides/rojos.jpg", "/slides/verdura.jpg", "/slides/puesto-color.jpg"];
 const TINTES = [
-  { fondo: "#f6e3cf", tinta: "#6a2e12" },
-  { fondo: "#e7f2e4", tinta: "#145c38" },
-  { fondo: "#f8efd0", tinta: "#6d5310" },
-  { fondo: "#f4e4d6", tinta: "#7a3418" },
+  { fondo: "#e6ebf5", tinta: "#263449" },
+  { fondo: "#dbe7fb", tinta: "#1746a8" },
+  { fondo: "#eef2f8", tinta: "#374151" },
+  { fondo: "#dfe7f5", tinta: "#1d5fd4" },
 ];
 
 function fotoDe(nombre: string, indice: number) {
@@ -473,7 +473,7 @@ function Vitrina({
             <div className="absolute inset-0 bg-gradient-to-r from-black/75 via-black/40 to-black/10" />
             <button
               type="button"
-              className="relative flex h-full w-full flex-col justify-end px-3 py-2.5 text-left text-[#f6e7c4]"
+              className="relative flex h-full w-full flex-col justify-end px-3 py-2.5 text-left text-[#f2f5f9]"
               onClick={() => {
                 if (lamina.producto) onProducto(lamina.producto);
               }}
@@ -493,7 +493,7 @@ function Vitrina({
               type="button"
               aria-label={lamina.kicker}
               onClick={() => ir(n)}
-              className={cn("pointer-events-auto h-1.5 rounded-full", pagina === n ? "w-4 bg-[#f6e7c4]" : "w-1.5 bg-white/50")}
+              className={cn("pointer-events-auto h-1.5 rounded-full", pagina === n ? "w-4 bg-[#f2f5f9]" : "w-1.5 bg-white/50")}
             />
           ))}
         </div>
