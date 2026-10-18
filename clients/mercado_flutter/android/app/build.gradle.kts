@@ -4,6 +4,17 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+val uploadStore = System.getenv("ANDROID_KEYSTORE_PATH")
+val uploadPassword = System.getenv("ANDROID_STORE_PASSWORD")
+val uploadAlias = System.getenv("ANDROID_KEY_ALIAS")
+val uploadKeyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+val hasUploadSigning = listOf(uploadStore, uploadPassword, uploadAlias, uploadKeyPassword)
+    .all { !it.isNullOrBlank() }
+
+if (gradle.startParameter.taskNames.any { it.contains("release", ignoreCase = true) } && !hasUploadSigning) {
+    throw GradleException("La entrega release requiere las cuatro variables ANDROID de firma upload; no se permite firma debug.")
+}
+
 android {
     namespace = "ar.grok.mostrador.mercado_al_toque"
     compileSdk = flutter.compileSdkVersion
@@ -29,11 +40,20 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        if (hasUploadSigning) {
+            create("upload") {
+                storeFile = file(uploadStore!!)
+                storePassword = uploadPassword
+                keyAlias = uploadAlias
+                keyPassword = uploadKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (hasUploadSigning) signingConfigs.getByName("upload") else null
         }
     }
 }

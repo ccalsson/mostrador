@@ -3,6 +3,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'market_api.dart';
 import 'tema.dart';
+import 'widgets/public_links.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({
@@ -12,6 +13,8 @@ class LoginScreen extends StatefulWidget {
     this.startupError,
     this.onAlternarTema,
     this.temaOscuro = false,
+    this.registrationBaseUrl = apiBaseUrl,
+    this.linkLauncher = launchUrl,
     super.key,
   });
 
@@ -21,6 +24,8 @@ class LoginScreen extends StatefulWidget {
   final String? startupError;
   final VoidCallback? onAlternarTema;
   final bool temaOscuro;
+  final String registrationBaseUrl;
+  final ExternalUrlLauncher linkLauncher;
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -28,26 +33,28 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _name = TextEditingController();
   final _email = TextEditingController();
   final _password = TextEditingController();
-  final _phone = TextEditingController();
-  final _documentNumber = TextEditingController();
   String _profile = 'comprador';
-  String _country = 'AR';
-  bool _registering = false;
   bool _busy = false;
   String? _error;
 
   @override
   void dispose() {
-    _name.dispose();
     _email.dispose();
     _password.dispose();
-    _phone.dispose();
-    _documentNumber.dispose();
     super.dispose();
   }
+
+  Future<void> _register() => openExternalPage(
+    context,
+    marketRegistrationUri(
+      profile: _profile,
+      baseUrl: widget.registrationBaseUrl,
+    ),
+    configuration: 'API_BASE_URL',
+    launcher: widget.linkLauncher,
+  );
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
@@ -56,28 +63,11 @@ class _LoginScreenState extends State<LoginScreen> {
       _error = null;
     });
     try {
-      final actor = _registering
-          ? _profile == 'comprador'
-              ? await widget.api.registerBuyer(
-                  name: _name.text.trim(),
-                  email: _email.text.trim(),
-                  password: _password.text,
-                  phone: _phone.text.trim(),
-                  country: _country,
-                  documentType: _country == 'AR' ? 'DNI' : 'CI_PY',
-                  documentNumber: _documentNumber.text.trim(),
-                )
-              : await widget.api.registerCourier(
-                  name: _name.text.trim(),
-                  email: _email.text.trim(),
-                  password: _password.text,
-                  phone: _phone.text.trim(),
-                )
-          : await widget.api.signIn(
-              email: _email.text.trim(),
-              password: _password.text,
-              profile: _profile,
-            );
+      final actor = await widget.api.signIn(
+        email: _email.text.trim(),
+        password: _password.text,
+        profile: _profile,
+      );
       if (mounted) widget.onAuthenticated(actor);
     } on MercadoApiException catch (error) {
       if (mounted) setState(() => _error = error.message);
@@ -187,13 +177,6 @@ class _LoginScreenState extends State<LoginScreen> {
                       ],
                     ),
                     const SizedBox(height: 16),
-                    if (_registering) ...[
-                      TextFormField(
-                        controller: _name,
-                        decoration: const InputDecoration(labelText: 'Nombre'),
-                        validator: _required,
-                      ),
-                    ],
                     TextFormField(
                       controller: _email,
                       keyboardType: TextInputType.emailAddress,
@@ -212,35 +195,6 @@ class _LoginScreenState extends State<LoginScreen> {
                       validator: (value) =>
                           (value?.length ?? 0) >= 8 ? null : 'Usá al menos 8 caracteres.',
                     ),
-                    if (_registering) ...[
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: _phone,
-                        keyboardType: TextInputType.phone,
-                        decoration: const InputDecoration(labelText: 'Teléfono'),
-                        validator: _required,
-                      ),
-                      if (_profile == 'comprador') ...[
-                        const SizedBox(height: 12),
-                        DropdownButtonFormField<String>(
-                          initialValue: _country,
-                          decoration: const InputDecoration(labelText: 'País'),
-                          items: const [
-                            DropdownMenuItem(value: 'AR', child: Text('Argentina')),
-                            DropdownMenuItem(value: 'PY', child: Text('Paraguay')),
-                          ],
-                          onChanged: (value) => setState(() => _country = value ?? 'AR'),
-                        ),
-                        const SizedBox(height: 12),
-                        TextFormField(
-                          controller: _documentNumber,
-                          decoration: InputDecoration(
-                            labelText: _country == 'AR' ? 'Número de DNI' : 'Número de CI',
-                          ),
-                          validator: _required,
-                        ),
-                      ],
-                    ],
                     if (widget.startupError != null) ...[
                       const SizedBox(height: 12),
                       Text(widget.startupError!,
@@ -261,7 +215,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 width: 18,
                                 height: 18,
                                 child: CircularProgressIndicator(strokeWidth: 2))
-                            : Text(_registering ? 'Crear cuenta' : 'Ingresar'),
+                            : const Text('Ingresar'),
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -277,17 +231,18 @@ class _LoginScreenState extends State<LoginScreen> {
                     SizedBox(
                       height: 48,
                       child: OutlinedButton(
-                        onPressed: _busy
-                            ? null
-                            : () => setState(() {
-                                  _registering = !_registering;
-                                  _error = null;
-                                }),
-                        child: Text(
-                          _registering ? 'Ya tengo cuenta · Ingresar' : 'Crear una cuenta nueva',
-                        ),
+                        onPressed: _busy ? null : _register,
+                        child: const Text('Crear una cuenta nueva'),
                       ),
                     ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'El registro se abre en el navegador. Tras confirmar tu correo, volvé aquí para ingresar.',
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.bodySmall?.copyWith(color: tokens.inkSoft),
+                    ),
+                    const SizedBox(height: 16),
+                    PublicLinks(launcher: widget.linkLauncher),
                   ],
                 ),
               ),
@@ -297,9 +252,6 @@ class _LoginScreenState extends State<LoginScreen> {
       ),
     );
   }
-
-  String? _required(String? value) =>
-      (value?.trim().isNotEmpty ?? false) ? null : 'Este campo es obligatorio.';
 }
 
 class _BotonPerfil extends StatelessWidget {

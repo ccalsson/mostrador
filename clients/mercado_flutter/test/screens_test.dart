@@ -9,6 +9,7 @@ import 'package:mercado_al_toque/screens/courier_screen.dart';
 import 'package:mercado_al_toque/screens/order_detail_screen.dart';
 import 'package:mercado_al_toque/screens/profile_screen.dart';
 import 'package:mercado_al_toque/screens/stands_screen.dart';
+import 'package:mercado_al_toque/widgets/public_links.dart';
 
 Future<http.Response> _fueraDeRed(http.BaseRequest request) async =>
     throw StateError('La prueba no debe salir a la red');
@@ -322,6 +323,27 @@ void main() {
     // Desmonta para cancelar el timer de seguimiento antes de cerrar el test.
     await tester.pumpWidget(const SizedBox());
   });
+
+  for (final perfil in ['comprador', 'cargador']) {
+    testWidgets('Perfil $perfil ofrece enlaces públicos sin documentos publicados', (tester) async {
+      errorListado = const MercadoApiException('Sin documentos.', statusCode: 404);
+      await tester.pumpWidget(anclado(ProfileScreen(
+        api: ApiFalsa(),
+        actor: {...cargadorPerfilMap(), 'perfil': perfil},
+        onRefresh: () async {},
+      )));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.byType(PublicLinks),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      for (final page in PublicPage.values) {
+        expect(find.text(page.label), findsOneWidget);
+      }
+      expect(aceptaciones, isEmpty);
+    });
+  }
 
   testWidgets('Perfil lista documentos legales y acepta la versión vigente', (
     tester,

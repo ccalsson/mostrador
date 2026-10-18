@@ -212,50 +212,6 @@ class MercadoApi {
     return me();
   }
 
-  Future<Map<String, dynamic>> registerBuyer({
-    required String name,
-    required String email,
-    required String password,
-    required String phone,
-    required String country,
-    required String documentType,
-    required String documentNumber,
-  }) async {
-    final result = await post(
-      'auth/registro',
-      body: {
-        'nombre': name,
-        'email': email,
-        'password': password,
-        'telefono': phone,
-        'pais': country,
-        'tipoDocumento': documentType,
-        'numeroDocumento': documentNumber,
-      },
-    );
-    await saveToken(result['token'] as String);
-    return me();
-  }
-
-  Future<Map<String, dynamic>> registerCourier({
-    required String name,
-    required String email,
-    required String password,
-    required String phone,
-  }) async {
-    final result = await post(
-      'auth/registro-cargador',
-      body: {
-        'nombre': name,
-        'email': email,
-        'password': password,
-        'telefono': phone,
-      },
-    );
-    await saveToken(result['token'] as String);
-    return me();
-  }
-
   Future<String> startGoogle(String profile) async {
     final result = await post('auth/google', body: {'perfil': profile});
     return result['url'] as String;

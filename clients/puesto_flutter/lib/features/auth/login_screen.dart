@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/auth/auth_controller.dart';
 import '../../core/errors/api_exceptions.dart';
 import '../../core/tema.dart';
+import '../../core/widgets/public_links.dart';
 import '../../services/tenant_service.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
@@ -140,6 +141,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     style: TextStyle(color: theme.colorScheme.error),
                   ),
                 ],
+                const SizedBox(height: 16),
+                const PublicLinks(),
               ],
             ),
           ),

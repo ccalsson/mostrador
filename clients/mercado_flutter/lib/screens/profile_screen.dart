@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../market_api.dart';
 import '../models.dart';
+import '../widgets/public_links.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({
@@ -289,6 +290,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
             onTap: () => _abrirDocumento(documento),
           ),
       ],
+      const SizedBox(height: 16),
+      const PublicLinks(),
     ],
   );
 }

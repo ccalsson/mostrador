@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/auth/auth_controller.dart';
 import '../../core/tema.dart';
+import '../../core/widgets/public_links.dart';
 import '../../core/widgets/titulo_seccion.dart';
 import '../../models/staff_session.dart';
 import '../../services/catalogo_service.dart';
@@ -331,6 +332,8 @@ class _SesionPane extends ConsumerWidget {
           title: Text(sesion?.staff.nombre ?? '—'),
           subtitle: Text('Rol: ${sesion?.staff.rol.label ?? '—'}'),
         ),
+        const SizedBox(height: 16),
+        const PublicLinks(),
       ],
     );
   }

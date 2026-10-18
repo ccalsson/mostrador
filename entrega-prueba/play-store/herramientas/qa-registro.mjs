@@ -1,0 +1,64 @@
+import { createRequire } from 'node:module';
+import { dirname, resolve, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { mkdirSync } from 'node:fs';
+import assert from 'node:assert/strict';
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
+const { chromium } = createRequire(join(root, 'repoweb/package.json'))('playwright');
+const output = join(process.env.USERPROFILE, 'Desktop', 'Mostrador-PlayStore-2026-10-18', 'verificacion');
+mkdirSync(output, { recursive: true });
+const base = process.env.QA_API_URL || 'http://127.0.0.1:8091';
+const browser = await chromium.launch({ headless: true });
+const configResponse = await fetch(`${base}/api/mercado/v1/auth/config`);
+assert.equal(configResponse.status, 200);
+const config = await configResponse.json();
+assert.deepEqual(Object.keys(config).sort(), ['registroDisponible', 'siteKey']);
+const errors = [];
+try {
+  for (const width of [390, 1440]) {
+    const page = await browser.newPage({ viewport: { width, height: 950 } });
+    page.on('pageerror', e => errors.push(e.message));
+    await page.route('**/auth/config', route => route.fulfill({ json: { siteKey: '', registroDisponible: false } }));
+    await page.goto(`${base}/registro-mercado.html`);
+    await page.getByText('El registro no está disponible:', { exact: false }).waitFor();
+    assert.equal(await page.locator('#registro').isVisible(), false);
+    await page.unroute('**/auth/config');
+    await page.route('**/auth/config', route => route.fulfill({ json: { siteKey: 'qa-public-site-key', registroDisponible: true } }));
+    await page.route('https://challenges.cloudflare.com/**', route => route.fulfill({ contentType: 'text/javascript', body: 'window.turnstile={render:(selector,options)=>{window.qaCaptcha=options; options.callback("qa-not-a-real-token"); return 1;}, reset:()=>{}};' }));
+    let attempts = 0;
+    await page.route('**/auth/registro*', async route => {
+      const body = route.request().postDataJSON();
+      assert.equal(body.captcha, 'qa-not-a-real-token');
+      assert.equal(body.tipoDocumento, 'DNI');
+      attempts++;
+      await route.fulfill({ status: 201, json: { pendiente: true, aviso: 'Confirmá el correo para volver a la app.' } });
+    });
+    await page.route('**/auth/reenviar', route => route.fulfill({ json: { aviso: 'Si ese correo está pendiente, le llega otro enlace.' } }));
+    await page.reload();
+    await page.getByRole('button', { name: 'Crear cuenta', exact: true }).waitFor();
+    await page.getByLabel('Nombre', { exact: true }).fill('Prueba sin envío');
+    await page.getByLabel('Correo electrónico', { exact: true }).fill('qa@example.invalid');
+    await page.getByLabel('Contraseña', { exact: true }).fill('Local-test-only-45!');
+    await page.getByLabel('Teléfono', { exact: true }).fill('1111111111');
+    await page.getByLabel('Número de DNI', { exact: true }).fill('12345678');
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+    await page.screenshot({ path: join(output, `registro-${width}.png`), fullPage: true });
+    await page.getByRole('button', { name: 'Crear cuenta', exact: true }).click();
+    await page.getByText('Confirmá el correo para volver a la app.', { exact: true }).waitFor();
+    assert.equal(attempts, 1);
+    assert.equal(await page.locator('input[name=password]').inputValue(), '');
+    await page.getByRole('button', { name: 'Reenviar confirmación' }).click();
+    await page.getByText('Si ese correo está pendiente, le llega otro enlace.', { exact: true }).waitFor();
+    await page.goto(`${base}/registro-mercado.html?perfil=cargador`);
+    await page.locator('#registro').waitFor();
+    assert.equal(await page.locator('#comprador').isVisible(), false);
+    await page.evaluate(() => window.qaCaptcha['expired-callback']());
+    assert.equal(await page.getByRole('button', { name: 'Crear cuenta', exact: true }).isDisabled(), true);
+    await page.goto(`${base}/confirmar-mercado?token=corto&perfil=incorrecto`);
+    await page.getByText('El enlace no es válido.', { exact: false }).waitFor();
+    assert.equal(await page.getByRole('button', { name: 'Confirmar correo', exact: true }).count(), 0);
+    await page.close();
+  }
+  assert.deepEqual(errors, []);
+  console.log(JSON.stringify({ registrationUiMockedNetwork: 'PASS', viewports: [390, 1440], cases: ['config-fail-closed', 'pending-confirmation', 'password-cleared', 'resend', 'courier', 'expired-captcha', 'invalid-confirmation'], realConfigEndpoint: 'PASS', errors }));
+} finally { await browser.close(); }
