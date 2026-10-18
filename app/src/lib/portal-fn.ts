@@ -8,6 +8,7 @@ import { newId } from "@/lib/ids";
 import { num } from "@/lib/money";
 import { createCredentialUser, ensureBootstrapped, ensureStaffForUser } from "@/lib/server/bootstrap";
 import { audit, loadPedido, loadPedidos, mapProducto } from "@/lib/server/context";
+import { getCotizacion, precioEnArs } from "@/lib/server/moneda";
 import { reservarLineas, soltarReserva } from "@/lib/server/stock";
 import { pedirConfirmacion, origenDe } from "@/lib/seguridad/confirmar";
 import type { Cliente, FormaPago, Producto } from "@/lib/types";
@@ -296,15 +297,17 @@ export const pedirComoCliente = createServerFn({ method: "POST" })
       unidad: Producto["unidad"];
       unidad_label: string;
       precio: unknown;
+      moneda: unknown;
       stock: unknown;
       stock_minimo: unknown;
       alias: unknown;
       activo: boolean;
     }>`
-      select id, nombre, unidad, unidad_label, precio, stock, stock_minimo, alias, activo
+      select id, nombre, unidad, unidad_label, precio, moneda, stock, stock_minimo, alias, activo
       from productos where tenant_id = ${TENANT_ID} and activo = true
     `;
     const byId = new Map(productos.map((p) => [p.id, mapProducto(p)]));
+    const cotizacion = await getCotizacion();
     const lineas: { productoId: string; cantidad: number }[] = [];
     for (const line of items) {
       const prod = byId.get(line.productoId);
@@ -315,7 +318,7 @@ export const pedirComoCliente = createServerFn({ method: "POST" })
           id, pedido_id, producto_id, nombre_snapshot, cantidad, precio_unitario, unidad, unidad_label
         ) values (
           ${newId("itm")}, ${pedidoId}, ${prod.id}, ${prod.nombre}, ${line.cantidad},
-          ${prod.precio}, ${prod.unidad}, ${prod.unidadLabel}
+          ${precioEnArs(prod.precio, prod.moneda, cotizacion)}, ${prod.unidad}, ${prod.unidadLabel}
         )
       `;
     }

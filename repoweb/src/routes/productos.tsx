@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { ajustarStock, canalMercado, guardarCanalMercado, historialProducto, listProductos, resumenVentasProductos, saveProducto } from "@/lib/fn";
 import { cn } from "@/lib/cn";
 import { money } from "@/lib/money";
-import type { Producto, Unidad } from "@/lib/types";
+import type { Moneda, Producto, Unidad } from "@/lib/types";
 
 export const Route = createFileRoute("/productos")({ component: ProductosPage });
 
@@ -19,6 +19,7 @@ function empty(): Omit<Producto, "id" | "stock" | "stockBajo" | "orden"> {
     unidad: "bulto",
     unidadLabel: "cajón",
     precio: 0,
+    moneda: "USD",
     stockMinimo: 5,
     alias: [],
     activo: true,
@@ -51,6 +52,7 @@ function ProductosPage() {
           unidad: edit.unidad,
           unidadLabel: edit.unidadLabel,
           precio: Number(edit.precio),
+          moneda: edit.moneda ?? "USD",
           stockMinimo: Number(edit.stockMinimo),
           alias: edit.alias,
           activo: edit.activo,
@@ -246,7 +248,25 @@ function ProductosPage() {
             <Field label="Etiqueta" value={edit.unidadLabel} onChange={(v) => setEdit({ ...edit, unidadLabel: v })} />
           </div>
           <div className="mt-3 grid grid-cols-2 gap-2">
-            <Field label="Precio" value={String(edit.precio)} onChange={(v) => setEdit({ ...edit, precio: Number(v) || 0 })} />
+            <label className="text-sm font-medium">
+              Precio de lista
+              <div className="mt-1 flex gap-2">
+                <input
+                  className="h-11 w-full rounded-md border border-line px-3 tabular-nums"
+                  inputMode="decimal"
+                  value={String(edit.precio)}
+                  onChange={(e) => setEdit({ ...edit, precio: Number(e.target.value) || 0 })}
+                />
+                <select
+                  className="h-11 rounded-md border border-line px-2"
+                  value={edit.moneda ?? "USD"}
+                  onChange={(e) => setEdit({ ...edit, moneda: e.target.value as Moneda })}
+                >
+                  <option value="USD">USD</option>
+                  <option value="ARS">ARS</option>
+                </select>
+              </div>
+            </label>
             <Field
               label="Stock mínimo"
               value={String(edit.stockMinimo)}

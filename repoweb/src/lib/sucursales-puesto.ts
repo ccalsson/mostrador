@@ -3,6 +3,7 @@ import { authMiddleware } from "@/lib/auth/middleware";
 import { getSql } from "@/lib/db";
 import { newId } from "@/lib/ids";
 import { num } from "@/lib/money";
+import { monedaDeFila } from "@/lib/moneda";
 import { assertRole } from "@/lib/server/context";
 import { ensureStaffForUser } from "@/lib/server/bootstrap";
 import type { Staff } from "@/lib/types";
@@ -203,11 +204,12 @@ export const crearSucursalPuesto = createServerFn({ method: "POST" })
       unidad: string;
       unidad_label: string;
       precio: unknown;
+      moneda: unknown;
       stock_minimo: unknown;
       alias: unknown;
       orden: number | null;
     }>`
-      select id, nombre, unidad, unidad_label, precio, stock_minimo, alias, orden
+      select id, nombre, unidad, unidad_label, precio, moneda, stock_minimo, alias, orden
       from productos
       where tenant_id = ${staff.casaId} and activo = true
     `;
@@ -216,10 +218,10 @@ export const crearSucursalPuesto = createServerFn({ method: "POST" })
       const alias = typeof producto.alias === "string" ? producto.alias : JSON.stringify(producto.alias ?? []);
       await sql`
         insert into productos (
-          id, tenant_id, nombre, unidad, unidad_label, precio, stock, stock_minimo, alias, activo, orden, publicado_online
+          id, tenant_id, nombre, unidad, unidad_label, precio, moneda, stock, stock_minimo, alias, activo, orden, publicado_online
         ) values (
           ${copia}, ${libros}, ${producto.nombre}, ${producto.unidad}, ${producto.unidad_label},
-          ${num(producto.precio)}, ${0}, ${num(producto.stock_minimo)}, ${alias}::jsonb,
+          ${num(producto.precio)}, ${monedaDeFila(producto.moneda)}, ${0}, ${num(producto.stock_minimo)}, ${alias}::jsonb,
           ${true}, ${producto.orden}, ${false}
         )
       `;

@@ -1,5 +1,6 @@
 export type Rol = "admin" | "cajero" | "vendedor";
 export type Unidad = "bulto" | "kg";
+export type Moneda = "USD" | "ARS";
 export type PedidoEstado =
   | "borrador"
   | "enviado"
@@ -48,6 +49,8 @@ export type Producto = {
   unidad: Unidad;
   unidadLabel: string;
   precio: number;
+  /** La columna `productos.moneda`. Undefined cuando la consulta no la trajo. */
+  moneda?: Moneda;
   stock: number;
   stockMinimo: number;
   alias: string[];

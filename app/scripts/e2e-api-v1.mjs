@@ -93,6 +93,11 @@ function arsDe(usd) {
   return Math.ceil((usd * fx * 1.05) / 100) * 100;
 }
 
+// El precio de lista puede estar en USD o en pesos; la fila dice cuál.
+function arsDeProducto(p) {
+  return p.moneda === "ARS" ? Math.round(p.precio * 100) / 100 : arsDe(p.precio);
+}
+
 async function request(method, path, { token, body, headers } = {}) {
   const url = path.startsWith("http") ? path : new URL(path, BASE).toString();
   const init = { method, headers: { ...(headers ?? {}) } };
@@ -631,7 +636,7 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
     assert.equal(pedido.estado, "enviado");
     assert.equal(pedido.clientUuid, clientUuid);
     assert.equal(pedido.vendedorId, state.staffIds.vendedor);
-    approx(pedido.total, 2 * arsDe(state.banana.precio));
+    approx(pedido.total, 2 * arsDeProducto(state.banana));
 
     approx(await stockOf(state.banana.id), state.bananaStock0, "crear pedido no debe mover stock");
 
@@ -817,7 +822,7 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
     });
     assert.equal(pedido.status, 201);
     state.p2 = pedido.data.data;
-    approx(state.p2.total, arsDe(state.morron.precio));
+    approx(state.p2.total, arsDeProducto(state.morron));
 
     const entregarAntes = await api("POST", `/pedidos/${state.p2.id}/entregar`, { token: state.tokens.vendedor });
     expectError(entregarAntes, 400, /ya cobrado/i);
@@ -2341,7 +2346,7 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
     assert.equal(pedido1.clienteId, ficha0.data.data.id);
     assert.equal(pedido1.items.length, 1);
     assert.equal(pedido1.items[0].productoId, prod.id);
-    approx(pedido1.total, prod.precio * 2);
+    approx(pedido1.total, 2 * arsDeProducto(prod));
 
     // Transferencia: exige y guarda el comprobante.
     const transferencia = await api("POST", "/portal/pedidos", {

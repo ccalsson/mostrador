@@ -7,6 +7,7 @@ import { authMiddleware } from "@/lib/auth/middleware";
 import { TENANT_ID } from "@/lib/catalog";
 import { getSql } from "@/lib/db";
 import { newId } from "@/lib/ids";
+import { getCotizacion, monedaDeFila, precioEnArs } from "@/lib/moneda";
 import { num } from "@/lib/money";
 import { createCredentialUser, ensureBootstrapped, ensureStaffForUser } from "@/lib/server/bootstrap";
 import { audit, loadPedido, mapProducto } from "@/lib/server/context";
@@ -343,14 +344,21 @@ export const pedirComoCliente = createServerFn({ method: "POST" })
       )
     `;
     const productos = await sql<Parameters<typeof mapProducto>[0]>`
-      select id, nombre, unidad, unidad_label, precio, stock, stock_minimo, alias, activo
+      select id, nombre, unidad, unidad_label, precio, moneda, stock, stock_minimo, alias, activo
       from productos where tenant_id = ${TENANT_ID} and activo = true
     `;
-    const byId = new Map(productos.map((p) => [p.id, mapProducto(p)]));
+    const cotizacion = await getCotizacion();
+    const porId = new Map(
+      productos.map((row) => {
+        const prod = mapProducto(row);
+        return [prod.id, { prod, ars: precioEnArs(prod.precio, monedaDeFila(prod.moneda), cotizacion) }] as const;
+      }),
+    );
     const lineas: { productoId: string; cantidad: number }[] = [];
     for (const line of items) {
-      const prod = byId.get(line.productoId);
-      if (!prod) throw new Error("Hay un producto que ya no está.");
+      const ficha = porId.get(line.productoId);
+      if (!ficha) throw new Error("Hay un producto que ya no está.");
+      const prod = ficha.prod;
       if (line.cantidad > 500) throw new Error("La cantidad de una línea es demasiado alta.");
       lineas.push({ productoId: prod.id, cantidad: line.cantidad });
       await sql`
@@ -358,7 +366,7 @@ export const pedirComoCliente = createServerFn({ method: "POST" })
           id, pedido_id, producto_id, nombre_snapshot, cantidad, precio_unitario, unidad, unidad_label
         ) values (
           ${newId("itm")}, ${pedidoId}, ${prod.id}, ${prod.nombre}, ${line.cantidad},
-          ${prod.precio}, ${prod.unidad}, ${prod.unidadLabel}
+          ${ficha.ars}, ${prod.unidad}, ${prod.unidadLabel}
         )
       `;
     }

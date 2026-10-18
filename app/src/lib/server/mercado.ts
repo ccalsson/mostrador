@@ -7,6 +7,7 @@ import { num } from "@/lib/money";
 import { pedirConfirmacionMercado } from "@/lib/seguridad/confirmar-mercado";
 import { claveAceptable, correoAceptable } from "@/lib/seguridad/correo";
 import { cupoFirme } from "@/lib/seguridad/cupo-db";
+import { getCotizacion, precioEnArs } from "@/lib/server/moneda";
 import { reservarLineas, soltarReserva } from "@/lib/server/stock";
 import { textoCondicion, tierContratado } from "@/lib/torre/condiciones";
 import { avisosDe, comisionDePuesto, lineasPorPuesto, puedeAparecer } from "@/lib/torre/presencia";
@@ -615,10 +616,12 @@ export async function createOrders(
       const presencia = await puedeAparecer(tenantId, { mercadoAlToque: true });
       const comision = await comisionDePuesto(tenantId);
       const condicion = { ...comision, tier: presencia.tier };
+      const cotizacion = await getCotizacion();
       const productoRows: Array<{
         id: string;
         nombre: string;
         precio: unknown;
+        moneda: unknown;
         stock: unknown;
         unidad: string;
         unidad_label: string;
@@ -628,11 +631,12 @@ export async function createOrders(
           id: string;
           nombre: string;
           precio: unknown;
+          moneda: unknown;
           stock: unknown;
           unidad: string;
           unidad_label: string;
         }>`
-          select id, nombre, precio, stock, unidad, unidad_label
+          select id, nombre, precio, moneda, stock, unidad, unidad_label
           from productos
           where id = ${line.productoId} and tenant_id = ${tenantId}
             and activo = true and publicado_online = true
@@ -657,6 +661,9 @@ export async function createOrders(
           ${medioPago === "transferencia" ? "informado" : "pendiente"}, ${JSON.stringify(condicion)}::jsonb, now()
         )
       `;
+      const preciosArs = productoRows.map((product) =>
+        precioEnArs(num(product.precio), product.moneda === "ARS" ? "ARS" : "USD", cotizacion),
+      );
       for (let index = 0; index < lines.length; index += 1) {
         const line = lines[index]!;
         const product = productoRows[index]!;
@@ -665,7 +672,7 @@ export async function createOrders(
             id, pedido_id, producto_id, nombre_snapshot, cantidad, precio_unitario, unidad, unidad_label
           ) values (
             ${newId("itm")}, ${pedidoId}, ${product.id}, ${product.nombre}, ${line.cantidad},
-            ${product.precio}, ${product.unidad}, ${product.unidad_label}
+            ${preciosArs[index]}, ${product.unidad}, ${product.unidad_label}
           )
         `;
       }
@@ -681,10 +688,10 @@ export async function createOrders(
           productoId: product.id,
           nombre: product.nombre,
           cantidad: line.cantidad,
-          precioUnitario: num(product.precio),
+          precioUnitario: preciosArs[index]!,
           unidad: product.unidad,
           unidadLabel: product.unidad_label,
-          subtotal: Math.round(line.cantidad * num(product.precio) * 100) / 100,
+          subtotal: Math.round(line.cantidad * preciosArs[index]! * 100) / 100,
         };
       });
       const totalPedido =

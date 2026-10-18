@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { authMiddleware } from "@/lib/auth/middleware";
 import { getSql } from "@/lib/db";
 import { newId } from "@/lib/ids";
+import { getCotizacion, monedaDeFila, precioEnArs, reetiquetar } from "@/lib/moneda";
 import { num } from "@/lib/money";
 import { matchProduct } from "@/lib/server/match";
 import { applyStock, hayReserva, reservarLineas, soltarReserva } from "@/lib/server/stock";
@@ -25,6 +26,7 @@ import type {
   Alerta,
   Cliente,
   FormaPago,
+  Moneda,
   Pedido,
   PedidoEstado,
   Producto,
@@ -150,6 +152,7 @@ export const listProductos = createServerFn({ method: "GET" })
       unidad: Producto["unidad"];
       unidad_label: string;
       precio: unknown;
+      moneda: unknown;
       stock: unknown;
       stock_minimo: unknown;
       alias: unknown;
@@ -157,7 +160,7 @@ export const listProductos = createServerFn({ method: "GET" })
       orden: unknown;
       publicado_online: boolean | null;
     }>`
-      select id, nombre, unidad, unidad_label, precio, stock, stock_minimo, alias, activo, orden, publicado_online
+      select id, nombre, unidad, unidad_label, precio, moneda, stock, stock_minimo, alias, activo, orden, publicado_online
       from productos
       where tenant_id = ${staff.tenantId}
       order by orden nulls last, lower(nombre)
@@ -383,6 +386,7 @@ export const saveProducto = createServerFn({ method: "POST" })
     unidad: Producto["unidad"];
     unidadLabel: string;
     precio: number;
+    moneda?: Moneda;
     stockMinimo: number;
     alias: string[];
     activo: boolean;
@@ -399,38 +403,44 @@ export const saveProducto = createServerFn({ method: "POST" })
     }
     const id = data.id ?? newId("p");
     if (data.id) {
-      const prev = await sql<{ precio: unknown; nombre: string }>`
-        select precio, nombre from productos where id = ${data.id} and tenant_id = ${staff.tenantId}
+      const prev = await sql<{ precio: unknown; nombre: string; moneda: unknown }>`
+        select precio, nombre, moneda from productos where id = ${data.id} and tenant_id = ${staff.tenantId}
       `;
+      const anterior = prev[0] ? monedaDeFila(prev[0].moneda) : null;
+      const precio =
+        data.moneda && anterior && data.moneda !== anterior
+          ? reetiquetar(num(prev[0]!.precio), anterior, data.moneda, await getCotizacion())
+          : data.precio;
       await sql.query(
         `update productos
          set nombre=$1, unidad=$2, unidad_label=$3, precio=$4, stock_minimo=$5, alias=$6::jsonb, activo=$7,
-             publicado_online = coalesce($8, publicado_online), updated_at=now()
+             publicado_online = coalesce($8, publicado_online), moneda = coalesce($11, moneda), updated_at=now()
          where id=$9 and tenant_id=$10`,
         [
           data.nombre.trim(),
           data.unidad,
           data.unidadLabel.trim(),
-          data.precio,
+          precio,
           data.stockMinimo,
           JSON.stringify(data.alias),
           data.activo,
           data.publicadoOnline ?? null,
           data.id,
           staff.tenantId,
+          data.moneda ?? null,
         ],
       );
-      if (prev[0] && num(prev[0].precio) !== data.precio) {
+      if (prev[0] && num(prev[0].precio) !== precio) {
         await audit(staff.tenantId, staff, "cambio_precio", "producto", {
           producto: data.nombre,
           de: num(prev[0].precio),
-          a: data.precio,
+          a: precio,
         });
       }
     } else {
       await sql.query(
-        `insert into productos (id, tenant_id, nombre, unidad, unidad_label, precio, stock, stock_minimo, alias, activo, publicado_online)
-         values ($1,$2,$3,$4,$5,$6,0,$7,$8::jsonb,$9,$10)`,
+        `insert into productos (id, tenant_id, nombre, unidad, unidad_label, precio, moneda, stock, stock_minimo, alias, activo, publicado_online)
+         values ($1,$2,$3,$4,$5,$6,$11,0,$7,$8::jsonb,$9,$10)`,
         [
           id,
           staff.tenantId,
@@ -442,6 +452,7 @@ export const saveProducto = createServerFn({ method: "POST" })
           JSON.stringify(data.alias),
           data.activo,
           data.publicadoOnline ?? false,
+          data.moneda ?? "USD",
         ],
       );
       await audit(staff.tenantId, staff, "alta_producto", "producto", { id, nombre: data.nombre });
@@ -563,15 +574,22 @@ async function insertPedido(opts: {
     unidad: Producto["unidad"];
     unidad_label: string;
     precio: unknown;
+    moneda: unknown;
     stock: unknown;
     stock_minimo: unknown;
     alias: unknown;
     activo: boolean;
   }>`
-    select id, nombre, unidad, unidad_label, precio, stock, stock_minimo, alias, activo
+    select id, nombre, unidad, unidad_label, precio, moneda, stock, stock_minimo, alias, activo
     from productos where tenant_id = ${opts.staff.tenantId}
   `;
-  const byId = new Map(productos.map((p) => [p.id, mapProducto(p)]));
+  const cotizacion = await getCotizacion();
+  const porId = new Map(
+    productos.map((row) => {
+      const prod = mapProducto(row);
+      return [prod.id, { prod, ars: precioEnArs(prod.precio, monedaDeFila(prod.moneda), cotizacion) }] as const;
+    }),
+  );
   const pedidoId = newId("ped");
   await sql`
     insert into pedidos (
@@ -582,14 +600,15 @@ async function insertPedido(opts: {
     )
   `;
   for (const line of opts.items) {
-    const prod = byId.get(line.productoId);
-    if (!prod || line.cantidad <= 0) continue;
+    const ficha = porId.get(line.productoId);
+    if (!ficha || line.cantidad <= 0) continue;
+    const prod = ficha.prod;
     await sql`
       insert into pedido_items (
         id, pedido_id, producto_id, nombre_snapshot, cantidad, precio_unitario, unidad, unidad_label
       ) values (
         ${newId("itm")}, ${pedidoId}, ${prod.id}, ${prod.nombre}, ${line.cantidad},
-        ${prod.precio}, ${prod.unidad}, ${prod.unidadLabel}
+        ${ficha.ars}, ${prod.unidad}, ${prod.unidadLabel}
       )
     `;
   }
@@ -755,21 +774,29 @@ export const updatePedidoItems = createServerFn({ method: "POST" })
       unidad: Producto["unidad"];
       unidad_label: string;
       precio: unknown;
+      moneda: unknown;
       stock: unknown;
       stock_minimo: unknown;
       alias: unknown;
       activo: boolean;
-    }>`select id, nombre, unidad, unidad_label, precio, stock, stock_minimo, alias, activo from productos where tenant_id = ${staff.tenantId}`;
-    const byId = new Map(productos.map((p) => [p.id, mapProducto(p)]));
+    }>`select id, nombre, unidad, unidad_label, precio, moneda, stock, stock_minimo, alias, activo from productos where tenant_id = ${staff.tenantId}`;
+    const cotizacion = await getCotizacion();
+    const porId = new Map(
+      productos.map((row) => {
+        const prod = mapProducto(row);
+        return [prod.id, { prod, ars: precioEnArs(prod.precio, monedaDeFila(prod.moneda), cotizacion) }] as const;
+      }),
+    );
     for (const line of data.items) {
-      const prod = byId.get(line.productoId);
-      if (!prod || line.cantidad <= 0) continue;
+      const ficha = porId.get(line.productoId);
+      if (!ficha || line.cantidad <= 0) continue;
+      const prod = ficha.prod;
       await sql`
         insert into pedido_items (
           id, pedido_id, producto_id, nombre_snapshot, cantidad, precio_unitario, unidad, unidad_label
         ) values (
           ${newId("itm")}, ${data.id}, ${prod.id}, ${prod.nombre}, ${line.cantidad},
-          ${prod.precio}, ${prod.unidad}, ${prod.unidadLabel}
+          ${ficha.ars}, ${prod.unidad}, ${prod.unidadLabel}
         )
       `;
     }

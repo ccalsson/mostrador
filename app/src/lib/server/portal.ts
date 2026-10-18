@@ -5,6 +5,7 @@ import { newId } from "@/lib/ids";
 import { num } from "@/lib/money";
 import { createCredentialUser, ensureBootstrapped, SinAccesoError } from "@/lib/server/bootstrap";
 import { loadPedido, loadPedidos, mapProducto } from "@/lib/server/context";
+import { getCotizacion, precioEnArs } from "@/lib/server/moneda";
 import { claveAceptable, correoAceptable } from "@/lib/seguridad/correo";
 import { pedirConfirmacion } from "@/lib/seguridad/confirmar";
 import { reservarLineas, soltarReserva } from "@/lib/server/stock";
@@ -178,7 +179,7 @@ type ProductoRow = Parameters<typeof mapProducto>[0];
 export async function catalogoClienteForClient(ficha: Ficha): Promise<Producto[]> {
   const sql = await getSql();
   const rows = await sql<ProductoRow & { orden: unknown }>`
-    select id, nombre, unidad, unidad_label, precio, stock, stock_minimo, alias, activo, orden
+    select id, nombre, unidad, unidad_label, precio, moneda, stock, stock_minimo, alias, activo, orden
     from productos
     where tenant_id = ${ficha.tenantId} and activo = true
     order by orden nulls last, lower(nombre)
@@ -279,10 +280,11 @@ export async function pedirComoClienteForClient(ficha: Ficha, input: PedirComoCl
     )
   `;
   const productos = await sql<ProductoRow>`
-    select id, nombre, unidad, unidad_label, precio, stock, stock_minimo, alias, activo
+    select id, nombre, unidad, unidad_label, precio, moneda, stock, stock_minimo, alias, activo
     from productos where tenant_id = ${tenantId} and activo = true
   `;
   const byId = new Map(productos.map((p) => [p.id, mapProducto(p)]));
+  const cotizacion = await getCotizacion();
   const lineas: { productoId: string; cantidad: number }[] = [];
   for (const line of items) {
     const prod = byId.get(line.productoId);
@@ -293,7 +295,7 @@ export async function pedirComoClienteForClient(ficha: Ficha, input: PedirComoCl
         id, pedido_id, producto_id, nombre_snapshot, cantidad, precio_unitario, unidad, unidad_label
       ) values (
         ${newId("itm")}, ${pedidoId}, ${prod.id}, ${prod.nombre}, ${line.cantidad},
-        ${prod.precio}, ${prod.unidad}, ${prod.unidadLabel}
+        ${precioEnArs(prod.precio, prod.moneda, cotizacion)}, ${prod.unidad}, ${prod.unidadLabel}
       )
     `;
   }

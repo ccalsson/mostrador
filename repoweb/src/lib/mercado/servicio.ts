@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth/server";
 import { getSql, withTransaction, type Sql } from "@/lib/db";
 import { newId } from "@/lib/ids";
 import { num } from "@/lib/money";
+import { getCotizacion, monedaDeFila, precioEnArs } from "@/lib/moneda";
 import { reservarLineas, soltarReserva } from "@/lib/server/stock";
 import { createCredentialUser, ensureBootstrapped, PRUEBA_EMAIL } from "@/lib/server/bootstrap";
 import { pedirConfirmacion } from "@/lib/seguridad/confirmar";
@@ -586,18 +587,25 @@ export async function crearPedidos(ses: Sesion, clave: string, lineas: LineaCana
           unidad: string;
           unidad_label: string;
           precio: unknown;
+          moneda: unknown;
           stock: unknown;
         }>`
-          select id, nombre, unidad, unidad_label, precio, stock
+          select id, nombre, unidad, unidad_label, precio, moneda, stock
           from productos
           where tenant_id = ${tenantId} and activo = true and publicado_online = true
         `;
-        const porId = new Map(productos.map((p) => [p.id, p]));
+        const cotizacion = await getCotizacion();
+        const porId = new Map(
+          productos.map((p) => [
+            p.id,
+            { p, ars: precioEnArs(num(p.precio), monedaDeFila(p.moneda), cotizacion) },
+          ]),
+        );
         for (const item of items) {
-          const producto = porId.get(item.productoId);
-          if (!producto) throw new MercadoError("Hay un producto que no está publicado.");
-          if (num(producto.stock) < item.cantidad) {
-            throw new MercadoError(`No alcanza el stock de ${producto.nombre}.`, 409);
+          const ficha = porId.get(item.productoId);
+          if (!ficha) throw new MercadoError("Hay un producto que no está publicado.");
+          if (num(ficha.p.stock) < item.cantidad) {
+            throw new MercadoError(`No alcanza el stock de ${ficha.p.nombre}.`, 409);
           }
         }
         const pedidoId = newId("ped");
@@ -626,13 +634,13 @@ export async function crearPedidos(ses: Sesion, clave: string, lineas: LineaCana
           )
         `;
         for (const item of items) {
-          const producto = porId.get(item.productoId)!;
+          const ficha = porId.get(item.productoId)!;
           await tx`
             insert into pedido_items (
               id, pedido_id, producto_id, nombre_snapshot, cantidad, precio_unitario, unidad, unidad_label
             ) values (
-              ${newId("itm")}, ${pedidoId}, ${producto.id}, ${producto.nombre}, ${item.cantidad},
-              ${num(producto.precio)}, ${producto.unidad}, ${producto.unidad_label}
+              ${newId("itm")}, ${pedidoId}, ${ficha.p.id}, ${ficha.p.nombre}, ${item.cantidad},
+              ${ficha.ars}, ${ficha.p.unidad}, ${ficha.p.unidad_label}
             )
           `;
         }

@@ -183,11 +183,12 @@ export async function crearSucursalForStaff(staff: Staff, input: { nombre: strin
     unidad: string;
     unidad_label: string;
     precio: unknown;
+    moneda: unknown;
     stock_minimo: unknown;
     alias: unknown;
     orden: number | null;
   }>`
-    select id, nombre, unidad, unidad_label, precio, stock_minimo, alias, orden
+    select id, nombre, unidad, unidad_label, precio, moneda, stock_minimo, alias, orden
     from productos
     where tenant_id = ${staff.casaId} and activo = true
   `;
@@ -196,10 +197,10 @@ export async function crearSucursalForStaff(staff: Staff, input: { nombre: strin
     const alias = typeof producto.alias === "string" ? producto.alias : JSON.stringify(producto.alias ?? []);
     await sql`
       insert into productos (
-        id, tenant_id, nombre, unidad, unidad_label, precio, stock, stock_minimo, alias, activo, orden, publicado_online
+        id, tenant_id, nombre, unidad, unidad_label, precio, moneda, stock, stock_minimo, alias, activo, orden, publicado_online
       ) values (
         ${copia}, ${libros}, ${producto.nombre}, ${producto.unidad}, ${producto.unidad_label},
-        ${num(producto.precio)}, ${0}, ${num(producto.stock_minimo)}, ${alias}::jsonb,
+        ${num(producto.precio)}, ${producto.moneda}, ${0}, ${num(producto.stock_minimo)}, ${alias}::jsonb,
         ${true}, ${producto.orden}, ${false}
       )
     `;

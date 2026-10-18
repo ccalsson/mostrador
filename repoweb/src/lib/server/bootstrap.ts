@@ -114,8 +114,8 @@ async function asegurarPuestoPrueba(sql: Awaited<ReturnType<typeof getSql>>) {
   `;
   await sql.query(
     `insert into productos (
-       id, tenant_id, nombre, unidad, unidad_label, precio, stock, stock_minimo, alias, activo, publicado_online
-     ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb, true, true)
+       id, tenant_id, nombre, unidad, unidad_label, precio, moneda, stock, stock_minimo, alias, activo, publicado_online
+     ) values ($1,$2,$3,$4,$5,$6,'ARS',$7,$8,$9::jsonb, true, true)
      on conflict (id) do nothing`,
     ["p_prueba_tomate", id, "Tomate de prueba", "bulto", "cajón", 1500, 40, 4, "[]"],
   );
@@ -145,10 +145,11 @@ async function asegurarCatalogo(sql: Awaited<ReturnType<typeof getSql>>) {
   for (const item of CATALOG) {
     const id = slugId("p", item.nombre);
     if (ya) {
+      // El seed del catálogo está escrito en pesos; la API lo cobra tal cual.
       await sql.query(
         `insert into productos (
-           id, tenant_id, nombre, unidad, unidad_label, precio, stock, stock_minimo, alias, activo, publicado_online
-         ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb, true, true)
+           id, tenant_id, nombre, unidad, unidad_label, precio, moneda, stock, stock_minimo, alias, activo, publicado_online
+         ) values ($1,$2,$3,$4,$5,$6,'ARS',$7,$8,$9::jsonb, true, true)
          on conflict (id) do nothing`,
         [
           id,
@@ -165,10 +166,11 @@ async function asegurarCatalogo(sql: Awaited<ReturnType<typeof getSql>>) {
     } else {
       await sql.query(
         `insert into productos (
-           id, tenant_id, nombre, unidad, unidad_label, precio, stock, stock_minimo, alias, activo, publicado_online
-         ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb, true, true)
+           id, tenant_id, nombre, unidad, unidad_label, precio, moneda, stock, stock_minimo, alias, activo, publicado_online
+         ) values ($1,$2,$3,$4,$5,$6,'ARS',$7,$8,$9::jsonb, true, true)
          on conflict (id) do update set
            precio = excluded.precio,
+           moneda = excluded.moneda,
            unidad = excluded.unidad,
            unidad_label = excluded.unidad_label,
            alias = excluded.alias,

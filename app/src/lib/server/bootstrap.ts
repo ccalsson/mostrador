@@ -11,6 +11,7 @@ import {
 import { getSql } from "@/lib/db";
 import { newId, slugId } from "@/lib/ids";
 import { num } from "@/lib/money";
+import { getCotizacion, precioEnArs } from "@/lib/server/moneda";
 import type { Staff } from "@/lib/types";
 import { loadStaffByUserId } from "./context";
 
@@ -173,13 +174,18 @@ async function seedHistory() {
     id: string;
     nombre: string;
     precio: unknown;
+    moneda: unknown;
     unidad: string;
     unidad_label: string;
-  }>`select id, nombre, precio, unidad, unidad_label from productos where tenant_id = ${TENANT_ID} order by nombre`;
+  }>`select id, nombre, precio, moneda, unidad, unidad_label from productos where tenant_id = ${TENANT_ID} order by nombre`;
   if (!cajero[0] || productos.length === 0) return;
 
   const cajeroId = cajero[0].id;
   const vendedorId = vendedor[0]?.id ?? cajeroId;
+  const cotizacion = await getCotizacion();
+  // El histórico de ejemplo se cobra en pesos, igual que un pedido real.
+  const arsDe = (p: { precio: unknown; moneda: unknown }) =>
+    precioEnArs(num(p.precio), p.moneda === "ARS" ? "ARS" : "USD", cotizacion);
 
   for (let day = 6; day >= 0; day -= 1) {
     const orders = day === 0 ? 3 : 4 + (day % 3);
@@ -204,13 +210,13 @@ async function seedHistory() {
       const picks = [productos[(day * 5 + i * 3) % productos.length], productos[(day * 5 + i * 3 + 7) % productos.length]];
       for (const prod of picks) {
         const qty = 1 + ((i + day) % 3);
-        const precio = num(prod.precio);
-        total += qty * precio;
+        const precioArs = arsDe(prod);
+        total += qty * precioArs;
         await sql`
           insert into pedido_items (
             id, pedido_id, producto_id, nombre_snapshot, cantidad, precio_unitario, unidad, unidad_label
           ) values (
-            ${newId("itm")}, ${pedidoId}, ${prod.id}, ${prod.nombre}, ${qty}, ${precio}, ${prod.unidad}, ${prod.unidad_label}
+            ${newId("itm")}, ${pedidoId}, ${prod.id}, ${prod.nombre}, ${qty}, ${precioArs}, ${prod.unidad}, ${prod.unidad_label}
           )
         `;
       }
@@ -237,7 +243,7 @@ async function seedHistory() {
           nombre: p.nombre,
           cantidad: 1 + ((i + day) % 3),
           unidad: p.unidad_label,
-          precio: num(p.precio),
+          precio: arsDe(p),
         })),
         total,
         formaPago: forma,
@@ -271,7 +277,7 @@ async function seedHistory() {
         insert into pedido_items (
           id, pedido_id, producto_id, nombre_snapshot, cantidad, precio_unitario, unidad, unidad_label
         ) values (
-          ${newId("itm")}, ${pedidoId}, ${prod.id}, ${prod.nombre}, ${2}, ${num(prod.precio)}, ${prod.unidad}, ${prod.unidad_label}
+          ${newId("itm")}, ${pedidoId}, ${prod.id}, ${prod.nombre}, ${2}, ${arsDe(prod)}, ${prod.unidad}, ${prod.unidad_label}
         )
       `;
     }
