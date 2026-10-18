@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { authMiddleware } from "@/lib/auth/middleware";
 import { getSql } from "@/lib/db";
 import { newId } from "@/lib/ids";
-import { getCotizacion, monedaDeFila, precioEnArs, reetiquetar } from "@/lib/moneda";
+import { getCotizacion, monedaDeFila, precioEnArs } from "@/lib/moneda";
 import { num } from "@/lib/money";
 import { matchProduct } from "@/lib/server/match";
 import { applyStock, hayReserva, reservarLineas, soltarReserva } from "@/lib/server/stock";
@@ -403,14 +403,10 @@ export const saveProducto = createServerFn({ method: "POST" })
     }
     const id = data.id ?? newId("p");
     if (data.id) {
-      const prev = await sql<{ precio: unknown; nombre: string; moneda: unknown }>`
-        select precio, nombre, moneda from productos where id = ${data.id} and tenant_id = ${staff.tenantId}
+      const prev = await sql<{ precio: unknown; nombre: string }>`
+        select precio, nombre from productos where id = ${data.id} and tenant_id = ${staff.tenantId}
       `;
-      const anterior = prev[0] ? monedaDeFila(prev[0].moneda) : null;
-      const precio =
-        data.moneda && anterior && data.moneda !== anterior
-          ? reetiquetar(num(prev[0]!.precio), anterior, data.moneda, await getCotizacion())
-          : data.precio;
+      const precio = data.precio;
       await sql.query(
         `update productos
          set nombre=$1, unidad=$2, unidad_label=$3, precio=$4, stock_minimo=$5, alias=$6::jsonb, activo=$7,

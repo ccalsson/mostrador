@@ -33,10 +33,3 @@ export function precioEnArs(precio: number, moneda: Moneda, cotizacion: number):
   const raw = precio * cotizacion * FACTOR;
   return Math.ceil(raw / 100) * 100;
 }
-
-/** Cambiarle la etiqueta a un precio guardado sin cambiar lo que vale. */
-export function reetiquetar(precio: number, de: Moneda, a: Moneda, cotizacion: number): number {
-  if (de === a) return precio;
-  const convertido = a === "ARS" ? precio * cotizacion : precio / cotizacion;
-  return Math.round(convertido * 100) / 100;
-}

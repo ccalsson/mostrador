@@ -3,6 +3,7 @@
 // misma mercadería. Este test compara el texto de las dos implementaciones.
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { stripTypeScriptTypes } from "node:module";
 import test from "node:test";
 
 const web = await readFile(new URL("../src/lib/moneda.ts", import.meta.url), "utf8");
@@ -153,8 +154,40 @@ test("todo alta de producto escribe la moneda en los dos backends", async () => 
   assert.equal(altas, 8, "se esperaban 5 altas de producto en la web y 3 en la API");
 });
 
-// La API no puede cambiar la etiqueta: ningún caller de saveProductoForStaff manda moneda,
-// así que su update conserva la que está guardada. La web sí, y ahí el precio se reetiqueta.
+for (const caso of [
+  { nombre: "USD a ARS", anterior: { precio: 10, moneda: "USD" }, precio: 20000, moneda: "ARS" },
+  { nombre: "ARS a USD", anterior: { precio: 16000, moneda: "ARS" }, precio: 20, moneda: "USD" },
+  { nombre: "misma moneda", anterior: { precio: 10, moneda: "USD" }, precio: 15, moneda: "USD" },
+  { nombre: "moneda omitida", anterior: { precio: 16000, moneda: "ARS" }, precio: 20000 },
+]) {
+  test(`editar producto respeta el importe ingresado: ${caso.nombre}`, async () => {
+    const src = await readFile(new URL("../src/lib/fn.ts", import.meta.url), "utf8");
+    const declaracion = src.slice(src.indexOf("export const saveProducto ="), src.indexOf("export const quitarProducto ="));
+    const js = stripTypeScriptTypes(declaracion.replace("export const", "const"));
+    const builder = { middleware() { return this; }, validator() { return this; }, handler(fn) { return fn; } };
+    const staff = { tenantId: "tenant-prueba", rol: "admin" };
+    let parametros;
+    const sql = async () => [caso.anterior];
+    sql.query = async (query, values) => {
+      assert.match(query, /update productos/);
+      assert.match(query, /moneda = coalesce\(\$11, moneda\)/);
+      parametros = values;
+    };
+    const save = new Function(
+      "createServerFn", "authMiddleware", "ensureStaffForUser", "assertRole", "getSql", "audit", "num",
+      `${js}\nreturn saveProducto;`,
+    )(() => builder, [], async () => staff, () => {}, async () => sql, async () => {}, Number);
+    await save({
+      context: { userId: "usuario-prueba" },
+      data: { id: "producto-prueba", nombre: "Producto", unidad: "kg", unidadLabel: "kg", precio: caso.precio,
+        moneda: caso.moneda, stockMinimo: 0, alias: [], activo: true },
+    });
+    assert.equal(parametros[3], caso.precio);
+    assert.equal(parametros[10], caso.moneda ?? null);
+    assert.equal(parametros[9], staff.tenantId);
+  });
+}
+
 test("la web no cambia un precio sin escribir la moneda", async () => {
   const archivos = ["../src/lib/fn.ts", "../src/lib/sucursales-puesto.ts", "../src/lib/server/bootstrap.ts"];
   for (const ruta of archivos) {
