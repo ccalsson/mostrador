@@ -5,6 +5,7 @@ import '../../core/errors/api_exceptions.dart';
 import '../../core/format.dart';
 import '../../models/escritorio.dart';
 import '../../services/escritorio_service.dart';
+import 'mensajes_tab.dart';
 
 class EscritorioPane extends ConsumerWidget {
   const EscritorioPane({super.key});
@@ -69,11 +70,14 @@ class _EscritorioBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 4,
+      length: 5,
       child: Column(
         children: [
           TabBar(
+            isScrollable: true,
+            tabAlignment: TabAlignment.start,
             tabs: const [
+              Tab(text: 'Mensajes'),
               Tab(text: 'Margen'),
               Tab(text: 'Deudas'),
               Tab(text: 'Cierres'),
@@ -83,6 +87,7 @@ class _EscritorioBody extends StatelessWidget {
           Expanded(
             child: TabBarView(
               children: [
+                const MensajesTab(),
                 _MargenTab(margen: data.margen),
                 _DeudasTab(deudas: data.deudas),
                 _CierresTab(cierres: data.cierres),
