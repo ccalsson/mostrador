@@ -140,8 +140,8 @@ void main() {
       find.text('Historial últimos 7 días · Cebolla Morada'),
       findsOneWidget,
     );
-    expect(find.text('10/10'), findsOneWidget);
-    expect(find.text('11/10'), findsOneWidget);
+    expect(find.text('10/10'), findsWidgets);
+    expect(find.text('11/10'), findsWidgets);
   });
 
   testWidgets('Conmutar a Ranking de cargadores muestra banner y lista',

@@ -1,8 +1,10 @@
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/errors/api_exceptions.dart';
 import '../../core/format.dart';
+import '../../models/reportes.dart';
 import '../../services/reportes_service.dart';
 
 enum _SeccionReporte {
@@ -305,42 +307,51 @@ class _DetalleHistorialProducto extends ConsumerWidget {
                   );
                 }
 
-                return ListView.separated(
-                  key: const Key('reportes_historial_lista'),
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: data.dias.length,
-                  separatorBuilder: (_, _) => const Divider(height: 1),
-                  itemBuilder: (context, index) {
-                    final item = data.dias[index];
-                    // Formato fecha DD/MM
-                    final partes = item.dia.split('-');
-                    final fechaLabel = partes.length == 3
-                        ? '${partes[2]}/${partes[1]}'
-                        : item.dia;
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _HistorialBarChart(dias: data.dias),
+                    const SizedBox(height: 12),
+                    ListView.separated(
+                      key: const Key('reportes_historial_lista'),
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: data.dias.length,
+                      separatorBuilder: (_, _) => const Divider(height: 1),
+                      itemBuilder: (context, index) {
+                        final item = data.dias[index];
+                        // Formato fecha DD/MM
+                        final partes = item.dia.split('-');
+                        final fechaLabel = partes.length == 3
+                            ? '${partes[2]}/${partes[1]}'
+                            : item.dia;
 
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      child: Row(
-                        children: [
-                          Text(
-                            fechaLabel,
-                            style: const TextStyle(fontWeight: FontWeight.w500),
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          child: Row(
+                            children: [
+                              Text(
+                                fechaLabel,
+                                style:
+                                    const TextStyle(fontWeight: FontWeight.w500),
+                              ),
+                              const Spacer(),
+                              Text(
+                                '${cantidadNum(item.cantidad)} u.',
+                                style: theme.textTheme.bodyMedium,
+                              ),
+                              const SizedBox(width: 16),
+                              Text(
+                                moneda(item.total),
+                                style:
+                                    const TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                            ],
                           ),
-                          const Spacer(),
-                          Text(
-                            '${cantidadNum(item.cantidad)} u.',
-                            style: theme.textTheme.bodyMedium,
-                          ),
-                          const SizedBox(width: 16),
-                          Text(
-                            moneda(item.total),
-                            style: const TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
+                        );
+                      },
+                    ),
+                  ],
                 );
               },
             ),
@@ -479,5 +490,123 @@ class _SeccionRankingCargadores extends ConsumerWidget {
         );
       },
     );
+  }
+}
+
+/// Barras verticales del total diario (7 días) del producto seleccionado.
+class _HistorialBarChart extends StatelessWidget {
+  const _HistorialBarChart({required this.dias});
+
+  final List<HistorialVentaDia> dias;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final valores = dias.map((d) => d.total).toList(growable: false);
+    final maximo = valores.fold<double>(0, (a, b) => b > a ? b : a);
+    final topeY = maximo == 0 ? 1.0 : maximo * 1.15;
+
+    return SizedBox(
+      key: const Key('reportes_historial_chart'),
+      height: 180,
+      child: BarChart(
+        BarChartData(
+          alignment: BarChartAlignment.spaceAround,
+          maxY: topeY,
+          borderData: FlBorderData(show: false),
+          gridData: FlGridData(
+            show: true,
+            drawVerticalLine: false,
+            horizontalInterval: topeY / 4,
+            getDrawingHorizontalLine: (_) =>
+                FlLine(color: colorScheme.outlineVariant, strokeWidth: 0.5),
+          ),
+          titlesData: FlTitlesData(
+            topTitles:
+                const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            rightTitles:
+                const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            leftTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 44,
+                interval: topeY / 4,
+                getTitlesWidget: (value, meta) => Text(
+                  _abreviar(value),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        fontSize: 10,
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                ),
+              ),
+            ),
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 22,
+                getTitlesWidget: (value, meta) {
+                  final i = value.toInt();
+                  if (i < 0 || i >= dias.length) {
+                    return const SizedBox.shrink();
+                  }
+                  final partes = dias[i].dia.split('-');
+                  final label = partes.length == 3
+                      ? '${partes[2]}/${partes[1]}'
+                      : dias[i].dia;
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      label,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            fontSize: 9,
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+          barTouchData: BarTouchData(
+            touchTooltipData: BarTouchTooltipData(
+              getTooltipItem: (group, _, rod, _) => BarTooltipItem(
+                '${dias[group.x].nombreTooltip}\n${moneda(rod.toY)}',
+                TextStyle(
+                  color: colorScheme.onInverseSurface,
+                  fontSize: 11,
+                ),
+              ),
+            ),
+          ),
+          barGroups: [
+            for (var i = 0; i < valores.length; i++)
+              BarChartGroupData(
+                x: i,
+                barRods: [
+                  BarChartRodData(
+                    toY: valores[i],
+                    width: 14,
+                    color: colorScheme.primary,
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                ],
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  static String _abreviar(double v) {
+    if (v >= 1000000) return '${(v / 1000000).toStringAsFixed(1)}M';
+    if (v >= 1000) return '${(v / 1000).toStringAsFixed(0)}k';
+    return v.toStringAsFixed(0);
+  }
+}
+
+extension on HistorialVentaDia {
+  String get nombreTooltip {
+    final partes = dia.split('-');
+    return partes.length == 3 ? '${partes[2]}/${partes[1]}' : dia;
   }
 }

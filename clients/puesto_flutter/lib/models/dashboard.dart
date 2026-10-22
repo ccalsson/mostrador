@@ -1,70 +1,196 @@
-/// Resumen del dashboard según el contrato v1 (`GET /api/v1/dashboard`).
-class DashboardResumen {
-  const DashboardResumen({
-    required this.totalVentas,
-    required this.totalCobrado,
-    required this.cantidadPedidos,
-    required this.cantidadCobros,
-    required this.pedidosPendientes,
-    required this.stockBajoCount,
-    required this.porFormaPago,
-    required this.alertasSinLeer,
+/// Modelos para `GET /api/v1/dashboard`.
+///
+/// El backend (`app/src/lib/server/panel.ts:dashboardResumenForStaff`)
+/// devuelve: dias, ventas, ventasPrev, tickets, ticketsPrev, ticketPromedio,
+/// enCola, series[], top[], formas[], movimientos[], cola[].
+library;
+
+class PuntoSerie {
+  const PuntoSerie({
+    required this.dia,
+    required this.total,
+    required this.n,
   });
 
-  /// Monto total de ventas en el período.
-  final double totalVentas;
+  /// Etiqueta de tiempo: `YYYY-MM-DD` (por día) o `YYYY-MM-DD HH24`
+  /// (por hora cuando `dias=1`).
+  final String dia;
+  final double total;
+  final int n;
 
-  /// Monto efectivamente cobrado en el período.
-  final double totalCobrado;
+  factory PuntoSerie.fromJson(Map<String, dynamic> json) => PuntoSerie(
+        dia: json['dia'] as String? ?? '',
+        total: (json['total'] as num?)?.toDouble() ?? 0,
+        n: (json['n'] as num?)?.toInt() ?? 0,
+      );
+}
 
-  /// Cantidad total de pedidos (cualquier estado).
-  final int cantidadPedidos;
+class ProductoTop {
+  const ProductoTop({
+    required this.nombre,
+    required this.cantidad,
+    required this.total,
+  });
 
-  /// Cantidad de cobros registrados.
-  final int cantidadCobros;
+  final String nombre;
+  final double cantidad;
+  final double total;
 
-  /// Pedidos aún pendientes de cobro (enviado/en_preparacion/listo).
-  final int pedidosPendientes;
+  factory ProductoTop.fromJson(Map<String, dynamic> json) => ProductoTop(
+        nombre: json['nombre'] as String? ?? '',
+        cantidad: (json['cantidad'] as num?)?.toDouble() ?? 0,
+        total: (json['total'] as num?)?.toDouble() ?? 0,
+      );
+}
 
-  /// Productos con stock bajo el mínimo.
-  final int stockBajoCount;
+class FormaPagoTotal {
+  const FormaPagoTotal({
+    required this.formaPago,
+    required this.total,
+    required this.n,
+  });
 
-  /// Mapa forma_pago → monto total cobrado.
-  final Map<String, double> porFormaPago;
+  final String formaPago;
+  final double total;
+  final int n;
 
-  /// Alertas aún no leídas.
-  final int alertasSinLeer;
+  factory FormaPagoTotal.fromJson(Map<String, dynamic> json) => FormaPagoTotal(
+        formaPago: json['formaPago'] as String? ?? '',
+        total: (json['total'] as num?)?.toDouble() ?? 0,
+        n: (json['n'] as num?)?.toInt() ?? 0,
+      );
+}
+
+class Movimiento {
+  const Movimiento({
+    required this.id,
+    required this.monto,
+    required this.formaPago,
+    required this.createdAt,
+    required this.cliente,
+    required this.numero,
+    required this.productos,
+  });
+
+  final String id;
+  final double monto;
+  final String formaPago;
+  final String createdAt;
+  final String cliente;
+  final int? numero;
+  final String productos;
+
+  factory Movimiento.fromJson(Map<String, dynamic> json) => Movimiento(
+        id: json['id'] as String? ?? '',
+        monto: (json['monto'] as num?)?.toDouble() ?? 0,
+        formaPago: json['formaPago'] as String? ?? '',
+        createdAt: json['createdAt'] as String? ?? '',
+        cliente: json['cliente'] as String? ?? '',
+        numero: (json['numero'] as num?)?.toInt(),
+        productos: json['productos'] as String? ?? '',
+      );
+}
+
+class PedidoCola {
+  const PedidoCola({
+    required this.id,
+    required this.cliente,
+    required this.estado,
+    required this.createdAt,
+    required this.total,
+    required this.vendedor,
+  });
+
+  final String id;
+  final String cliente;
+  final String estado;
+  final String createdAt;
+  final double total;
+  final String? vendedor;
+
+  factory PedidoCola.fromJson(Map<String, dynamic> json) => PedidoCola(
+        id: json['id'] as String? ?? '',
+        cliente: json['cliente'] as String? ?? '',
+        estado: json['estado'] as String? ?? '',
+        createdAt: json['createdAt'] as String? ?? '',
+        total: (json['total'] as num?)?.toDouble() ?? 0,
+        vendedor: json['vendedor'] as String?,
+      );
+}
+
+class DashboardResumen {
+  const DashboardResumen({
+    required this.dias,
+    required this.ventas,
+    required this.ventasPrev,
+    required this.tickets,
+    required this.ticketsPrev,
+    required this.ticketPromedio,
+    required this.enCola,
+    required this.series,
+    required this.top,
+    required this.formas,
+    required this.movimientos,
+    required this.cola,
+  });
+
+  final int dias;
+  final double ventas;
+  final double ventasPrev;
+  final int tickets;
+  final int ticketsPrev;
+  final double ticketPromedio;
+  final int enCola;
+  final List<PuntoSerie> series;
+  final List<ProductoTop> top;
+  final List<FormaPagoTotal> formas;
+  final List<Movimiento> movimientos;
+  final List<PedidoCola> cola;
 
   factory DashboardResumen.fromJson(Map<String, dynamic> json) {
-    Map<String, double> parsePorFormaPago(dynamic raw) {
-      if (raw is! Map) return {};
-      return {
-        for (final entry in raw.entries)
-          entry.key as String: (entry.value as num?)?.toDouble() ?? 0,
-      };
+    List<T> parseLista<T>(
+      dynamic raw,
+      T Function(Map<String, dynamic>) fromJson,
+    ) {
+      if (raw is! List) return const [];
+      return raw.whereType<Map<String, dynamic>>().map(fromJson).toList();
     }
 
     return DashboardResumen(
-      totalVentas: (json['totalVentas'] as num?)?.toDouble() ?? 0,
-      totalCobrado: (json['totalCobrado'] as num?)?.toDouble() ?? 0,
-      cantidadPedidos: (json['cantidadPedidos'] as num?)?.toInt() ?? 0,
-      cantidadCobros: (json['cantidadCobros'] as num?)?.toInt() ?? 0,
-      pedidosPendientes: (json['pedidosPendientes'] as num?)?.toInt() ?? 0,
-      stockBajoCount: (json['stockBajoCount'] as num?)?.toInt() ?? 0,
-      porFormaPago: parsePorFormaPago(json['porFormaPago']),
-      alertasSinLeer: (json['alertasSinLeer'] as num?)?.toInt() ?? 0,
+      dias: (json['dias'] as num?)?.toInt() ?? 7,
+      ventas: (json['ventas'] as num?)?.toDouble() ?? 0,
+      ventasPrev: (json['ventasPrev'] as num?)?.toDouble() ?? 0,
+      tickets: (json['tickets'] as num?)?.toInt() ?? 0,
+      ticketsPrev: (json['ticketsPrev'] as num?)?.toInt() ?? 0,
+      ticketPromedio: (json['ticketPromedio'] as num?)?.toDouble() ?? 0,
+      enCola: (json['enCola'] as num?)?.toInt() ?? 0,
+      series: parseLista(json['series'], PuntoSerie.fromJson),
+      top: parseLista(json['top'], ProductoTop.fromJson),
+      formas: parseLista(json['formas'], FormaPagoTotal.fromJson),
+      movimientos: parseLista(json['movimientos'], Movimiento.fromJson),
+      cola: parseLista(json['cola'], PedidoCola.fromJson),
     );
   }
 
-  /// Resumen vacío para el estado de carga.
   static const vacio = DashboardResumen(
-    totalVentas: 0,
-    totalCobrado: 0,
-    cantidadPedidos: 0,
-    cantidadCobros: 0,
-    pedidosPendientes: 0,
-    stockBajoCount: 0,
-    porFormaPago: {},
-    alertasSinLeer: 0,
+    dias: 7,
+    ventas: 0,
+    ventasPrev: 0,
+    tickets: 0,
+    ticketsPrev: 0,
+    ticketPromedio: 0,
+    enCola: 0,
+    series: [],
+    top: [],
+    formas: [],
+    movimientos: [],
+    cola: [],
   );
+
+  /// Delta percentual vs el período anterior. `null` si no hay base.
+  double? deltaVentasPct() =>
+      ventasPrev == 0 ? null : ((ventas - ventasPrev) / ventasPrev) * 100;
+
+  double? deltaTicketsPct() =>
+      ticketsPrev == 0 ? null : ((tickets - ticketsPrev) / ticketsPrev) * 100;
 }
