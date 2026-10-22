@@ -5,16 +5,174 @@ import '../../core/errors/api_exceptions.dart';
 import '../../models/staff_session.dart';
 import '../../models/usuario.dart';
 import '../../services/usuarios_service.dart';
-import 'usuario_form_dialog.dart';
+import 'usuario_form_controller.dart';
 
-/// Panel de gestión de usuarios: listado, alta y toggle activo/inactivo.
-/// Solo accesible para rol admin.
-class UsuariosPane extends ConsumerWidget {
+class UsuariosPane extends ConsumerStatefulWidget {
   const UsuariosPane({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<UsuariosPane> createState() => _UsuariosPaneState();
+}
+
+class _UsuariosPaneState extends ConsumerState<UsuariosPane> {
+  final _nombre = TextEditingController();
+  final _email = TextEditingController();
+  final _password = TextEditingController();
+  Rol _rol = Rol.vendedor;
+  bool _verPassword = false;
+  String? _validacion;
+
+  @override
+  void dispose() {
+    _nombre.dispose();
+    _email.dispose();
+    _password.dispose();
+    super.dispose();
+  }
+
+  void _limpiarForm() {
+    _nombre.clear();
+    _email.clear();
+    _password.clear();
+    _rol = Rol.vendedor;
+    _verPassword = false;
+    _validacion = null;
+  }
+
+  Future<void> _crear() async {
+    final nombre = _nombre.text.trim();
+    final email = _email.text.trim();
+    final password = _password.text;
+    if (nombre.isEmpty) {
+      return setState(() => _validacion = 'Ingresá el nombre.');
+    }
+    if (!email.contains('@') || email.length > 200) {
+      return setState(() => _validacion = 'Email inválido.');
+    }
+    if (password.length < 6) {
+      return setState(() => _validacion = 'La contraseña debe tener al menos 6 caracteres.');
+    }
+    setState(() => _validacion = null);
+    final ok = await ref.read(usuarioFormProvider.notifier).crear(
+      UsuarioInput(
+        nombre: nombre,
+        email: email,
+        password: password,
+        rol: _rol,
+      ),
+    );
+    if (!ok || !mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Usuario creado.')),
+    );
+    ref.invalidate(usuariosProvider);
+    _limpiarForm();
+  }
+
+  Future<void> _toggle(Usuario usuario) async {
+    final nuevoEstado = !usuario.activo;
+    try {
+      await ref.read(usuariosServiceProvider).toggle(usuario.id, activo: nuevoEstado);
+      ref.invalidate(usuariosProvider);
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..removeCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(error.message)));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..removeCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(content: Text('No se pudo cambiar el estado.')),
+        );
+    }
+  }
+
+  Future<void> _cambiarClave(Usuario usuario) async {
+    final controller = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('Cambiar contraseña'),
+              content: Form(
+                key: formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Usuario: ${usuario.nombre}'),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      key: const Key('cambiar_clave_input'),
+                      controller: controller,
+                      obscureText: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Nueva contraseña',
+                        hintText: 'Mínimo 8 caracteres',
+                      ),
+                      validator: (value) {
+                        if (value == null || value.length < 8) {
+                          return 'La contraseña debe tener al menos 8 caracteres';
+                        }
+                        return null;
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  child: const Text('Cancelar'),
+                ),
+                FilledButton(
+                  key: const Key('cambiar_clave_guardar'),
+                  onPressed: () {
+                    if (formKey.currentState?.validate() ?? false) {
+                      Navigator.of(context).pop(true);
+                    }
+                  },
+                  child: const Text('Cambiar'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+    controller.dispose();
+    if (result != true || !mounted) return;
+    try {
+      await ref.read(usuariosServiceProvider).cambiarClave(usuario.id, password: controller.text);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..removeCurrentSnackBar()
+        ..showSnackBar(const SnackBar(content: Text('Contraseña actualizada')));
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..removeCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(error.message)));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..removeCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(content: Text('No se pudo cambiar la contraseña.')),
+        );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final usuarios = ref.watch(usuariosProvider);
+    final estado = ref.watch(usuarioFormProvider);
+
     return Column(
       children: [
         Padding(
@@ -28,12 +186,6 @@ class UsuariosPane extends ConsumerWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
                 ),
-              ),
-              FilledButton.icon(
-                key: const Key('admin_nuevo_usuario'),
-                onPressed: () => mostrarFormUsuario(context),
-                icon: const Icon(Icons.person_add_outlined),
-                label: const Text('Nuevo usuario'),
               ),
             ],
           ),
@@ -57,34 +209,153 @@ class UsuariosPane extends ConsumerWidget {
                 ],
               ),
             ),
-            data: (lista) {
-              if (lista.isEmpty) {
-                return const Center(
-                  child: Text(
-                    'No hay usuarios.',
-                    key: Key('usuarios_vacia'),
-                  ),
-                );
-              }
-              return ListView.separated(
-                key: const Key('admin_usuarios_lista'),
-                itemCount: lista.length + 1,
-                separatorBuilder: (_, _) => const Divider(height: 1),
-                itemBuilder: (context, index) {
-                  if (index == lista.length) {
-                    return Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Text(
-                        '${lista.length} usuario${lista.length == 1 ? '' : 's'}',
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.bodySmall,
+            data: (lista) => Row(
+              children: [
+                Expanded(
+                  flex: 2,
+                  child: lista.isEmpty
+                      ? const Center(
+                          child: Text(
+                            'No hay usuarios.',
+                            key: Key('usuarios_vacia'),
+                          ),
+                        )
+                      : ListView.separated(
+                          key: const Key('admin_usuarios_lista'),
+                          itemCount: lista.length,
+                          separatorBuilder: (_, _) => const Divider(height: 1),
+                          itemBuilder: (context, index) {
+                            return _UsuarioTile(
+                              usuario: lista[index],
+                              onToggle: () => _toggle(lista[index]),
+                              onCambiarClave: () => _cambiarClave(lista[index]),
+                            );
+                          },
+                        ),
+                ),
+                Expanded(
+                  flex: 3,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.surfaceContainerLowest,
+                      border: Border(
+                        left: BorderSide(color: Theme.of(context).dividerColor),
                       ),
-                    );
-                  }
-                  return _UsuarioTile(usuario: lista[index]);
-                },
-              );
-            },
+                    ),
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text(
+                            'Nuevo usuario',
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                          const SizedBox(height: 16),
+                          TextField(
+                            key: const Key('admin_usuario_nombre'),
+                            controller: _nombre,
+                            textCapitalization: TextCapitalization.words,
+                            enabled: !estado.enviando,
+                            decoration: const InputDecoration(
+                              labelText: 'Nombre',
+                              isDense: true,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          TextField(
+                            key: const Key('admin_usuario_email'),
+                            controller: _email,
+                            keyboardType: TextInputType.emailAddress,
+                            enabled: !estado.enviando,
+                            decoration: const InputDecoration(
+                              labelText: 'Email',
+                              isDense: true,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          TextField(
+                            key: const Key('admin_usuario_password'),
+                            controller: _password,
+                            obscureText: !_verPassword,
+                            enabled: !estado.enviando,
+                            decoration: InputDecoration(
+                              labelText: 'Contraseña',
+                              isDense: true,
+                              suffixIcon: IconButton(
+                                icon: Icon(_verPassword
+                                    ? Icons.visibility_off
+                                    : Icons.visibility),
+                                onPressed: () =>
+                                    setState(() => _verPassword = !_verPassword),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          DropdownButtonFormField<Rol>(
+                            key: const Key('admin_usuario_rol'),
+                            initialValue: _rol,
+                            isExpanded: true,
+                            decoration: const InputDecoration(
+                              labelText: 'Rol',
+                              isDense: true,
+                            ),
+                            items: const [
+                              DropdownMenuItem(
+                                value: Rol.vendedor,
+                                child: Text('Vendedor'),
+                              ),
+                              DropdownMenuItem(
+                                value: Rol.cajero,
+                                child: Text('Cajero'),
+                              ),
+                              DropdownMenuItem(
+                                value: Rol.admin,
+                                child: Text('Dueño / Admin'),
+                              ),
+                            ],
+                            onChanged: estado.enviando
+                                ? null
+                                : (valor) =>
+                                    setState(() => _rol = valor ?? Rol.vendedor),
+                          ),
+                          if (_validacion != null || estado.errorMensaje != null) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              _validacion ?? estado.errorMensaje!,
+                              key: const Key('admin_usuario_error'),
+                              style: TextStyle(
+                                color: Theme.of(context).colorScheme.error,
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: 16),
+                          FilledButton(
+                            key: const Key('admin_usuario_guardar'),
+                            onPressed: estado.enviando ? null : _crear,
+                            child: estado.enviando
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  )
+                                : const Text('Crear'),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.only(top: 16),
+                            child: Text(
+                              '${lista.length} usuario${lista.length == 1 ? '' : 's'}',
+                              textAlign: TextAlign.center,
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ],
@@ -92,35 +363,19 @@ class UsuariosPane extends ConsumerWidget {
   }
 }
 
-class _UsuarioTile extends ConsumerWidget {
-  const _UsuarioTile({required this.usuario});
+class _UsuarioTile extends StatelessWidget {
+  const _UsuarioTile({
+    required this.usuario,
+    required this.onToggle,
+    required this.onCambiarClave,
+  });
 
   final Usuario usuario;
-
-  Future<void> _toggle(BuildContext context, WidgetRef ref) async {
-    final nuevoEstado = !usuario.activo;
-    try {
-      await ref
-          .read(usuariosServiceProvider)
-          .toggle(usuario.id, activo: nuevoEstado);
-      ref.invalidate(usuariosProvider);
-    } on ApiException catch (error) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context)
-        ..removeCurrentSnackBar()
-        ..showSnackBar(SnackBar(content: Text(error.message)));
-    } catch (_) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context)
-        ..removeCurrentSnackBar()
-        ..showSnackBar(
-          const SnackBar(content: Text('No se pudo cambiar el estado.')),
-        );
-    }
-  }
+  final VoidCallback onToggle;
+  final VoidCallback onCambiarClave;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final rolColors = switch (usuario.rol) {
       Rol.admin => Colors.deepPurple,
       Rol.cajero => Colors.blue,
@@ -131,9 +386,7 @@ class _UsuarioTile extends ConsumerWidget {
       leading: CircleAvatar(
         backgroundColor: rolColors.withValues(alpha: 0.12),
         child: Text(
-          usuario.nombre.isNotEmpty
-              ? usuario.nombre[0].toUpperCase()
-              : '?',
+          usuario.nombre.isNotEmpty ? usuario.nombre[0].toUpperCase() : '?',
           style: TextStyle(color: rolColors),
         ),
       ),
@@ -143,14 +396,21 @@ class _UsuarioTile extends ConsumerWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (!usuario.activo)
-            const Chip(
-              label: Text('Inactivo'),
+            Chip(
+              label: const Text('Baja'),
               visualDensity: VisualDensity.compact,
+              backgroundColor: Theme.of(context).colorScheme.errorContainer,
             ),
+          IconButton(
+            key: Key('admin_usuario_clave_${usuario.id}'),
+            tooltip: 'Cambiar contraseña',
+            icon: const Icon(Icons.key_outlined),
+            onPressed: onCambiarClave,
+          ),
           Switch(
             key: Key('admin_usuario_toggle_${usuario.id}'),
             value: usuario.activo,
-            onChanged: (_) => _toggle(context, ref),
+            onChanged: (_) => onToggle(),
           ),
         ],
       ),

@@ -41,6 +41,7 @@ CajaEstado _estado({double esperado = 0}) => CajaEstado(
       id: 'cje_1',
       abiertoAt: '2026-10-01 22:27:06.909015+00',
       esperado: esperado,
+      egresos: 0,
       totales: const [],
       ultimos: const [],
     );

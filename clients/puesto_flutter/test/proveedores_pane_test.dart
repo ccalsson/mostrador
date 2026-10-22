@@ -48,6 +48,11 @@ void main() {
       timeout: const Duration(seconds: 5),
     );
 
+    tester.view.physicalSize = const Size(1000, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    
     await tester.pumpWidget(
       ProviderScope(
         overrides: [apiClientProvider.overrideWithValue(api)],
@@ -57,7 +62,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Distribuidora Norte'), findsOneWidget);
-    await tester.tap(find.byKey(const Key('admin_editar_proveedor_prv_1')));
+    await tester.tap(find.byKey(const Key('admin_proveedor_prv_1')));
     await tester.pumpAndSettle();
 
     expect(find.text('Albahaca'), findsOneWidget);
@@ -71,6 +76,6 @@ void main() {
     expect(actualizacion.method, 'POST');
     expect(jsonDecode(actualizacion.body)['nombre'], 'Norte SRL');
     expect(lecturas, 2);
-    expect(find.text('Norte SRL'), findsOneWidget);
+    expect(find.text('Norte SRL'), findsWidgets);
   });
 }

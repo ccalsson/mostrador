@@ -5,14 +5,144 @@ import '../../core/errors/api_exceptions.dart';
 import '../../core/format.dart';
 import '../../models/cliente.dart';
 import '../../services/clientes_service.dart';
-import 'cliente_form_dialog.dart';
+import 'cliente_form_controller.dart';
 
-class ClientesPane extends ConsumerWidget {
+const _condicionesIva = {
+  'ri': 'IVA responsable inscripto',
+  'monotributo': 'Responsable monotributo',
+  'exento': 'IVA sujeto exento',
+  'consumidor_final': 'Consumidor final',
+};
+
+class ClientesPane extends ConsumerStatefulWidget {
   const ClientesPane({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ClientesPane> createState() => _ClientesPaneState();
+}
+
+class _ClientesPaneState extends ConsumerState<ClientesPane> {
+  Cliente? _seleccionado;
+  bool _modoNuevo = false;
+
+  final _nombre = TextEditingController();
+  final _telefono = TextEditingController();
+  final _cuit = TextEditingController();
+  final _direccion = TextEditingController();
+  bool _cuentaCorriente = false;
+  bool _activo = true;
+  String _condicionIva = 'consumidor_final';
+  String? _validacion;
+
+  @override
+  void dispose() {
+    _nombre.dispose();
+    _telefono.dispose();
+    _cuit.dispose();
+    _direccion.dispose();
+    super.dispose();
+  }
+
+  void _seleccionar(Cliente cliente) {
+    setState(() {
+      _seleccionado = cliente;
+      _modoNuevo = false;
+      _cargarForm(cliente);
+    });
+  }
+
+  void _nuevo() {
+    setState(() {
+      _seleccionado = null;
+      _modoNuevo = true;
+      _limpiarForm();
+    });
+  }
+
+  void _cargarForm(Cliente cliente) {
+    _nombre.text = cliente.nombre;
+    _telefono.text = cliente.telefono ?? '';
+    _cuit.text = cliente.cuit ?? '';
+    _direccion.text = cliente.direccion ?? '';
+    _cuentaCorriente = cliente.cuentaCorriente;
+    _activo = cliente.activo;
+    _condicionIva = _condicionesIva.containsKey(cliente.condicionIva)
+        ? cliente.condicionIva
+        : 'consumidor_final';
+    _validacion = null;
+  }
+
+  void _limpiarForm() {
+    _nombre.clear();
+    _telefono.clear();
+    _cuit.clear();
+    _direccion.clear();
+    _cuentaCorriente = false;
+    _activo = true;
+    _condicionIva = 'consumidor_final';
+    _validacion = null;
+  }
+
+  Future<void> _guardar() async {
+    final nombre = _nombre.text.trim();
+    final telefono = _telefono.text.trim();
+    if (nombre.isEmpty) {
+      return setState(() => _validacion = 'Ingresá el nombre del cliente.');
+    }
+    setState(() => _validacion = null);
+
+    final controller = ref.read(clienteFormProvider.notifier);
+    final ok = _modoNuevo
+        ? await controller.crear(
+            ClienteInput(
+              nombre: nombre,
+              telefono: telefono.isNotEmpty ? telefono : null,
+              cuentaCorriente: _cuentaCorriente,
+            ),
+          )
+        : await controller.actualizar(
+            _seleccionado!.id,
+            ClienteActualizacionInput(
+              nombre: nombre,
+              telefono: telefono.isNotEmpty ? telefono : null,
+              cuit: _cuit.text.trim().isNotEmpty ? _cuit.text.trim() : null,
+              direccion: _direccion.text.trim().isNotEmpty
+                  ? _direccion.text.trim()
+                  : null,
+              cuentaCorriente: _cuentaCorriente,
+              condicionIva: _condicionIva,
+              activo: _activo,
+            ),
+          );
+
+    if (!ok || !mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(_modoNuevo ? 'Cliente cargado.' : 'Cliente guardado.'),
+      ),
+    );
+    ref.invalidate(clientesProvider);
+    if (_modoNuevo) {
+      setState(() {
+        _modoNuevo = false;
+        _seleccionado = null;
+        _limpiarForm();
+      });
+    }
+  }
+
+  void _mostrarCuenta(Cliente cliente) {
+    showDialog<void>(
+      context: context,
+      builder: (_) => _CuentaCorrienteDialog(cliente: cliente),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final clientes = ref.watch(clientesProvider);
+    final estado = ref.watch(clienteFormProvider);
+
     return Column(
       children: [
         Padding(
@@ -29,7 +159,7 @@ class ClientesPane extends ConsumerWidget {
               ),
               FilledButton.icon(
                 key: const Key('admin_nuevo_cliente'),
-                onPressed: () => mostrarFormCliente(context),
+                onPressed: _nuevo,
                 icon: const Icon(Icons.person_add_outlined),
                 label: const Text('Nuevo cliente'),
               ),
@@ -52,67 +182,326 @@ class ClientesPane extends ConsumerWidget {
                 ],
               ),
             ),
-            data: (lista) {
-              if (lista.isEmpty) {
-                return const Center(
-                  child: Text('No hay clientes.', key: Key('clientes_vacia')),
-                );
-              }
-              return ListView.separated(
-                key: const Key('admin_clientes_lista'),
-                itemCount: lista.length,
-                separatorBuilder: (_, _) => const Divider(height: 1),
-                itemBuilder: (context, index) {
-                  final cliente = lista[index];
-                  return ListTile(
-                    key: Key('admin_cliente_${cliente.id}'),
-                    leading: CircleAvatar(
-                      child: Text(
-                        cliente.nombre.isNotEmpty
-                            ? cliente.nombre[0].toUpperCase()
-                            : '?',
+            data: (lista) => Row(
+              children: [
+                Expanded(
+                  flex: 2,
+                  child: lista.isEmpty
+                      ? const Center(
+                          child: Text(
+                            'No hay clientes.',
+                            key: Key('clientes_vacia'),
+                          ),
+                        )
+                      : ListView.separated(
+                          key: const Key('admin_clientes_lista'),
+                          itemCount: lista.length,
+                          separatorBuilder: (_, _) => const Divider(height: 1),
+                          itemBuilder: (context, index) {
+                            final cliente = lista[index];
+                            final seleccionado = _seleccionado?.id == cliente.id;
+                            return _ClienteTile(
+                              cliente: cliente,
+                              seleccionado: seleccionado,
+                              onTap: () => _seleccionar(cliente),
+                              onCuenta: () => _mostrarCuenta(cliente),
+                            );
+                          },
+                        ),
+                ),
+                if (_seleccionado != null || _modoNuevo)
+                  Expanded(
+                    flex: 3,
+                    child: Material(
+                      color: Theme.of(context).colorScheme.surfaceContainerLowest,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          border: Border(
+                            left: BorderSide(
+                              color: Theme.of(context).dividerColor,
+                            ),
+                          ),
+                        ),
+                        child: _FormPanel(
+                          nombreController: _nombre,
+                          telefonoController: _telefono,
+                          cuitController: _cuit,
+                          direccionController: _direccion,
+                          cuentaCorriente: _cuentaCorriente,
+                          activo: _activo,
+                          condicionIva: _condicionIva,
+                          onCuentaCorrienteChanged: (v) =>
+                              setState(() => _cuentaCorriente = v),
+                          onActivoChanged: (v) => setState(() => _activo = v),
+                          onCondicionIvaChanged: (v) =>
+                              setState(() => _condicionIva = v),
+                          modoNuevo: _modoNuevo,
+                          enviando: estado.enviando,
+                          errorMensaje: _validacion ?? estado.errorMensaje,
+                          onGuardar: _guardar,
+                          tieneCuentaCorriente: _seleccionado?.cuentaCorriente ?? false,
+                          onVerCuenta: _seleccionado != null
+                              ? () => _mostrarCuenta(_seleccionado!)
+                              : null,
+                          saldo: _seleccionado?.saldo ?? 0,
+                        ),
                       ),
                     ),
-                    title: Text(cliente.nombre),
-                    subtitle: Text(cliente.telefono ?? 'Sin teléfono'),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (cliente.cuentaCorriente)
-                          const Chip(
-                            label: Text('Cuenta Cte.'),
-                            visualDensity: VisualDensity.compact,
-                          ),
-                        IconButton(
-                          key: Key('admin_editar_cliente_${cliente.id}'),
-                          icon: const Icon(Icons.edit_outlined),
-                          tooltip: 'Editar cliente',
-                          onPressed: () =>
-                              mostrarFormCliente(context, existente: cliente),
-                        ),
-                        IconButton(
-                          icon: const Icon(
-                            Icons.account_balance_wallet_outlined,
-                          ),
-                          tooltip: 'Ver cuenta',
-                          onPressed: () => _mostrarCuenta(context, cliente),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              );
-            },
+                  ),
+              ],
+            ),
           ),
         ),
       ],
     );
   }
+}
 
-  void _mostrarCuenta(BuildContext context, Cliente cliente) {
-    showDialog<void>(
-      context: context,
-      builder: (_) => _CuentaCorrienteDialog(cliente: cliente),
+class _ClienteTile extends StatelessWidget {
+  const _ClienteTile({
+    required this.cliente,
+    required this.seleccionado,
+    required this.onTap,
+    required this.onCuenta,
+  });
+
+  final Cliente cliente;
+  final bool seleccionado;
+  final VoidCallback onTap;
+  final VoidCallback onCuenta;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      key: Key('admin_cliente_${cliente.id}'),
+      tileColor: seleccionado
+          ? Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3)
+          : null,
+      leading: CircleAvatar(
+        child: Text(
+          cliente.nombre.isNotEmpty ? cliente.nombre[0].toUpperCase() : '?',
+        ),
+      ),
+      title: Text(
+        cliente.nombre,
+        style: TextStyle(fontWeight: seleccionado ? FontWeight.w600 : null),
+      ),
+      subtitle: Text(cliente.telefono ?? 'Sin teléfono'),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (cliente.cuentaCorriente)
+            Chip(
+              label: const Text('Cuenta Cte.'),
+              visualDensity: VisualDensity.compact,
+              backgroundColor: Theme.of(context).colorScheme.tertiaryContainer,
+            ),
+          if (!cliente.activo)
+            Chip(
+              label: const Text('Baja'),
+              visualDensity: VisualDensity.compact,
+              backgroundColor: Theme.of(context).colorScheme.errorContainer,
+            ),
+          IconButton(
+            icon: const Icon(Icons.account_balance_wallet_outlined),
+            tooltip: 'Ver cuenta',
+            onPressed: cliente.cuentaCorriente ? onCuenta : null,
+          ),
+        ],
+      ),
+      onTap: onTap,
+    );
+  }
+}
+
+class _FormPanel extends StatelessWidget {
+  const _FormPanel({
+    required this.nombreController,
+    required this.telefonoController,
+    required this.cuitController,
+    required this.direccionController,
+    required this.cuentaCorriente,
+    required this.activo,
+    required this.condicionIva,
+    required this.onCuentaCorrienteChanged,
+    required this.onActivoChanged,
+    required this.onCondicionIvaChanged,
+    required this.modoNuevo,
+    required this.enviando,
+    required this.errorMensaje,
+    required this.onGuardar,
+    required this.tieneCuentaCorriente,
+    required this.onVerCuenta,
+    required this.saldo,
+  });
+
+  final TextEditingController nombreController;
+  final TextEditingController telefonoController;
+  final TextEditingController cuitController;
+  final TextEditingController direccionController;
+  final bool cuentaCorriente;
+  final bool activo;
+  final String condicionIva;
+  final ValueChanged<bool> onCuentaCorrienteChanged;
+  final ValueChanged<bool> onActivoChanged;
+  final ValueChanged<String> onCondicionIvaChanged;
+  final bool modoNuevo;
+  final bool enviando;
+  final String? errorMensaje;
+  final VoidCallback onGuardar;
+  final bool tieneCuentaCorriente;
+  final VoidCallback? onVerCuenta;
+  final double saldo;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            modoNuevo ? 'Nuevo cliente' : 'Editar cliente',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 16),
+          _campo(
+            key: const Key('admin_cliente_nombre'),
+            controller: nombreController,
+            label: 'Nombre o Razón Social',
+            requerido: true,
+            capitalization: TextCapitalization.words,
+          ),
+          _campo(
+            key: const Key('admin_cliente_telefono'),
+            controller: telefonoController,
+            label: 'Teléfono (opcional)',
+            keyboardType: TextInputType.phone,
+          ),
+          if (!modoNuevo) ...[
+            _campo(
+              key: const Key('admin_cliente_cuit'),
+              controller: cuitController,
+              label: 'CUIT o DNI',
+            ),
+            _campo(
+              key: const Key('admin_cliente_direccion'),
+              controller: direccionController,
+              label: 'Dirección',
+            ),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String>(
+              key: const Key('admin_cliente_condicion_iva'),
+              initialValue: condicionIva,
+              isExpanded: true,
+              decoration: const InputDecoration(
+                labelText: 'Condición frente al IVA',
+              ),
+              items: _condicionesIva.entries
+                  .map(
+                    (entry) => DropdownMenuItem(
+                      value: entry.key,
+                      child: Text(entry.value),
+                    ),
+                  )
+                  .toList(),
+              onChanged: enviando
+                  ? null
+                  : (value) {
+                      if (value != null) onCondicionIvaChanged(value);
+                    },
+            ),
+          ],
+          const SizedBox(height: 8),
+          SwitchListTile(
+            key: const Key('admin_cliente_cuenta'),
+            title: const Text('Habilitar cuenta corriente'),
+            subtitle: const Text('Permite compras a crédito.'),
+            value: cuentaCorriente,
+            onChanged: enviando ? null : onCuentaCorrienteChanged,
+          ),
+          if (!modoNuevo)
+            SwitchListTile(
+              key: const Key('admin_cliente_activo'),
+              title: const Text('Activo'),
+              value: activo,
+              onChanged: enviando ? null : onActivoChanged,
+            ),
+          if (tieneCuentaCorriente && onVerCuenta != null) ...[
+            const Divider(),
+            Card(
+              color: Theme.of(context).colorScheme.primaryContainer,
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Saldo actual', style: TextStyle(fontSize: 16)),
+                    Text(
+                      moneda(saldo),
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: saldo < 0 ? Colors.red : Colors.green,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: onVerCuenta,
+              icon: const Icon(Icons.account_balance_wallet),
+              label: const Text('Ver cuenta corriente'),
+            ),
+          ],
+          if (errorMensaje != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              errorMensaje!,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          ],
+          const SizedBox(height: 16),
+          FilledButton(
+            key: const Key('admin_cliente_guardar'),
+            onPressed: enviando ? null : onGuardar,
+            child: enviando
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Text(modoNuevo ? 'Crear' : 'Guardar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _campo({
+    required Key key,
+    required TextEditingController controller,
+    required String label,
+    bool requerido = false,
+    TextInputType? keyboardType,
+    TextCapitalization capitalization = TextCapitalization.none,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: TextField(
+        key: key,
+        controller: controller,
+        maxLength: requerido ? 120 : null,
+        keyboardType: keyboardType,
+        textCapitalization: capitalization,
+        enabled: !enviando,
+        decoration: InputDecoration(
+          labelText: requerido ? '$label *' : label,
+          isDense: true,
+        ),
+      ),
     );
   }
 }
@@ -256,13 +645,11 @@ class _PagoCuentaDialogState extends ConsumerState<_PagoCuentaDialog> {
       _enviando = true;
     });
     try {
-      await ref
-          .read(clientesServiceProvider)
-          .registrarPago(
-            widget.cliente.id,
-            monto: monto,
-            nota: _nota.text.trim().isEmpty ? null : _nota.text.trim(),
-          );
+      await ref.read(clientesServiceProvider).registrarPago(
+        widget.cliente.id,
+        monto: monto,
+        nota: _nota.text.trim().isEmpty ? null : _nota.text.trim(),
+      );
       if (!mounted) return;
       ref.invalidate(cuentaCorrienteProvider(widget.cliente.id));
       ref.invalidate(clientesProvider);
@@ -295,9 +682,7 @@ class _PagoCuentaDialogState extends ConsumerState<_PagoCuentaDialog> {
             TextField(
               key: const Key('admin_cliente_pago_monto'),
               controller: _monto,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
               decoration: const InputDecoration(
                 labelText: 'Monto',
                 prefixText: '\$ ',

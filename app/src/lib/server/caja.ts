@@ -35,7 +35,14 @@ export async function estadoCajaForStaff(staff: Staff) {
     where tenant_id = ${staff.tenantId} and anulado = false and created_at >= ${desde}::timestamptz
     group by forma_pago
   `;
-  const esperado = totales.reduce((acc, t) => acc + num(t.total), 0);
+  const [egresoRow] = await sql<{ total: unknown }>`
+    select coalesce(sum(monto), 0) as total
+    from egresos_caja
+    where tenant_id = ${staff.tenantId} and cierre_id = ${open[0].id}
+  `;
+  const cobrado = totales.reduce((acc, t) => acc + num(t.total), 0);
+  const egresos = num(egresoRow?.total ?? 0);
+  const esperado = cobrado - egresos;
   const ultimos = await sql<{
     id: string;
     monto: unknown;
@@ -65,6 +72,7 @@ export async function estadoCajaForStaff(staff: Staff) {
     id: open[0].id,
     abiertoAt: open[0].abierto_at,
     esperado,
+    egresos,
     totales: totales.map((t) => ({
       formaPago: t.forma_pago as FormaPago,
       total: num(t.total),
@@ -102,7 +110,12 @@ export async function cerrarCajaForStaff(
     where tenant_id = ${staff.tenantId} and anulado = false and created_at >= ${open[0].abierto_at}::timestamptz
     group by forma_pago
   `;
-  const esperado = totales.reduce((acc, t) => acc + num(t.total), 0);
+  const [egresoRow] = await sql<{ total: unknown }>`
+    select coalesce(sum(monto), 0) as total
+    from egresos_caja
+    where tenant_id = ${staff.tenantId} and cierre_id = ${open[0].id}
+  `;
+  const esperado = totales.reduce((acc, t) => acc + num(t.total), 0) - num(egresoRow?.total ?? 0);
   const diferencia = Math.round((input.real - esperado) * 100) / 100;
   await sql.query(
     `update cierres_caja

@@ -141,6 +141,7 @@ CajaEstado _estado({
   id: id,
   abiertoAt: '2026-10-01 22:27:06.909015+00',
   esperado: esperado,
+  egresos: 0,
   totales:
       totales ??
       const [TotalFormaPago(formaPagoApi: 'efectivo', total: 79200, n: 11)],

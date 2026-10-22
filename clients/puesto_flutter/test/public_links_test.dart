@@ -155,15 +155,33 @@ void main() {
 
   for (final role in Rol.values) {
     testWidgets('Sesión ofrece enlaces para ${role.name}', (tester) async {
+      // Ancho < 900 => los tres roles usan el drawer (sidebar sólo para admin).
+      await tester.binding.setSurfaceSize(const Size(800, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
       await tester.pumpWidget(_screen(AdaptiveShell(rol: role)));
-      await tester.pumpAndSettle();
-      await tester.scrollUntilVisible(
-        find.text('Sesión'),
-        300,
-        scrollable: find.byType(Scrollable).first,
-      );
-      await tester.tap(find.text('Sesión'));
-      await tester.pumpAndSettle();
+      // pump(Duration) en vez de pumpAndSettle: el pane inicial puede tener
+      // un spinner infinito si el ApiClient real no resuelve en el test.
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump(const Duration(milliseconds: 100));
+
+      await tester.tap(find.byTooltip('Menú'));
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump(const Duration(milliseconds: 400));
+
+      final sesionFinder = find.text('Sesión');
+      if (sesionFinder.evaluate().isEmpty) {
+        // El bottom sheet tiene el ListView con más de 15 items; scrollear
+        // manualmente hasta que aparezca 'Sesión'.
+        for (var i = 0; i < 10 && sesionFinder.evaluate().isEmpty; i++) {
+          await tester.drag(find.byType(ListView).last, const Offset(0, -200));
+          await tester.pump(const Duration(milliseconds: 200));
+        }
+      }
+      expect(sesionFinder, findsWidgets, reason: 'Sesión no apareció tras scrollear');
+      await tester.tap(sesionFinder.last);
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump(const Duration(milliseconds: 400));
+
       expect(find.byType(PublicLinks), findsOneWidget);
       for (final page in PublicPage.values) {
         expect(find.text(page.label), findsOneWidget);

@@ -75,6 +75,17 @@ class CajaEstadoPane extends ConsumerWidget {
                         style: Theme.of(context).textTheme.titleLarge,
                       ),
                     ),
+                    if (caja.egresos > 0)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 12),
+                        child: Text(
+                          'Egresos: ${moneda(caja.egresos)}',
+                          key: const Key('caja_estado_egresos'),
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                color: Theme.of(context).colorScheme.error,
+                              ),
+                        ),
+                      ),
                     FilledButton.icon(
                       key: const Key('caja_cerrar'),
                       onPressed: estado.isRefreshing

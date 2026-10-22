@@ -8,6 +8,7 @@ class CajaEstado {
     required this.id,
     required this.abiertoAt,
     required this.esperado,
+    required this.egresos,
     required this.totales,
     required this.ultimos,
   });
@@ -15,6 +16,7 @@ class CajaEstado {
   final String id;
   final String abiertoAt;
   final double esperado;
+  final double egresos;
   final List<TotalFormaPago> totales;
   final List<UltimoCobro> ultimos;
 
@@ -23,6 +25,7 @@ class CajaEstado {
       id: json['id'] as String? ?? '',
       abiertoAt: json['abiertoAt'] as String? ?? '',
       esperado: (json['esperado'] as num?)?.toDouble() ?? 0,
+      egresos: (json['egresos'] as num?)?.toDouble() ?? 0,
       totales: [
         for (final item in (json['totales'] as List? ?? const []))
           TotalFormaPago.fromJson(item as Map<String, dynamic>),

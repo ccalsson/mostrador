@@ -89,71 +89,72 @@ class _DashboardBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final tarjetas = <_TarjetaDato>[
+      _TarjetaDato(
+        clave: 'dashboard_total_ventas',
+        icono: Icons.trending_up,
+        titulo: 'Ventas',
+        valor: moneda(data.totalVentas),
+        color: colorScheme.primary,
+      ),
+      _TarjetaDato(
+        clave: 'dashboard_total_cobrado',
+        icono: Icons.payments_outlined,
+        titulo: 'Cobrado',
+        valor: moneda(data.totalCobrado),
+        color: Colors.green,
+      ),
+      _TarjetaDato(
+        clave: 'dashboard_pedidos',
+        icono: Icons.receipt_long_outlined,
+        titulo: 'Pedidos',
+        valor: '${data.cantidadPedidos}',
+        color: Colors.blue,
+      ),
+      _TarjetaDato(
+        clave: 'dashboard_pendientes',
+        icono: Icons.hourglass_top_outlined,
+        titulo: 'Pendientes',
+        valor: '${data.pedidosPendientes}',
+        color: data.pedidosPendientes > 0
+            ? Colors.orange
+            : colorScheme.onSurfaceVariant,
+      ),
+      _TarjetaDato(
+        clave: 'dashboard_stock_bajo',
+        icono: Icons.warning_amber_outlined,
+        titulo: 'Stock bajo',
+        valor: '${data.stockBajoCount}',
+        color:
+            data.stockBajoCount > 0 ? Colors.red : colorScheme.onSurfaceVariant,
+      ),
+      _TarjetaDato(
+        clave: 'dashboard_alertas',
+        icono: Icons.notifications_outlined,
+        titulo: 'Alertas',
+        valor: '${data.alertasSinLeer}',
+        color: data.alertasSinLeer > 0
+            ? Colors.orange
+            : colorScheme.onSurfaceVariant,
+      ),
+    ];
     return ListView(
       key: const Key('dashboard_lista'),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       children: [
-        // ── Tarjetas principales ─────────────────────────────────────────────
-        _TarjetasRow(
-          tarjetas: [
-            _TarjetaDato(
-              clave: 'dashboard_total_ventas',
-              icono: Icons.trending_up,
-              titulo: 'Ventas',
-              valor: moneda(data.totalVentas),
-              color: colorScheme.primary,
-            ),
-            _TarjetaDato(
-              clave: 'dashboard_total_cobrado',
-              icono: Icons.payments_outlined,
-              titulo: 'Cobrado',
-              valor: moneda(data.totalCobrado),
-              color: Colors.green,
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        _TarjetasRow(
-          tarjetas: [
-            _TarjetaDato(
-              clave: 'dashboard_pedidos',
-              icono: Icons.receipt_long_outlined,
-              titulo: 'Pedidos',
-              valor: '${data.cantidadPedidos}',
-              color: Colors.blue,
-            ),
-            _TarjetaDato(
-              clave: 'dashboard_pendientes',
-              icono: Icons.hourglass_top_outlined,
-              titulo: 'Pendientes',
-              valor: '${data.pedidosPendientes}',
-              color: data.pedidosPendientes > 0
-                  ? Colors.orange
-                  : colorScheme.onSurfaceVariant,
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        _TarjetasRow(
-          tarjetas: [
-            _TarjetaDato(
-              clave: 'dashboard_stock_bajo',
-              icono: Icons.warning_amber_outlined,
-              titulo: 'Stock bajo',
-              valor: '${data.stockBajoCount}',
-              color:
-                  data.stockBajoCount > 0 ? Colors.red : colorScheme.onSurfaceVariant,
-            ),
-            _TarjetaDato(
-              clave: 'dashboard_alertas',
-              icono: Icons.notifications_outlined,
-              titulo: 'Alertas',
-              valor: '${data.alertasSinLeer}',
-              color: data.alertasSinLeer > 0
-                  ? Colors.orange
-                  : colorScheme.onSurfaceVariant,
-            ),
-          ],
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final columnas = constraints.maxWidth >= 700 ? 3 : 2;
+            return GridView.count(
+              crossAxisCount: columnas,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
+              childAspectRatio: 2.8,
+              children: tarjetas,
+            );
+          },
         ),
 
         // ── Por forma de pago ────────────────────────────────────────────────
@@ -193,24 +194,6 @@ class _DashboardBody extends StatelessWidget {
         'cuenta_corriente' => 'Cuenta corriente',
         _ => key,
       };
-}
-
-class _TarjetasRow extends StatelessWidget {
-  const _TarjetasRow({required this.tarjetas});
-
-  final List<_TarjetaDato> tarjetas;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        for (int i = 0; i < tarjetas.length; i++) ...[
-          Expanded(child: tarjetas[i]),
-          if (i < tarjetas.length - 1) const SizedBox(width: 12),
-        ],
-      ],
-    );
-  }
 }
 
 class _TarjetaDato extends StatelessWidget {

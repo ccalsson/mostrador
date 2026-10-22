@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/auth/auth_controller.dart';
 import '../../core/tema.dart';
 import '../../core/widgets/public_links.dart';
-import '../../core/widgets/titulo_seccion.dart';
 import '../../models/staff_session.dart';
 import '../../services/catalogo_service.dart';
 import '../../services/tenant_service.dart';
@@ -12,6 +11,7 @@ import '../admin/alertas_pane.dart';
 import '../admin/auditoria_pane.dart';
 import '../admin/clientes_pane.dart';
 import '../admin/dashboard_pane.dart';
+import '../admin/escritorio_pane.dart';
 import '../admin/productos_pane.dart';
 import '../admin/proveedores_pane.dart';
 import '../admin/remitos_pane.dart';
@@ -23,11 +23,12 @@ import '../catalog/catalogo_screen.dart';
 import '../carrito/carrito_pane.dart';
 import '../pedidos/pedidos_pane.dart';
 
-/// Shell del puesto: barra superior leaf-2 con la identidad del tenant y un
-/// menú horizontal de píldoras para las secciones del rol (común a Android y
-/// Windows). El vendedor suma Carrito y Pedidos; el cajero suma Caja; el
-/// Dueño suma Productos, Alertas, Usuarios, Clientes, Proveedores, Remitos,
-/// Auditoría y Suscripción.
+/// Shell del puesto con navegación lateral agrupada (replica la web).
+///
+/// En ventanas anchas (>= 900 px) muestra un sidebar fijo de 260 px con los
+/// grupos de la web (Operación, Catálogo, Administración, Informes). En
+/// ventanas angostas colapsa a un [NavigationDrawer] accesible desde el
+/// botón hamburguesa de la barra superior.
 class AdaptiveShell extends ConsumerStatefulWidget {
   const AdaptiveShell({super.key, required this.rol});
 
@@ -37,93 +38,167 @@ class AdaptiveShell extends ConsumerStatefulWidget {
   ConsumerState<AdaptiveShell> createState() => _AdaptiveShellState();
 }
 
-class _Destino {
-  const _Destino(this.icono, this.iconoActivo, this.etiqueta);
+enum _Grupo { operacion, catalogo, administracion, informes }
 
-  final IconData icono;
-  final IconData iconoActivo;
-  final String etiqueta;
+extension _GrupoLabel on _Grupo {
+  String get etiqueta => switch (this) {
+        _Grupo.operacion => 'Operación',
+        _Grupo.catalogo => 'Catálogo',
+        _Grupo.administracion => 'Administración',
+        _Grupo.informes => 'Informes',
+      };
 }
 
-const _destinoDashboard =
-    _Destino(Icons.dashboard_outlined, Icons.dashboard, 'Dashboard');
-const _destinoCatalogo =
-    _Destino(Icons.inventory_2_outlined, Icons.inventory_2, 'Catálogo');
-const _destinoCarrito =
-    _Destino(Icons.shopping_cart_outlined, Icons.shopping_cart, 'Carrito');
-const _destinoPedidos =
-    _Destino(Icons.receipt_long_outlined, Icons.receipt_long, 'Pedidos');
-const _destinoCaja =
-    _Destino(Icons.point_of_sale_outlined, Icons.point_of_sale, 'Caja');
-const _destinoProductos =
-    _Destino(Icons.category_outlined, Icons.category, 'Productos');
-const _destinoAlertas =
-    _Destino(Icons.notifications_outlined, Icons.notifications, 'Alertas');
-const _destinoUsuarios =
-    _Destino(Icons.people_outlined, Icons.people, 'Usuarios');
-const _destinoClientes =
-    _Destino(Icons.storefront_outlined, Icons.storefront, 'Clientes');
-const _destinoProveedores =
-    _Destino(Icons.local_shipping_outlined, Icons.local_shipping, 'Proveedores');
-const _destinoRemitos =
-    _Destino(Icons.local_shipping_outlined, Icons.local_shipping, 'Remitos');
-const _destinoReportes =
-    _Destino(Icons.leaderboard_outlined, Icons.leaderboard, 'Reportes');
-const _destinoAuditoria =
-    _Destino(Icons.history_outlined, Icons.history, 'Auditoría');
-const _destinoSuscripcion = _Destino(
-    Icons.workspace_premium_outlined, Icons.workspace_premium, 'Suscripción');
-const _destinoSesion =
-    _Destino(Icons.badge_outlined, Icons.badge, 'Sesión');
+class _Destino {
+  const _Destino({
+    required this.grupo,
+    required this.icono,
+    required this.etiqueta,
+    required this.pantalla,
+    this.roles,
+  });
+
+  final _Grupo grupo;
+  final IconData icono;
+  final String etiqueta;
+  final Widget pantalla;
+  final Set<Rol>? roles;
+}
+
+final _destinos = <_Destino>[
+  // Operación
+  _Destino(
+    grupo: _Grupo.operacion,
+    icono: Icons.point_of_sale_outlined,
+    etiqueta: 'Caja',
+    pantalla: CajaPane(),
+    roles: {Rol.admin, Rol.cajero},
+  ),
+  _Destino(
+    grupo: _Grupo.operacion,
+    icono: Icons.shopping_cart_outlined,
+    etiqueta: 'Puesto',
+    pantalla: CarritoPane(),
+    roles: {Rol.admin, Rol.vendedor},
+  ),
+  _Destino(
+    grupo: _Grupo.operacion,
+    icono: Icons.receipt_long_outlined,
+    etiqueta: 'Pedidos',
+    pantalla: PedidosPane(),
+    roles: {Rol.admin, Rol.vendedor},
+  ),
+  _Destino(
+    grupo: _Grupo.operacion,
+    icono: Icons.local_shipping_outlined,
+    etiqueta: 'Remitos',
+    pantalla: RemitosPane(),
+    roles: {Rol.admin, Rol.cajero},
+  ),
+  // Catálogo
+  _Destino(
+    grupo: _Grupo.catalogo,
+    icono: Icons.inventory_2_outlined,
+    etiqueta: 'Catálogo',
+    pantalla: CatalogoScreen(),
+  ),
+  _Destino(
+    grupo: _Grupo.catalogo,
+    icono: Icons.category_outlined,
+    etiqueta: 'Productos',
+    pantalla: ProductosPane(),
+    roles: {Rol.admin},
+  ),
+  _Destino(
+    grupo: _Grupo.catalogo,
+    icono: Icons.local_shipping_outlined,
+    etiqueta: 'Proveedores',
+    pantalla: ProveedoresPane(),
+    roles: {Rol.admin},
+  ),
+  _Destino(
+    grupo: _Grupo.catalogo,
+    icono: Icons.storefront_outlined,
+    etiqueta: 'Clientes',
+    pantalla: ClientesPane(),
+    roles: {Rol.admin},
+  ),
+  // Administración
+  _Destino(
+    grupo: _Grupo.administracion,
+    icono: Icons.people_outlined,
+    etiqueta: 'Usuarios',
+    pantalla: UsuariosPane(),
+    roles: {Rol.admin},
+  ),
+  _Destino(
+    grupo: _Grupo.administracion,
+    icono: Icons.notifications_outlined,
+    etiqueta: 'Alertas',
+    pantalla: AlertasPane(),
+    roles: {Rol.admin},
+  ),
+  _Destino(
+    grupo: _Grupo.administracion,
+    icono: Icons.workspace_premium_outlined,
+    etiqueta: 'Suscripción',
+    pantalla: SuscripcionPane(),
+    roles: {Rol.admin},
+  ),
+  // Informes
+  _Destino(
+    grupo: _Grupo.informes,
+    icono: Icons.desktop_windows_outlined,
+    etiqueta: 'Escritorio',
+    pantalla: EscritorioPane(),
+    roles: {Rol.admin},
+  ),
+  _Destino(
+    grupo: _Grupo.informes,
+    icono: Icons.dashboard_outlined,
+    etiqueta: 'Dashboard',
+    pantalla: DashboardPane(),
+    roles: {Rol.admin},
+  ),
+  _Destino(
+    grupo: _Grupo.informes,
+    icono: Icons.leaderboard_outlined,
+    etiqueta: 'Reportes',
+    pantalla: ReportesPane(),
+    roles: {Rol.admin},
+  ),
+  _Destino(
+    grupo: _Grupo.informes,
+    icono: Icons.history_outlined,
+    etiqueta: 'Auditoría',
+    pantalla: AuditoriaPane(),
+    roles: {Rol.admin},
+  ),
+];
+
+const _sidebarAncho = 260.0;
+const _quiebreSidebar = 900.0;
 
 class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
-  int _destino = 0;
+  int _indice = 0;
 
-  void _seleccionar(int indice) => setState(() => _destino = indice);
+  List<_Destino> _destinosVisibles() {
+    return _destinos.where((d) {
+      if (d.roles == null) return true;
+      return d.roles!.contains(widget.rol);
+    }).toList();
+  }
 
-  List<_Destino> get _destinos => switch (widget.rol) {
-        Rol.vendedor => const [
-            _destinoCatalogo,
-            _destinoCarrito,
-            _destinoPedidos,
-            _destinoSesion,
-          ],
-        Rol.cajero => const [_destinoCatalogo, _destinoCaja, _destinoSesion],
-        Rol.admin => const [
-            _destinoDashboard,
-            _destinoCatalogo,
-            _destinoProductos,
-            _destinoAlertas,
-            _destinoUsuarios,
-            _destinoClientes,
-            _destinoProveedores,
-            _destinoRemitos,
-            _destinoReportes,
-            _destinoAuditoria,
-            _destinoSuscripcion,
-            _destinoSesion,
-          ],
-      };
+  void _seleccionar(int indice) {
+    setState(() => _indice = indice);
+    Navigator.of(context).maybePop();
+  }
 
-  Widget _pantalla() {
-    return switch ((widget.rol, _destino)) {
-      (Rol.admin, 0) => const DashboardPane(),
-      (_, 0) when widget.rol != Rol.admin => const CatalogoScreen(),
-      (Rol.admin, 1) => const CatalogoScreen(),
-      (Rol.vendedor, 1) => const CarritoPane(),
-      (Rol.vendedor, 2) => const PedidosPane(),
-      (Rol.cajero, 1) => const CajaPane(),
-      (Rol.admin, 2) => const ProductosPane(),
-      (Rol.admin, 3) => const AlertasPane(),
-      (Rol.admin, 4) => const UsuariosPane(),
-      (Rol.admin, 5) => const ClientesPane(),
-      (Rol.admin, 6) => const ProveedoresPane(),
-      (Rol.admin, 7) => const RemitosPane(),
-      (Rol.admin, 8) => const ReportesPane(),
-      (Rol.admin, 9) => const AuditoriaPane(),
-      (Rol.admin, 10) => const SuscripcionPane(),
-      _ => const _SesionPane(),
-    };
+  Widget _pantalla(List<_Destino> visibles) {
+    if (_indice >= visibles.length) {
+      return const _SesionPane();
+    }
+    return visibles[_indice].pantalla;
   }
 
   @override
@@ -131,188 +206,407 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
     final sesion = ref.watch(authControllerProvider).sesion;
     final tokens = context.tokens;
     final theme = Theme.of(context);
-    final tenant =
-        ref.watch(tenantProvider).value ?? const IdentidadTenant(nombre: 'Mostrador', bajada: '');
-    final destinoActual = _destinos[_destino];
+    final tenant = ref.watch(tenantProvider).value ??
+        const IdentidadTenant(nombre: 'Mostrador', bajada: '');
     final oscuro = theme.brightness == Brightness.dark;
-    // En pantallas angostas el chip de rol y el nombre no entran y duplican
-    // las etiquetas del NavigationBar; el rol ya queda implícito en el menú.
-    final barraCompleta = MediaQuery.sizeOf(context).width >= 600;
+    final ancho = MediaQuery.sizeOf(context).width;
+    final sidebarVisible = ancho >= _quiebreSidebar &&
+        widget.rol == Rol.admin;
+    final visibles = _destinosVisibles();
+    final indiceActual = _indice.clamp(0, visibles.length - 1);
+    final destinoActual =
+        indiceActual < visibles.length ? visibles[indiceActual] : null;
 
     return Scaffold(
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      body: Row(
         children: [
-          Container(
-            color: tokens.leaf2,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            child: Row(
-              children: [
-                Text(
-                  'Mostrador',
-                  style: theme.textTheme.titleLarge?.copyWith(color: tokens.leafFg),
-                ),
-                if (tenant.bajada.isNotEmpty) ...[
-                  const SizedBox(width: 10),
-                  Expanded(
-                    flex: 3,
-                    child: Text(
-                      tenant.bajada,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodySmall?.copyWith(color: tokens.ambar),
-                    ),
-                  ),
-                ],
-                const Spacer(),
-                if (barraCompleta) ...[
-                  _ChipRol(texto: widget.rol.label),
-                  if (sesion != null) ...[
-                    const SizedBox(width: 10),
-                    Text(
-                      sesion.staff.nombre,
-                      style:
-                          theme.textTheme.bodySmall?.copyWith(color: tokens.leafFg),
-                    ),
-                  ],
-                ],
-                IconButton(
-                  key: const Key('refresh_button'),
-                  tooltip: 'Actualizar catálogo',
-                  color: tokens.leafFg,
-                  onPressed: () => ref.invalidate(catalogoProvider),
-                  icon: const Icon(Icons.refresh),
-                ),
-                IconButton(
-                  key: const Key('logout_button'),
-                  tooltip: 'Cerrar sesión',
-                  color: tokens.leafFg,
-                  onPressed: () =>
-                      ref.read(authControllerProvider.notifier).logout(),
-                  icon: const Icon(Icons.logout),
-                ),
-                IconButton(
-                  key: const Key('btn_tema'),
-                  tooltip: 'Cambiar tema',
-                  color: tokens.leafFg,
-                  onPressed: () =>
-                      ref.read(temaControllerProvider.notifier).alternar(),
-                  icon: Icon(oscuro ? Icons.light_mode : Icons.dark_mode),
-                ),
-              ],
+          if (sidebarVisible)
+            _Sidebar(
+              tokens: tokens,
+              theme: theme,
+              tenant: tenant,
+              destinos: visibles,
+              indice: indiceActual,
+              onSeleccionar: _seleccionar,
+              sesion: sesion,
+              rolLabel: widget.rol.label,
             ),
-          ),
-          SizedBox(
-            height: 52,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-              children: [
-                for (final (indice, destino) in _destinos.indexed)
-                  _Pildora(
-                    etiqueta: destino.etiqueta,
-                    icono: indice == _destino ? destino.iconoActivo : destino.icono,
-                    activa: indice == _destino,
-                    onTap: () => _seleccionar(indice),
-                  ),
-              ],
-            ),
-          ),
-          const Divider(height: 1),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-            child: TituloSeccion(destinoActual.etiqueta),
-          ),
-          // Columna de contenido: en ventanas anchas las filas estiradas al
-          // ancho total quedan ilegibles, así que el contenido se centra con
-          // un tope; en pantallas angostas ocupa el ancho disponible.
           Expanded(
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 1080),
-                child: _pantalla(),
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _TopBar(
+                  tokens: tokens,
+                  theme: theme,
+                  tenant: tenant,
+                  sesion: sesion,
+                  oscuro: oscuro,
+                  mostrarMenu: !sidebarVisible,
+                  onMenu: () => _abrirDrawer(context, visibles, indiceActual),
+                  destinoActual: destinoActual,
+                ),
+                const Divider(height: 1),
+                Expanded(
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 1152),
+                      child: _pantalla(visibles),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
       ),
     );
   }
-}
 
-class _ChipRol extends StatelessWidget {
-  const _ChipRol({required this.texto});
-
-  final String texto;
-
-  @override
-  Widget build(BuildContext context) {
-    final tokens = context.tokens;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: tokens.terra,
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Text(
-        texto,
-        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: tokens.leafFg,
-              fontWeight: FontWeight.w600,
-            ),
-      ),
+  Future<void> _abrirDrawer(
+      BuildContext context, List<_Destino> visibles, int indice) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) {
+        final tokens = ctx.tokens;
+        final theme = Theme.of(ctx);
+        final items = <Widget>[];
+        _Grupo? grupoPrev;
+        for (var i = 0; i < visibles.length; i++) {
+          final destino = visibles[i];
+          if (destino.grupo != grupoPrev) {
+            if (grupoPrev != null) items.add(const Divider(height: 24));
+            items.add(Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
+              child: Text(destino.grupo.etiqueta,
+                  style: theme.textTheme.labelMedium),
+            ));
+            grupoPrev = destino.grupo;
+          }
+          items.add(_DrawerItem(
+            destino: destino,
+            activo: i == indice,
+            tokens: tokens,
+            onTap: () => _seleccionar(i),
+          ));
+        }
+        items.add(const Divider(height: 24));
+        items.add(Padding(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
+          child: Text('Sesión', style: theme.textTheme.labelMedium),
+        ));
+        items.add(_DrawerItem(
+          destino: const _Destino(
+            grupo: _Grupo.informes,
+            icono: Icons.badge_outlined,
+            etiqueta: 'Sesión',
+            pantalla: _SesionPane(),
+          ),
+          activo: indice >= visibles.length,
+          tokens: tokens,
+          onTap: () => _seleccionar(visibles.length),
+        ));
+        return ListView(children: items);
+      },
     );
   }
 }
 
-class _Pildora extends StatelessWidget {
-  const _Pildora({
-    required this.etiqueta,
-    required this.icono,
-    required this.activa,
+class _Sidebar extends StatelessWidget {
+  const _Sidebar({
+    required this.tokens,
+    required this.theme,
+    required this.tenant,
+    required this.destinos,
+    required this.indice,
+    required this.onSeleccionar,
+    required this.sesion,
+    required this.rolLabel,
+  });
+
+  final TokensMostrador tokens;
+  final ThemeData theme;
+  final IdentidadTenant tenant;
+  final List<_Destino> destinos;
+  final int indice;
+  final ValueChanged<int> onSeleccionar;
+  final StaffSession? sesion;
+  final String rolLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: _sidebarAncho,
+      color: tokens.leaf2,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Mostrador',
+                  style: theme.textTheme.titleLarge
+                      ?.copyWith(color: tokens.leafFg, fontWeight: FontWeight.w600),
+                ),
+                if (tenant.bajada.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    tenant.bajada,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(color: tokens.ambar),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const Divider(height: 1, color: Colors.white12),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              children: [
+                for (int i = 0; i < destinos.length; i++) ...[
+                  if (i == 0 || destinos[i].grupo != destinos[i - 1].grupo) ...[
+                    if (i > 0) const SizedBox(height: 12),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
+                      child: Text(
+                        destinos[i].grupo.etiqueta,
+                        style: theme.textTheme.labelSmall
+                            ?.copyWith(color: tokens.leafFg.withValues(alpha: 0.55)),
+                      ),
+                    ),
+                  ],
+                  _SidebarItem(
+                    destino: destinos[i],
+                    activo: i == indice,
+                    tokens: tokens,
+                    onTap: () => onSeleccionar(i),
+                  ),
+                ],
+                const SizedBox(height: 12),
+                const Divider(height: 1, color: Colors.white12),
+                const SizedBox(height: 8),
+                _SidebarItem(
+                  destino: const _Destino(
+                    grupo: _Grupo.informes,
+                    icono: Icons.badge_outlined,
+                    etiqueta: 'Sesión',
+                    pantalla: _SesionPane(),
+                  ),
+                  activo: indice >= destinos.length,
+                  tokens: tokens,
+                  onTap: () => onSeleccionar(destinos.length),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1, color: Colors.white12),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  radius: 16,
+                  backgroundColor: tokens.terra,
+                  child: Text(
+                    _iniciales(sesion?.staff.nombre ?? '?'),
+                    style: theme.textTheme.labelMedium
+                        ?.copyWith(color: tokens.leafFg),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        sesion?.staff.nombre ?? '—',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodyMedium
+                            ?.copyWith(color: tokens.leafFg),
+                      ),
+                      Text(
+                        rolLabel,
+                        style: theme.textTheme.bodySmall
+                            ?.copyWith(color: tokens.ambar),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _iniciales(String nombre) {
+    final partes = nombre.trim().split(RegExp(r'\s+'));
+    if (partes.isEmpty) return '?';
+    if (partes.length == 1) return partes[0].substring(0, 1).toUpperCase();
+    return '${partes[0].substring(0, 1)}${partes[1].substring(0, 1)}'
+        .toUpperCase();
+  }
+}
+
+class _SidebarItem extends StatelessWidget {
+  const _SidebarItem({
+    required this.destino,
+    required this.activo,
+    required this.tokens,
     required this.onTap,
   });
 
-  final String etiqueta;
-  final IconData icono;
-  final bool activa;
+  final _Destino destino;
+  final bool activo;
+  final TokensMostrador tokens;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final tokens = context.tokens;
+    final theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.only(right: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
       child: Material(
-        color: activa ? tokens.terra : tokens.surface,
-        shape: StadiumBorder(
-          side: BorderSide(color: activa ? tokens.terra : tokens.line),
-        ),
+        color: activo ? tokens.terra : Colors.transparent,
+        borderRadius: BorderRadius.circular(10),
         child: InkWell(
-          customBorder: const StadiumBorder(),
+          borderRadius: BorderRadius.circular(10),
           onTap: onTap,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             child: Row(
-              mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(
-                  icono,
-                  size: 16,
-                  color: activa ? tokens.leafFg : tokens.muted,
+                  destino.icono,
+                  size: 18,
+                  color: activo ? tokens.leafFg : tokens.leafFg.withValues(alpha: 0.75),
                 ),
-                const SizedBox(width: 6),
-                Text(
-                  etiqueta,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                        color: activa ? tokens.leafFg : tokens.inkSoft,
-                      ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    destino.etiqueta,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: activo ? tokens.leafFg : tokens.leafFg.withValues(alpha: 0.85),
+                      fontWeight: activo ? FontWeight.w600 : FontWeight.w500,
+                    ),
+                  ),
                 ),
               ],
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _DrawerItem extends StatelessWidget {
+  const _DrawerItem({
+    required this.destino,
+    required this.activo,
+    required this.tokens,
+    required this.onTap,
+  });
+
+  final _Destino destino;
+  final bool activo;
+  final TokensMostrador tokens;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return ListTile(
+      dense: true,
+      leading: Icon(destino.icono, color: activo ? tokens.terra : tokens.ink),
+      title: Text(
+        destino.etiqueta,
+        style: theme.textTheme.bodyMedium?.copyWith(
+          fontWeight: activo ? FontWeight.w600 : FontWeight.w500,
+          color: activo ? tokens.terra : tokens.ink,
+        ),
+      ),
+      onTap: onTap,
+    );
+  }
+}
+
+class _TopBar extends ConsumerWidget {
+  const _TopBar({
+    required this.tokens,
+    required this.theme,
+    required this.tenant,
+    required this.sesion,
+    required this.oscuro,
+    required this.mostrarMenu,
+    required this.onMenu,
+    required this.destinoActual,
+  });
+
+  final TokensMostrador tokens;
+  final ThemeData theme;
+  final IdentidadTenant tenant;
+  final StaffSession? sesion;
+  final bool oscuro;
+  final bool mostrarMenu;
+  final VoidCallback onMenu;
+  final _Destino? destinoActual;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Container(
+      color: tokens.leaf2,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: Row(
+        children: [
+          if (mostrarMenu)
+            IconButton(
+              tooltip: 'Menú',
+              color: tokens.leafFg,
+              onPressed: onMenu,
+              icon: const Icon(Icons.menu),
+            )
+          else
+            const SizedBox(width: 4),
+          if (destinoActual != null)
+            Text(
+              destinoActual!.etiqueta,
+              style: theme.textTheme.titleMedium
+                  ?.copyWith(color: tokens.leafFg),
+            ),
+          const Spacer(),
+          IconButton(
+            key: const Key('refresh_button'),
+            tooltip: 'Actualizar catálogo',
+            color: tokens.leafFg,
+            onPressed: () => ref.invalidate(catalogoProvider),
+            icon: const Icon(Icons.refresh),
+          ),
+          IconButton(
+            key: const Key('btn_tema'),
+            tooltip: 'Cambiar tema',
+            color: tokens.leafFg,
+            onPressed: () =>
+                ref.read(temaControllerProvider.notifier).alternar(),
+            icon: Icon(oscuro ? Icons.light_mode : Icons.dark_mode),
+          ),
+          IconButton(
+            key: const Key('logout_button'),
+            tooltip: 'Cerrar sesión',
+            color: tokens.leafFg,
+            onPressed: () =>
+                ref.read(authControllerProvider.notifier).logout(),
+            icon: const Icon(Icons.logout),
+          ),
+        ],
       ),
     );
   }

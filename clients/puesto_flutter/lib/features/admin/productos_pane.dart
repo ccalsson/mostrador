@@ -5,11 +5,12 @@ import '../../core/errors/api_exceptions.dart';
 import '../../core/format.dart';
 import '../../models/producto.dart';
 import '../../services/catalogo_service.dart';
+import '../../services/productos_service.dart';
 import 'ajuste_stock_dialog.dart';
-import 'producto_form_dialog.dart';
+import 'producto_form_controller.dart';
 
 /// Gestión de catálogo del Dueño: alta, edición, baja y ajustes de stock.
-/// Usa el catálogo completo: `GET /api/v1/catalogo` incluye inactivos.
+/// Layout de 2 columnas: lista a la izquierda, formulario inline a la derecha.
 class ProductosPane extends ConsumerStatefulWidget {
   const ProductosPane({super.key});
 
@@ -18,7 +19,30 @@ class ProductosPane extends ConsumerStatefulWidget {
 }
 
 class _ProductosPaneState extends ConsumerState<ProductosPane> {
+  Producto? _seleccionado;
+  bool _modoNuevo = false;
   String _busqueda = '';
+
+  final _nombre = TextEditingController();
+  final _unidadLabel = TextEditingController();
+  final _precio = TextEditingController();
+  final _minimo = TextEditingController();
+  final _alias = TextEditingController();
+  final _inicial = TextEditingController();
+  String _unidad = 'kg';
+  bool _activo = true;
+  String? _validacion;
+
+  @override
+  void dispose() {
+    _nombre.dispose();
+    _unidadLabel.dispose();
+    _precio.dispose();
+    _minimo.dispose();
+    _alias.dispose();
+    _inicial.dispose();
+    super.dispose();
+  }
 
   List<Producto> _filtrar(List<Producto> productos) {
     final texto = _busqueda.trim().toLowerCase();
@@ -30,9 +54,142 @@ class _ProductosPaneState extends ConsumerState<ProductosPane> {
         .toList();
   }
 
+  void _seleccionar(Producto producto) {
+    setState(() {
+      _seleccionado = producto;
+      _modoNuevo = false;
+      _cargarForm(producto);
+    });
+  }
+
+  void _nuevo() {
+    setState(() {
+      _seleccionado = null;
+      _modoNuevo = true;
+      _limpiarForm();
+    });
+  }
+
+  void _cargarForm(Producto producto) {
+    _nombre.text = producto.nombre;
+    _unidadLabel.text = producto.unidadLabel;
+    _precio.text = cantidadNum(producto.precio);
+    _minimo.text = cantidadNum(producto.stockMinimo);
+    _alias.text = producto.alias.join(', ');
+    _inicial.clear();
+    _unidad = producto.unidad;
+    _activo = producto.activo;
+    _validacion = null;
+  }
+
+  void _limpiarForm() {
+    _nombre.clear();
+    _unidadLabel.text = 'kg';
+    _precio.clear();
+    _minimo.clear();
+    _alias.clear();
+    _inicial.clear();
+    _unidad = 'kg';
+    _activo = true;
+    _validacion = null;
+  }
+
+  Future<void> _guardar() async {
+    final nombre = _nombre.text.trim();
+    final unidadLabel = _unidadLabel.text.trim();
+    final precio = parseDecimal(_precio.text);
+    final minimo = parseDecimal(_minimo.text);
+    
+    if (nombre.isEmpty) {
+      return setState(() => _validacion = 'Ingresá el nombre.');
+    }
+    if (unidadLabel.isEmpty || unidadLabel.length > 20) {
+      return setState(() => _validacion = 'Etiqueta de unidad requerida (máx. 20).');
+    }
+    if (precio == null || precio <= 0) {
+      return setState(() => _validacion = 'Precio inválido.');
+    }
+    if (minimo == null || minimo < 0) {
+      return setState(() => _validacion = 'Stock mínimo inválido.');
+    }
+    
+    double? inicial;
+    final textoInicial = _inicial.text.trim();
+    if (_seleccionado == null && textoInicial.isNotEmpty) {
+      inicial = parseDecimal(textoInicial);
+      if (inicial == null) {
+        return setState(() => _validacion = 'Stock inicial inválido.');
+      }
+    }
+    
+    setState(() => _validacion = null);
+    final ok = await ref.read(productoFormProvider.notifier).guardar(
+      ProductoInput(
+        id: _seleccionado?.id,
+        nombre: nombre,
+        unidad: _unidad,
+        unidadLabel: unidadLabel,
+        precio: precio,
+        stockMinimo: minimo,
+        alias: _alias.text
+            .split(',')
+            .map((a) => a.trim())
+            .where((a) => a.isNotEmpty)
+            .toList(),
+        activo: _activo,
+        stockInicial: inicial,
+      ),
+    );
+    
+    if (!ok || !mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(_seleccionado == null ? 'Producto creado.' : 'Producto actualizado.'),
+      ),
+    );
+    if (_seleccionado == null) {
+      _limpiarForm();
+    }
+  }
+
+  Future<void> _bajar() async {
+    if (_seleccionado == null) return;
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Dar de baja'),
+        content: Text(
+          '¿Dar de baja "${_seleccionado!.nombre}"? Podés reactivarlo después editándolo.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            key: const Key('admin_confirmar_baja'),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Dar de baja'),
+          ),
+        ],
+      ),
+    );
+    if (confirmar != true || !mounted) return;
+    final ok = await ref.read(productoFormProvider.notifier).bajar(_seleccionado!.id);
+    if (ok && mounted) {
+      setState(() {
+        _seleccionado = null;
+        _modoNuevo = false;
+        _limpiarForm();
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final catalogo = ref.watch(catalogoProvider);
+    final estado = ref.watch(productoFormProvider);
+
     return Column(
       children: [
         Padding(
@@ -54,7 +211,7 @@ class _ProductosPaneState extends ConsumerState<ProductosPane> {
               const SizedBox(width: 12),
               FilledButton.icon(
                 key: const Key('admin_nuevo_producto'),
-                onPressed: () => mostrarFormProducto(context),
+                onPressed: _nuevo,
                 icon: const Icon(Icons.add),
                 label: const Text('Nuevo producto'),
               ),
@@ -82,25 +239,69 @@ class _ProductosPaneState extends ConsumerState<ProductosPane> {
             ),
             data: (data) {
               final productos = _filtrar(data.productos);
-              return ListView.separated(
-                key: const Key('admin_productos_lista'),
-                itemCount: productos.length + 1,
-                separatorBuilder: (_, _) => const Divider(height: 1),
-                itemBuilder: (context, index) {
-                  if (index == productos.length) {
-                    return Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Text(
-                        productos.length == data.productos.length
-                            ? '${productos.length} productos'
-                            : '${productos.length} de ${data.productos.length} productos',
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.bodySmall,
+              return Row(
+                children: [
+                  Expanded(
+                    flex: 2,
+                    child: productos.isEmpty
+                        ? const Center(
+                            child: Text(
+                              'No hay productos.',
+                              key: Key('admin_productos_vacia'),
+                            ),
+                          )
+                        : ListView.separated(
+                            key: const Key('admin_productos_lista'),
+                            itemCount: productos.length,
+                            separatorBuilder: (_, _) => const Divider(height: 1),
+                            itemBuilder: (context, index) {
+                              final producto = productos[index];
+                              final seleccionado = _seleccionado?.id == producto.id;
+                              return _ProductoTile(
+                                producto: producto,
+                                seleccionado: seleccionado,
+                                onTap: () => _seleccionar(producto),
+                                onAjustar: () => mostrarAjusteStock(context, producto),
+                              );
+                            },
+                          ),
+                  ),
+                  if (_seleccionado != null || _modoNuevo)
+                    Expanded(
+                      flex: 3,
+                      child: Material(
+                        color: Theme.of(context).colorScheme.surfaceContainerLowest,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            border: Border(
+                              left: BorderSide(
+                                color: Theme.of(context).dividerColor,
+                              ),
+                            ),
+                          ),
+                          child: _FormPanel(
+                            nombreController: _nombre,
+                            unidadLabelController: _unidadLabel,
+                            precioController: _precio,
+                            minimoController: _minimo,
+                            aliasController: _alias,
+                            inicialController: _inicial,
+                            unidad: _unidad,
+                            onUnidadChanged: (v) => setState(() => _unidad = v ?? 'kg'),
+                            activo: _activo,
+                            onActivoChanged: (v) => setState(() => _activo = v),
+                            modoNuevo: _modoNuevo,
+                            validacion: _validacion,
+                            enviando: estado.enviando,
+                            errorMensaje: _validacion ?? estado.errorMensaje,
+                            onGuardar: _guardar,
+                            onBajar: _seleccionado != null ? _bajar : null,
+                            productoId: _seleccionado?.id,
+                          ),
+                        ),
                       ),
-                    );
-                  }
-                  return _ProductoAdminTile(producto: productos[index]);
-                },
+                    ),
+                ],
               );
             },
           ),
@@ -110,16 +311,30 @@ class _ProductosPaneState extends ConsumerState<ProductosPane> {
   }
 }
 
-class _ProductoAdminTile extends StatelessWidget {
-  const _ProductoAdminTile({required this.producto});
+class _ProductoTile extends StatelessWidget {
+  const _ProductoTile({
+    required this.producto,
+    required this.seleccionado,
+    required this.onTap,
+    required this.onAjustar,
+  });
 
   final Producto producto;
+  final bool seleccionado;
+  final VoidCallback onTap;
+  final VoidCallback onAjustar;
 
   @override
   Widget build(BuildContext context) {
     return ListTile(
       key: Key('admin_producto_${producto.id}'),
-      title: Text(producto.nombre),
+      tileColor: seleccionado
+          ? Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3)
+          : null,
+      title: Text(
+        producto.nombre,
+        style: TextStyle(fontWeight: seleccionado ? FontWeight.w600 : null),
+      ),
       subtitle: Text(
         '${moneda(producto.precio)} / ${producto.unidadLabel}'
         ' · Stock: ${cantidadNum(producto.stock)}'
@@ -129,24 +344,219 @@ class _ProductoAdminTile extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (!producto.activo)
-            const Chip(
-              label: Text('Inactivo'),
+            Chip(
+              label: const Text('Inactivo'),
               visualDensity: VisualDensity.compact,
+              backgroundColor: Theme.of(context).colorScheme.errorContainer,
             )
           else if (producto.stockBajo)
-            const Chip(
-              label: Text('Stock bajo'),
+            Chip(
+              label: const Text('Stock bajo'),
               visualDensity: VisualDensity.compact,
+              backgroundColor: Theme.of(context).colorScheme.tertiaryContainer,
             ),
           IconButton(
             key: Key('admin_ajustar_${producto.id}'),
             tooltip: 'Ajustar stock',
-            onPressed: () => mostrarAjusteStock(context, producto),
+            onPressed: onAjustar,
             icon: const Icon(Icons.tune),
           ),
         ],
       ),
-      onTap: () => mostrarFormProducto(context, existente: producto),
+      onTap: onTap,
+    );
+  }
+}
+
+class _FormPanel extends StatelessWidget {
+  const _FormPanel({
+    required this.nombreController,
+    required this.unidadLabelController,
+    required this.precioController,
+    required this.minimoController,
+    required this.aliasController,
+    required this.inicialController,
+    required this.unidad,
+    required this.onUnidadChanged,
+    required this.activo,
+    required this.onActivoChanged,
+    required this.modoNuevo,
+    required this.validacion,
+    required this.enviando,
+    required this.errorMensaje,
+    required this.onGuardar,
+    required this.onBajar,
+    required this.productoId,
+  });
+
+  final TextEditingController nombreController;
+  final TextEditingController unidadLabelController;
+  final TextEditingController precioController;
+  final TextEditingController minimoController;
+  final TextEditingController aliasController;
+  final TextEditingController inicialController;
+  final String unidad;
+  final ValueChanged<String?> onUnidadChanged;
+  final bool activo;
+  final ValueChanged<bool> onActivoChanged;
+  final bool modoNuevo;
+  final String? validacion;
+  final bool enviando;
+  final String? errorMensaje;
+  final VoidCallback onGuardar;
+  final VoidCallback? onBajar;
+  final String? productoId;
+
+  @override
+  Widget build(BuildContext context) {
+    final error = validacion ?? errorMensaje;
+
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              modoNuevo ? 'Nuevo producto' : 'Editar producto',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              key: const Key('admin_producto_nombre'),
+              controller: nombreController,
+              textCapitalization: TextCapitalization.words,
+              decoration: const InputDecoration(
+                labelText: 'Nombre',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  flex: 2,
+                  child: TextField(
+                    key: const Key('admin_producto_unidad_label'),
+                    controller: unidadLabelController,
+                    decoration: const InputDecoration(
+                      labelText: 'Etiqueta de unidad',
+                      hintText: 'kg, un, etc.',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    key: const Key('admin_producto_unidad'),
+                    initialValue: unidad,
+                    decoration: const InputDecoration(
+                      labelText: 'Unidad',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 'kg', child: Text('kg')),
+                      DropdownMenuItem(value: 'un', child: Text('un')),
+                    ],
+                    onChanged: onUnidadChanged,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              key: const Key('admin_producto_precio'),
+              controller: precioController,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                labelText: 'Precio',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              key: const Key('admin_producto_minimo'),
+              controller: minimoController,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                labelText: 'Stock mínimo',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              key: const Key('admin_producto_alias'),
+              controller: aliasController,
+              decoration: const InputDecoration(
+                labelText: 'Alias (separados por coma)',
+                hintText: 'alba, albahaca',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            if (modoNuevo) ...[
+              const SizedBox(height: 12),
+              TextField(
+                key: const Key('admin_producto_inicial'),
+                controller: inicialController,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                  labelText: 'Stock inicial',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+            const SizedBox(height: 12),
+            SwitchListTile(
+              key: const Key('admin_producto_activo'),
+              title: const Text('Activo'),
+              value: activo,
+              onChanged: onActivoChanged,
+            ),
+            if (error != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                error,
+                key: const Key('admin_producto_error'),
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ],
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                if (onBajar != null)
+                  TextButton(
+                    key: const Key('admin_producto_bajar'),
+                    onPressed: enviando ? null : onBajar,
+                    child: const Text('Dar de baja'),
+                  ),
+                const Spacer(),
+                TextButton(
+                  onPressed: enviando ? null : () {
+                    if (productoId != null) {
+                      onBajar?.call();
+                    }
+                  },
+                  child: const Text('Cancelar'),
+                ),
+                const SizedBox(width: 8),
+                FilledButton(
+                  key: const Key('admin_producto_guardar'),
+                  onPressed: enviando ? null : onGuardar,
+                  child: enviando
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Guardar'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

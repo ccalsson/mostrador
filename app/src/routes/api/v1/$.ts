@@ -3,6 +3,7 @@ import { assertSameSiteRequest } from "@/lib/auth/isolation.server";
 import { requireUserId, UnauthorizedError } from "@/lib/auth/verify.server";
 import { ensureStaffForUser } from "@/lib/server/bootstrap";
 import { cerrarCajaForStaff, estadoCajaForStaff } from "@/lib/server/caja";
+import { anularEgresoForStaff, createEgresoForStaff, listEgresosForStaff } from "@/lib/server/egresos";
 import {
   crearPedidoForStaff,
   syncCatalogoForStaff,
@@ -45,6 +46,7 @@ import {
 } from "@/lib/server/mensajes";
 import { getCotizacion } from "@/lib/server/moneda";
 import { dashboardResumenForStaff, listAlertasForStaff, listAuditoriaForStaff, marcarAlertaLeidaForStaff } from "@/lib/server/panel";
+import { escritorioDuenoForStaff } from "@/lib/server/escritorio";
 import {
   comprobantePedidoForStaff,
   getPedidoForStaff,
@@ -81,7 +83,7 @@ import {
   transferirStockSucursalForStaff,
   usarSucursalForStaff,
 } from "@/lib/server/sucursales";
-import { createUsuarioForStaff, listUsuariosForStaff, toggleUsuarioForStaff } from "@/lib/server/usuarios";
+import { cambiarClaveForStaff, createUsuarioForStaff, listUsuariosForStaff, toggleUsuarioForStaff } from "@/lib/server/usuarios";
 import {
   catalogoClienteForClient,
   fichaActivaPorUsuario,
@@ -757,6 +759,19 @@ const ROUTES: Entry[] = [
   },
   {
     method: "POST",
+    path: ["usuarios", ":", "clave"],
+    handler: async ({ request, segments, staff }) => {
+      const body = asRecord(await readJson(request));
+      return json({
+        data: await cambiarClaveForStaff(staff, {
+          id: segments[1],
+          password: asString(body.password, "password", 200),
+        }),
+      });
+    },
+  },
+  {
+    method: "POST",
     path: ["usuarios", ":", "cambio-sucursal"],
     handler: async ({ request, segments, staff }) => {
       const body = asRecord(await readJson(request));
@@ -853,6 +868,11 @@ const ROUTES: Entry[] = [
   },
   {
     method: "GET",
+    path: ["escritorio"],
+    handler: async ({ staff }) => json({ data: await escritorioDuenoForStaff(staff) }),
+  },
+  {
+    method: "GET",
     path: ["caja"],
     handler: async ({ staff }) => json({ data: await estadoCajaForStaff(staff) }),
   },
@@ -867,6 +887,35 @@ const ROUTES: Entry[] = [
         notas: asOptionalString(body.notas, 300),
       });
       return json({ data: cierre });
+    },
+  },
+  {
+    method: "GET",
+    path: ["egresos"],
+    handler: async ({ url, staff }) => {
+      const cierreId = url.searchParams.get("cierreId") ?? undefined;
+      return json({ data: await listEgresosForStaff(staff, { cierreId }) });
+    },
+  },
+  {
+    method: "POST",
+    path: ["egresos"],
+    handler: async ({ request, staff }) => {
+      const body = asRecord(await readJson(request));
+      return json({
+        data: await createEgresoForStaff(staff, {
+          monto: asNumber(body.monto, "monto"),
+          concepto: asString(body.concepto, "concepto", 200),
+          categoria: asOptionalString(body.categoria, 30),
+        }),
+      });
+    },
+  },
+  {
+    method: "POST",
+    path: ["egresos", ":", "anular"],
+    handler: async ({ segments, staff }) => {
+      return json({ data: await anularEgresoForStaff(staff, { id: segments[1] }) });
     },
   },
   {

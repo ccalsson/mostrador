@@ -50,6 +50,7 @@ void main() {
           id: 'cje_1',
           abiertoAt: '',
           esperado: 5000,
+          egresos: 0,
           totales: const [],
           ultimos: const [],
         ));

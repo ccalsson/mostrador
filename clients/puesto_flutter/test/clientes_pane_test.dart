@@ -85,7 +85,7 @@ void main() {
 
   testWidgets('edita la ficha y envía sus campos completos', (tester) async {
     await abrirPane(tester);
-    await tester.tap(find.byKey(const Key('admin_editar_cliente_cli_1')));
+    await tester.tap(find.byKey(const Key('admin_cliente_cli_1')));
     await tester.pumpAndSettle();
 
     await tester.enterText(

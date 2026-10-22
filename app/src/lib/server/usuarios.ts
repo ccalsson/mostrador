@@ -51,6 +51,24 @@ export async function createUsuarioForStaff(
   return { ok: true as const };
 }
 
+export async function cambiarClaveForStaff(staff: Staff, input: { id: string; password: string }) {
+  assertRole(staff, ["admin"]);
+  if (input.password.length < 8) throw new Error("La contraseña necesita al menos 8 caracteres.");
+  const sql = await getSql();
+  const destino = await sql<{ user_id: string }>`
+    select user_id from staff where id = ${input.id} and tenant_id = ${staff.casaId} limit 1
+  `;
+  if (!destino[0]) throw new Error("Ese usuario no es de este puesto.");
+  const account = await sql<{ id: string }>`
+    select id from account where "userId" = ${destino[0].user_id} and "providerId" = ${"credential"} limit 1
+  `;
+  if (!account[0]) throw new Error("Esa cuenta no tiene contraseña.");
+  const hash = await hashPassword(input.password);
+  await sql`update account set password = ${hash}, "updatedAt" = now() where id = ${account[0].id}`;
+  await audit(staff.casaId, staff, "cambiar_clave", "staff", { id: input.id });
+  return { ok: true as const };
+}
+
 export async function toggleUsuarioForStaff(staff: Staff, input: { id: string; activo: boolean }) {
   assertRole(staff, ["admin"]);
   if (!input.activo && input.id === staff.id) {

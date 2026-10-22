@@ -14,6 +14,7 @@ import 'cobro_controller.dart';
 import 'cobro_dialog.dart';
 import 'edicion_items_controller.dart';
 import 'editar_items_dialog.dart';
+import 'egresos_pane.dart';
 import 'error_caja.dart';
 import 'ticket_dialog.dart';
 
@@ -29,10 +30,11 @@ enum CajaFiltro {
   final String label;
 }
 
-/// Vistas del área Caja: pedidos (cobro) y estado del turno.
+/// Vistas del área Caja: pedidos (cobro), estado del turno y egresos.
 enum CajaVista {
   pedidos('Pedidos'),
-  estado('Estado de caja');
+  estado('Estado de caja'),
+  egresos('Egresos');
 
   const CajaVista(this.label);
 
@@ -80,6 +82,7 @@ class _CajaPaneState extends ConsumerState<CajaPane> {
           child: switch (_vista) {
             CajaVista.pedidos => _vistaPedidos(context, ref),
             CajaVista.estado => const CajaEstadoPane(),
+            CajaVista.egresos => const EgresosPane(),
           },
         ),
       ],

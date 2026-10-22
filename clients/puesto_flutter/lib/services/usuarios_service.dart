@@ -52,6 +52,11 @@ class UsuariosService {
   Future<void> toggle(String id, {required bool activo}) async {
     await _client.post('/api/v1/usuarios/$id/toggle', body: {'activo': activo});
   }
+
+  /// `POST /api/v1/usuarios/{id}/clave` — cambia la contraseña del usuario.
+  Future<void> cambiarClave(String id, {required String password}) async {
+    await _client.post('/api/v1/usuarios/$id/clave', body: {'password': password});
+  }
 }
 
 final usuariosServiceProvider = Provider<UsuariosService>(
