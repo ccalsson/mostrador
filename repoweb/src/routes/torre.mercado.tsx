@@ -1,11 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Bar, BarChart, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { TorreShell } from "@/components/torre-shell";
 import { analiticaOperacion } from "@/lib/torre/operacion-fn";
 import { money } from "@/lib/money";
 import { ESTADO_LABEL, PAGO_LABEL, type FormaPago, type PedidoEstado } from "@/lib/types";
+import { listarComprasPendientes, habilitarCompra } from "@/lib/torre-fn";
 
 export const Route = createFileRoute("/torre/mercado")({ component: Page });
 
@@ -36,15 +37,35 @@ const STOCK: Record<string, string> = {
 
 function Page() {
   const [dias, setDias] = useState<Rango>(7);
+  const [habilitando, setHabilitando] = useState<string | null>(null);
+  const qc = useQueryClient();
   const data = useQuery({
     queryKey: ["torre-operacion", dias],
     queryFn: () => analiticaOperacion({ data: { dias } }),
+    refetchInterval: 15000,
+  });
+  const compras = useQuery({
+    queryKey: ["torre-compras-pendientes"],
+    queryFn: () => listarComprasPendientes(),
     refetchInterval: 15000,
   });
   const d = data.data;
   const g = d?.gente;
   const mostrador = resumir(d?.mostrador.pedidos ?? [], d?.mostrador.cobros ?? []);
   const mercado = resumir(d?.mercado.pedidos ?? [], d?.mercado.cobros ?? []);
+
+  const handleHabilitar = async (id: string) => {
+    if (!confirm("¿Habilitar esta compra? Estará activa por 30 días.")) return;
+    setHabilitando(id);
+    try {
+      await habilitarCompra({ data: id });
+      await qc.invalidateQueries({ queryKey: ["torre-compras-pendientes"] });
+    } catch (err) {
+      alert((err as Error).message);
+    } finally {
+      setHabilitando(null);
+    }
+  };
 
   return (
     <TorreShell title="Mostrador y Mercado">
@@ -177,6 +198,69 @@ function Page() {
           filas={(d?.enLinea ?? []).map((row) => ({ nombre: row.nombre, detalle: ROL[row.rol] ?? row.rol }))}
         />
       </div>
+
+      <section className="mt-4 rounded-lg border border-line bg-surface p-3">
+        <h2 className="mb-3 font-medium">Compras pendientes</h2>
+        {compras.isLoading ? (
+          <p className="text-sm text-muted">Cargando…</p>
+        ) : compras.error ? (
+          <p className="text-sm text-terra">{(compras.error as Error).message}</p>
+        ) : (compras.data ?? []).length === 0 ? (
+          <p className="text-sm text-muted">No hay compras pendientes de habilitación.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-line text-left text-xs text-muted">
+                  <th className="pb-2 pr-3">Comprador</th>
+                  <th className="pb-2 pr-3">Producto</th>
+                  <th className="pb-2 pr-3 text-right">Monto</th>
+                  <th className="pb-2 pr-3">Fecha pago</th>
+                  <th className="pb-2 pr-3">Estado</th>
+                  <th className="pb-2">Acción</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(compras.data ?? []).map((c) => (
+                  <tr key={c.id} className="border-b border-line last:border-0">
+                    <td className="py-2 pr-3">{c.compradorId}</td>
+                    <td className="py-2 pr-3">{c.producto}</td>
+                    <td className="py-2 pr-3 text-right tabular-nums">{money(c.monto)}</td>
+                    <td className="py-2 pr-3 text-xs">{c.pagadoAt?.slice(0, 10) ?? "—"}</td>
+                    <td className="py-2 pr-3">
+                      <span
+                        className={
+                          c.estado === "active"
+                            ? "rounded bg-leaf/10 px-2 py-0.5 text-xs text-leaf"
+                            : c.estado === "expired"
+                              ? "rounded bg-terra/10 px-2 py-0.5 text-xs text-terra"
+                              : "rounded bg-ambar/10 px-2 py-0.5 text-xs text-ambar"
+                        }
+                      >
+                        {c.estado === "active" ? "Activa" : c.estado === "expired" ? "Vencida" : "Pendiente"}
+                      </span>
+                    </td>
+                    <td className="py-2">
+                      {c.estado === "pending" ? (
+                        <button
+                          type="button"
+                          disabled={habilitando === c.id}
+                          onClick={() => handleHabilitar(c.id)}
+                          className="rounded bg-leaf px-3 py-1 text-xs font-medium text-white hover:bg-leaf/90 disabled:opacity-50"
+                        >
+                          {habilitando === c.id ? "Habilitando…" : "Habilitar"}
+                        </button>
+                      ) : c.estado === "active" && c.venceAt ? (
+                        <span className="text-xs text-muted">Vence {c.venceAt.slice(0, 10)}</span>
+                      ) : null}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
     </TorreShell>
   );
 }

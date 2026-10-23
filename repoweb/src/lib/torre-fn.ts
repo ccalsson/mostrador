@@ -1237,3 +1237,362 @@ export const removeAccess = createServerFn({ method: "POST" })
     await auditar(me, "quitar_acceso", "access", email, {});
     return { ok: true };
   });
+
+export const listarComprasPendientes = createServerFn({ method: "GET" })
+  .middleware([torreGuard])
+  .handler(async ({ context }) => {
+    await requireTorre(context.userId);
+    const sql = await getSql();
+    const rows = await sql<{
+      id: string;
+      comprador_id: string;
+      producto: string;
+      monto: unknown;
+      pagado_at: string;
+      estado: string;
+      habilitado_at: string | null;
+      vence_at: string | null;
+      tenant_id: string | null;
+    }>`
+      select id, comprador_id, producto, monto, pagado_at::text as pagado_at,
+             estado, habilitado_at::text as habilitado_at, vence_at::text as vence_at, tenant_id
+      from torre.compras_pendientes
+      order by pagado_at desc
+    `;
+    return rows.map((r) => ({
+      id: r.id,
+      compradorId: r.comprador_id,
+      producto: r.producto,
+      monto: num(r.monto),
+      pagadoAt: r.pagado_at,
+      estado: r.estado,
+      habilitadoAt: r.habilitado_at,
+      venceAt: r.vence_at,
+      tenantId: r.tenant_id,
+    }));
+  });
+
+export const habilitarCompra = createServerFn({ method: "POST" })
+  .middleware([torreGuard])
+  .validator((id: string) => id)
+  .handler(async ({ context, data }) => {
+    const email = await requireTorre(context.userId);
+    const sql = await getSql();
+    const compra = await sql<{ id: string; estado: string }>`
+      select id, estado from torre.compras_pendientes where id = ${data} limit 1
+    `;
+    if (!compra[0]) throw new Error("No existe esa compra.");
+    if (compra[0].estado !== "pending") throw new Error("Esa compra no está pendiente.");
+    const venceAt = new Date();
+    venceAt.setDate(venceAt.getDate() + 30);
+    await sql`
+      update torre.compras_pendientes
+      set estado = 'active',
+          habilitado_at = now(),
+          vence_at = ${venceAt.toISOString()}::timestamptz
+      where id = ${data}
+    `;
+    await auditar(email, "habilitar_compra", "compra_pendiente", data, { estado: "active" });
+    return { ok: true };
+  });
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * Del puesto — ficha por puesto operativo (tenants), no por negocio de Torre
+ * ────────────────────────────────────────────────────────────────────────── */
+
+function configStr(value: unknown, key: string): string {
+  let record = value;
+  if (typeof value === "string" && value.trim()) {
+    try { record = JSON.parse(value) as unknown; } catch { return ""; }
+  }
+  if (!record || typeof record !== "object") return "";
+  const raw = (record as Record<string, unknown>)[key];
+  return typeof raw === "string" ? raw : "";
+}
+
+export const paridadPuestos = createServerFn({ method: "GET" })
+  .middleware([torreGuard])
+  .handler(async ({ context }) => {
+    await requireTorre(context.userId);
+    const sql = await getSql();
+    const rows = await sql<{
+      id: string;
+      nombre: string;
+      config: unknown;
+      creditos: number;
+      piezas: number;
+      egresos_30d: unknown;
+      productos_con_costo: number;
+      productos_sin_costo: number;
+      notas_recibidas: number;
+      estrellas_prom: unknown;
+      avisos_activos: number;
+      saas_name: string;
+      client_name: string;
+    }>`
+      select t.id, t.nombre, t.config,
+             coalesce(cs.creditos, 0) as creditos,
+             coalesce(cp.piezas, 0) as piezas,
+             coalesce(eg.total, 0) as egresos_30d,
+             coalesce(pc.con_costo, 0) as productos_con_costo,
+             coalesce(pc.sin_costo, 0) as productos_sin_costo,
+             coalesce(nr.notas, 0) as notas_recibidas,
+             nr.estrellas_prom,
+             coalesce(av.avisos, 0) as avisos_activos,
+             coalesce(st.name, '') as saas_name,
+             coalesce(cl.name, '') as client_name
+      from tenants t
+      left join creativos_saldo cs on cs.tenant_id = t.id
+      left join lateral (
+        select count(*)::int as piezas from creativos_pedidos where tenant_id = t.id
+      ) cp on true
+      left join lateral (
+        select coalesce(sum(monto), 0) as total
+        from egresos_caja where tenant_id = t.id and creado_at >= current_date - 30
+      ) eg on true
+      left join lateral (
+        select
+          count(*) filter (where costo is not null)::int as con_costo,
+          count(*) filter (where costo is null)::int as sin_costo
+        from productos where tenant_id = t.id and activo = true
+      ) pc on true
+      left join lateral (
+        select count(*)::int as notas, avg(estrellas) as estrellas_prom
+        from mercado_cruces where tenant_id = t.id and sentido = 'comprador_puesto'
+      ) nr on true
+      left join lateral (
+        select count(*)::int as avisos
+        from torre.saas_ads a
+        join torre.saas_tenants st2 on st2.id = a.tenant_id
+        where st2.operational_tenant_ref = t.id
+          and a.status in ('scheduled', 'active')
+          and a.ends_on >= current_date
+      ) av on true
+      left join torre.saas_tenants st on st.operational_tenant_ref = t.id and st.status = 'active'
+      left join torre.saas_clients cl on cl.id = st.client_id
+      order by lower(t.nombre)
+    `;
+    return rows.map((r) => ({
+      id: r.id,
+      nombre: r.nombre,
+      bajada: configStr(r.config, "bajada"),
+      direccion: configStr(r.config, "direccion"),
+      reputacion: r.notas_recibidas > 0 ? Number(num(r.estrellas_prom)).toFixed(1) : null,
+      creditos: r.creditos,
+      piezas: r.piezas,
+      egresos30d: num(r.egresos_30d),
+      productosConCosto: r.productos_con_costo,
+      productosSinCosto: r.productos_sin_costo,
+      diasReposicion: null as number | null,
+      avisos: r.avisos_activos,
+      notasRecibidas: r.notas_recibidas,
+      saasName: r.saas_name,
+      clientName: r.client_name,
+    }));
+  });
+
+export const detallePuestoTorre = createServerFn({ method: "GET" })
+  .middleware([torreGuard])
+  .validator((input: { puestoId: string } | undefined) => {
+    const puestoId = input?.puestoId?.trim() ?? "";
+    if (!puestoId) throw new Error("Falta el puesto.");
+    return { puestoId };
+  })
+  .handler(async ({ context, data }) => {
+    await requireTorre(context.userId);
+    const sql = await getSql();
+    const [puesto] = await sql<{ id: string; nombre: string; config: unknown }>`
+      select id, nombre, config from tenants where id = ${data.puestoId} limit 1
+    `;
+    if (!puesto) throw new Error("No existe ese puesto.");
+    const config = puesto.config;
+    const notas = await sql<{
+      id: string;
+      estrellas: number;
+      comentario: string;
+      creado_at: string;
+      comprador_nombre: string;
+    }>`
+      select mc.id, mc.estrellas, coalesce(mc.comentario, '') as comentario,
+             mc.created_at::text as creado_at,
+             coalesce(mb.nombre, 'Comprador') as comprador_nombre
+      from mercado_cruces mc
+      left join mercado_compradores mb on mb.id = mc.comprador_id
+      where mc.tenant_id = ${data.puestoId} and mc.sentido = 'comprador_puesto'
+      order by mc.created_at desc
+      limit 50
+    `;
+    const piezas = await sql<{
+      id: string;
+      formato: string;
+      estado: string;
+      brief: string;
+      created_at: string;
+    }>`
+      select id, formato, estado, brief, created_at::text as created_at
+      from creativos_pedidos
+      where tenant_id = ${data.puestoId}
+      order by created_at desc
+      limit 20
+    `;
+    const egresos = await sql<{
+      id: string;
+      monto: unknown;
+      concepto: string;
+      categoria: string;
+      creado_at: string;
+    }>`
+      select id, monto, concepto, categoria, creado_at::text as creado_at
+      from egresos_caja
+      where tenant_id = ${data.puestoId} and creado_at >= current_date - 30
+      order by creado_at desc
+    `;
+    const productos = await sql<{
+      id: string;
+      nombre: string;
+      precio: unknown;
+      costo: unknown;
+      stock: unknown;
+    }>`
+      select id, nombre, precio, costo, stock
+      from productos
+      where tenant_id = ${data.puestoId} and activo = true
+      order by lower(nombre)
+    `;
+    const avisos = await sql<{
+      id: string;
+      placement: string;
+      status: string;
+      starts_on: string;
+      ends_on: string;
+      notes: string;
+    }>`
+      select a.id, a.placement, a.status, a.starts_on::text as starts_on, a.ends_on::text as ends_on, a.notes
+      from torre.saas_ads a
+      join torre.saas_tenants t on t.id = a.tenant_id
+      where t.operational_tenant_ref = ${data.puestoId}
+        and a.status in ('scheduled', 'active')
+        and a.ends_on >= current_date
+      order by a.ends_on
+    `;
+    const ventas7d = await sql.query<{ producto_id: string; total_cantidad: unknown }>(
+      `select i.producto_id, coalesce(sum(i.cantidad), 0) as total_cantidad
+       from pedido_items i
+       join pedidos p on p.id = i.pedido_id
+       where p.tenant_id = $1 and p.estado in ('cobrado', 'entregado')
+         and p.created_at::date >= current_date - 7
+       group by i.producto_id`,
+      [data.puestoId],
+    );
+    const ventaMapa = new Map(ventas7d.map((v) => [v.producto_id, num(v.total_cantidad)]));
+    const reposicion = productos.map((p) => {
+      const vendido = ventaMapa.get(p.id) ?? 0;
+      const stock = num(p.stock);
+      const dias = vendido > 0 ? Math.round(stock / (vendido / 7)) : null;
+      return { productoId: p.id, nombre: p.nombre, dias };
+    }).filter((r) => r.dias !== null);
+    return {
+      id: puesto.id,
+      nombre: puesto.nombre,
+      bajada: configStr(config, "bajada"),
+      direccion: configStr(config, "direccion"),
+      pieTicket: configStr(config, "pieTicket"),
+      membrete: configStr(config, "membrete"),
+      notas: notas.map((n) => ({
+        id: n.id,
+        estrellas: n.estrellas,
+        comentario: n.comentario,
+        creadoAt: String(n.creado_at).slice(0, 16).replace("T", " "),
+        compradorNombre: n.comprador_nombre,
+      })),
+      piezas: piezas.map((p) => ({
+        id: p.id,
+        formato: p.formato,
+        estado: p.estado,
+        brief: p.brief,
+        createdAt: String(p.created_at).slice(0, 16).replace("T", " "),
+      })),
+      egresos: egresos.map((e) => ({
+        id: e.id,
+        monto: num(e.monto),
+        concepto: e.concepto,
+        categoria: e.categoria,
+        creadoAt: String(e.creado_at).slice(0, 16).replace("T", " "),
+      })),
+      productos: productos.map((p) => ({
+        id: p.id,
+        nombre: p.nombre,
+        precio: num(p.precio),
+        costo: p.costo != null ? num(p.costo) : null,
+        stock: num(p.stock),
+      })),
+      avisos: avisos.map((a) => ({
+        id: a.id,
+        placement: a.placement,
+        status: a.status,
+        startsOn: String(a.starts_on).slice(0, 10),
+        endsOn: String(a.ends_on).slice(0, 10),
+        notes: a.notes,
+      })),
+      reposicion,
+    };
+  });
+
+export const guardarIdentidadTorre = createServerFn({ method: "POST" })
+  .middleware([torreGuard])
+  .validator((input: { puestoId: string; nombre: string; bajada: string; direccion: string; pieTicket: string }) => input)
+  .handler(async ({ context, data }) => {
+    const email = await requireTorre(context.userId);
+    await exigirAccion(email, "comercial");
+    if (!data.puestoId.trim()) throw new Error("Falta el puesto.");
+    const nombre = data.nombre.trim();
+    if (!nombre) throw new Error("El nombre es obligatorio.");
+    if (nombre.length > 80) throw new Error("El nombre es demasiado largo.");
+    if (data.bajada.trim().length > 80) throw new Error("La bajada es demasiado larga.");
+    if (data.direccion.trim().length > 200) throw new Error("La dirección es demasiado larga.");
+    if (data.pieTicket.trim().length > 240) throw new Error("El pie del ticket es demasiado largo.");
+    const sql = await getSql();
+    const [actual] = await sql<{ config: unknown }>`select config from tenants where id = ${data.puestoId} limit 1`;
+    if (!actual) throw new Error("No existe ese puesto.");
+    const configPrev = typeof actual.config === "string" && actual.config.trim()
+      ? JSON.parse(actual.config) as Record<string, unknown>
+      : (actual.config as Record<string, unknown>) ?? {};
+    const configNew = {
+      ...configPrev,
+      bajada: data.bajada.trim(),
+      direccion: data.direccion.trim(),
+      pieTicket: data.pieTicket.trim(),
+    };
+    await sql`
+      update tenants set nombre = ${nombre}, config = ${JSON.stringify(configNew)}::jsonb
+      where id = ${data.puestoId}
+    `;
+    // Actualizar la referencia de la sucursal cuyo libro es ese puesto
+    await sql`
+      update sucursales set nombre = ${nombre}
+      where libros_tenant_id = ${data.puestoId}
+    `;
+    await auditar(email, "guardar_identidad_puesto", "tenant", data.puestoId, {
+      nombre,
+      bajada: data.bajada.trim(),
+      direccion: data.direccion.trim(),
+      pieTicket: data.pieTicket.trim(),
+    });
+    return { ok: true };
+  });
+
+export const quitarComentarioTorre = createServerFn({ method: "POST" })
+  .middleware([torreGuard])
+  .validator((input: { notaId: string }) => input)
+  .handler(async ({ context, data }) => {
+    const email = await requireTorre(context.userId);
+    await exigirAccion(email, "comercial");
+    if (!data.notaId.trim()) throw new Error("Falta la nota.");
+    const sql = await getSql();
+    // Borra el texto de la nota, las estrellas quedan
+    await sql`
+      update mercado_cruces set comentario = '' where id = ${data.notaId}
+    `;
+    await auditar(email, "quitar_comentario_puesto", "nota", data.notaId, {});
+    return { ok: true };
+  });

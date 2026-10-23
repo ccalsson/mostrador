@@ -160,3 +160,15 @@ export function hayActualizacion(actual: string | null | undefined, latest: stri
   if (!actual) return true;
   return cmpVer(actual, latest) < 0;
 }
+
+/** Suma el cupo de Mercado: cada línea activa con family="mercado" aporta su includedBranches (default 1). */
+export function cupoMercadoFromLines(
+  lines: { family: string | null; lineStatus: string; includedBranches?: number }[],
+): number {
+  let cupo = 0;
+  for (const line of lines) {
+    if (line.lineStatus !== "active" || line.family !== "mercado") continue;
+    cupo += line.includedBranches ?? 1;
+  }
+  return cupo;
+}

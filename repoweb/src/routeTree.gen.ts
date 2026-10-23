@@ -51,6 +51,7 @@ import { Route as TorreProcesadoresRouteImport } from './routes/torre.procesador
 import { Route as TorreProductosRouteImport } from './routes/torre.productos'
 import { Route as TorrePromocionesRouteImport } from './routes/torre.promociones'
 import { Route as TorrePublicidadRouteImport } from './routes/torre.publicidad'
+import { Route as TorrePuestoRouteImport } from './routes/torre.puesto'
 import { Route as TorreServiciosRouteImport } from './routes/torre.servicios'
 import { Route as TorreSucursalesRouteImport } from './routes/torre.sucursales'
 import { Route as TorreSuperAlToqueRouteImport } from './routes/torre.super-al-toque'
@@ -273,6 +274,11 @@ const TorrePublicidadRoute = TorrePublicidadRouteImport.update({
   path: '/publicidad',
   getParentRoute: () => TorreRoute,
 } as any)
+const TorrePuestoRoute = TorrePuestoRouteImport.update({
+  id: '/puesto',
+  path: '/puesto',
+  getParentRoute: () => TorreRoute,
+} as any)
 const TorreServiciosRoute = TorreServiciosRouteImport.update({
   id: '/servicios',
   path: '/servicios',
@@ -372,6 +378,7 @@ export interface FileRoutesByFullPath {
   '/torre/productos': typeof TorreProductosRoute
   '/torre/promociones': typeof TorrePromocionesRoute
   '/torre/publicidad': typeof TorrePublicidadRoute
+  '/torre/puesto': typeof TorrePuestoRoute
   '/torre/servicios': typeof TorreServiciosRoute
   '/torre/sucursales': typeof TorreSucursalesRoute
   '/torre/super-al-toque': typeof TorreSuperAlToqueRoute
@@ -426,6 +433,7 @@ export interface FileRoutesByTo {
   '/torre/productos': typeof TorreProductosRoute
   '/torre/promociones': typeof TorrePromocionesRoute
   '/torre/publicidad': typeof TorrePublicidadRoute
+  '/torre/puesto': typeof TorrePuestoRoute
   '/torre/servicios': typeof TorreServiciosRoute
   '/torre/sucursales': typeof TorreSucursalesRoute
   '/torre/super-al-toque': typeof TorreSuperAlToqueRoute
@@ -482,6 +490,7 @@ export interface FileRoutesById {
   '/torre/productos': typeof TorreProductosRoute
   '/torre/promociones': typeof TorrePromocionesRoute
   '/torre/publicidad': typeof TorrePublicidadRoute
+  '/torre/puesto': typeof TorrePuestoRoute
   '/torre/servicios': typeof TorreServiciosRoute
   '/torre/sucursales': typeof TorreSucursalesRoute
   '/torre/super-al-toque': typeof TorreSuperAlToqueRoute
@@ -539,6 +548,7 @@ export interface FileRouteTypes {
     | '/torre/productos'
     | '/torre/promociones'
     | '/torre/publicidad'
+    | '/torre/puesto'
     | '/torre/servicios'
     | '/torre/sucursales'
     | '/torre/super-al-toque'
@@ -593,6 +603,7 @@ export interface FileRouteTypes {
     | '/torre/productos'
     | '/torre/promociones'
     | '/torre/publicidad'
+    | '/torre/puesto'
     | '/torre/servicios'
     | '/torre/sucursales'
     | '/torre/super-al-toque'
@@ -648,6 +659,7 @@ export interface FileRouteTypes {
     | '/torre/productos'
     | '/torre/promociones'
     | '/torre/publicidad'
+    | '/torre/puesto'
     | '/torre/servicios'
     | '/torre/sucursales'
     | '/torre/super-al-toque'
@@ -992,6 +1004,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TorrePublicidadRouteImport
       parentRoute: typeof TorreRoute
     }
+    '/torre/puesto': {
+      id: '/torre/puesto'
+      path: '/puesto'
+      fullPath: '/torre/puesto'
+      preLoaderRoute: typeof TorrePuestoRouteImport
+      parentRoute: typeof TorreRoute
+    }
     '/torre/servicios': {
       id: '/torre/servicios'
       path: '/servicios'
@@ -1098,6 +1117,7 @@ interface TorreRouteChildren {
   TorreProductosRoute: typeof TorreProductosRoute
   TorrePromocionesRoute: typeof TorrePromocionesRoute
   TorrePublicidadRoute: typeof TorrePublicidadRoute
+  TorrePuestoRoute: typeof TorrePuestoRoute
   TorreServiciosRoute: typeof TorreServiciosRoute
   TorreSucursalesRoute: typeof TorreSucursalesRoute
   TorreSuperAlToqueRoute: typeof TorreSuperAlToqueRoute
@@ -1122,6 +1142,7 @@ const TorreRouteChildren: TorreRouteChildren = {
   TorreProductosRoute: TorreProductosRoute,
   TorrePromocionesRoute: TorrePromocionesRoute,
   TorrePublicidadRoute: TorrePublicidadRoute,
+  TorrePuestoRoute: TorrePuestoRoute,
   TorreServiciosRoute: TorreServiciosRoute,
   TorreSucursalesRoute: TorreSucursalesRoute,
   TorreSuperAlToqueRoute: TorreSuperAlToqueRoute,

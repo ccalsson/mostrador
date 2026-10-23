@@ -12,6 +12,7 @@ import {
   releaseVisible,
   sumarPeriodo,
   totalMensual,
+  cupoMercadoFromLines,
 } from "./reglas.ts";
 
 test("la primera sucursal no se factura y la segunda suma una", () => {
@@ -83,4 +84,52 @@ test("ARS se calcula con el tipo de cambio vigente y queda en el snapshot", () =
   );
   assert.equal(snap.unit, 38500);
   assert.equal(snap.fxUsed, 1540);
+});
+
+test("cupoMercado: sin líneas de mercado el cupo es 0", () => {
+  assert.equal(cupoMercadoFromLines([]), 0);
+  assert.equal(
+    cupoMercadoFromLines([
+      { family: null, lineStatus: "active", includedBranches: 3 },
+      { family: "mostrador", lineStatus: "active", includedBranches: 2 },
+    ]),
+    0,
+  );
+});
+
+test("cupoMercado: una línea activa de mercado aporta su includedBranches", () => {
+  assert.equal(
+    cupoMercadoFromLines([
+      { family: "mercado", lineStatus: "active", includedBranches: 1 },
+    ]),
+    1,
+  );
+  assert.equal(
+    cupoMercadoFromLines([
+      { family: "mercado", lineStatus: "active", includedBranches: 5 },
+    ]),
+    5,
+  );
+});
+
+test("cupoMercado: suma varias líneas y default a 1 si no tiene includedBranches", () => {
+  assert.equal(
+    cupoMercadoFromLines([
+      { family: "mercado", lineStatus: "active", includedBranches: 2 },
+      { family: "mercado", lineStatus: "active" },
+      { family: "mercado", lineStatus: "active", includedBranches: 3 },
+    ]),
+    6,
+  );
+});
+
+test("cupoMercado: líneas no activas no suman", () => {
+  assert.equal(
+    cupoMercadoFromLines([
+      { family: "mercado", lineStatus: "ended", includedBranches: 5 },
+      { family: "mercado", lineStatus: "active", includedBranches: 2 },
+      { family: "mercado", lineStatus: "pending", includedBranches: 3 },
+    ]),
+    2,
+  );
 });

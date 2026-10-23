@@ -17,6 +17,7 @@ const CLAVES = [
   "finanzas",
   "operacion",
   "super-al-toque",
+  "puesto",
   "legal",
   "procesadores",
   "apps",
@@ -756,6 +757,50 @@ async function armar(sql: Sql, clave: Clave): Promise<PanelTorre> {
         { titulo: "Comercios pendientes", detalle: `${k.merchants.pending} esperando aprobación` },
         { titulo: "Flete en juego", detalle: money(k.deliveries.deliveryFeeCents / 100) },
       ],
+    };
+  }
+
+  if (clave === "puesto") {
+    const [tot] = await sql.query<{ total: unknown; con_identidad: unknown; con_costos: unknown; con_reposicion: unknown }>(
+      `select count(*)::int as total,
+              count(*) filter (where coalesce(config->>'bajada', '') <> '' and coalesce(config->>'direccion', '') <> '') as con_identidad,
+              count(*) filter (where exists (select 1 from productos p where p.tenant_id = tenants.id and p.activo = true and p.costo is not null)) as con_costos,
+              0 as con_reposicion
+       from tenants`,
+    );
+    const barras = await sql.query<{ nombre: string; valor: unknown }>(
+      `select case when coalesce(config->>'bajada', '') = '' then 'Sin identidad' else 'Con identidad' end as nombre,
+              count(*)::int as valor
+       from tenants
+       group by nombre
+       order by count(*) desc`,
+    );
+    const filas = await sql.query<{ titulo: string; detalle: string }>(
+      `select nombre as titulo,
+              case
+                when coalesce(config->>'bajada', '') = '' then 'Falta bajada'
+                when coalesce(config->>'direccion', '') = '' then 'Falta dirección'
+                else 'Identidad completa'
+              end as detalle
+       from tenants
+       order by nombre
+       limit 6`,
+    );
+    return {
+      titulo: "Del puesto",
+      detalle: "Fichas por puesto operativo. Lo que el dueño carga y antes Torre no miraba.",
+      serieLabel: "Puestos creados",
+      kpis: [
+        { label: "Total puestos", value: entero(tot?.total) },
+        { label: "Con identidad", value: entero(tot?.con_identidad) },
+        { label: "Con costos", value: entero(tot?.con_costos) },
+        { label: "Con reposición", value: entero(tot?.con_reposicion) },
+      ],
+      serie: await puntos(sql, "tenants x on x.created_at::date = d::date"),
+      barrasLabel: "Identidad cargada",
+      barras: barras.map((row) => ({ nombre: row.nombre, valor: num(row.valor) })),
+      filasLabel: "Para completar",
+      filas,
     };
   }
 

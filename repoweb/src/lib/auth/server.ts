@@ -30,7 +30,8 @@
  * a verified id via `@/lib/auth/middleware`.
  */
 import { betterAuth } from "better-auth";
-import { bearer, genericOAuth, google } from "better-auth/plugins";
+import { bearer, genericOAuth } from "better-auth/plugins";
+import { google } from "@better-auth/core/social-providers";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
 import { getCookie } from "@tanstack/react-start/server";
 import { randomBytes } from "node:crypto";
