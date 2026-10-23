@@ -51,6 +51,7 @@ import { mesaTurnoForStaff } from "@/lib/server/mesa-turno";
 import { escritorioDuenoForStaff } from "@/lib/server/escritorio";
 import {
   comprobantePedidoForStaff,
+  entregarParcialForStaff,
   getPedidoForStaff,
   listPedidosForStaff,
   marcarEntregadoForStaff,
@@ -464,6 +465,29 @@ const ROUTES: Entry[] = [
     method: "POST",
     path: ["pedidos", ":", "entregar"],
     handler: async ({ segments, staff }) => json({ data: await marcarEntregadoForStaff(staff, segments[1]) }),
+  },
+  {
+    method: "POST",
+    path: ["pedidos", ":", "entregar-parcial"],
+    handler: async ({ request, segments, staff }) => {
+      const body = asRecord(await readJson(request));
+      const items = body.items;
+      if (!Array.isArray(items) || items.length === 0 || items.length > 200) {
+        throw new HttpError(400, "invalid_request", "Debe incluir entre 1 y 200 ítems.");
+      }
+      const resultado = await entregarParcialForStaff(staff, {
+        pedidoId: segments[1],
+        items: items.map((raw) => {
+          const item = asRecord(raw);
+          return {
+            itemId: asString(item.itemId, "itemId", 80),
+            cantidad: asNumber(item.cantidad, "cantidad"),
+            nota: asOptionalString(item.nota, 500),
+          };
+        }),
+      });
+      return json({ data: resultado });
+    },
   },
   {
     method: "POST",

@@ -40,6 +40,12 @@ function CierrePage() {
             </li>
           ))}
         </ul>
+        {(d?.egresos ?? 0) > 0 ? (
+          <div className="mt-3 flex justify-between text-sm text-terra">
+            <span>Egresos del turno</span>
+            <span className="tabular-nums">−{money(d?.egresos ?? 0)}</span>
+          </div>
+        ) : null}
         <div className="mt-4 flex justify-between font-medium">
           <span>Esperado</span>
           <span className="tabular-nums">{money(d?.esperado ?? 0)}</span>

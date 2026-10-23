@@ -156,6 +156,11 @@ export async function marcarEntregadoForStaff(staff: Staff, id: string) {
     throw error;
   }
   await sql`
+    update pedido_items
+    set cantidad_entregada = cantidad
+    where pedido_id = ${id} and cantidad_entregada < cantidad
+  `;
+  await sql`
     update pedidos set estado = 'entregado', updated_at = now()
     where id = ${id} and tenant_id = ${staff.tenantId}
   `;
@@ -214,4 +219,66 @@ export async function updatePedidoItemsForStaff(
   }
   await audit(staff.tenantId, staff, "modificar_pedido", "pedido", { id: input.id });
   return loadPedido(input.id, staff.tenantId);
+}
+
+export type EntregaItemInput = {
+  itemId: string;
+  cantidad: number;
+  nota?: string;
+};
+
+export async function entregarParcialForStaff(
+  staff: Staff,
+  input: { pedidoId: string; items: EntregaItemInput[] },
+) {
+  assertRole(staff, ["admin", "cajero", "vendedor"]);
+  const sql = await getSql();
+  const pedido = await loadPedido(input.pedidoId, staff.tenantId);
+  if (!pedido) throw new Error("Pedido no encontrado.");
+  if (pedido.estado !== "cobrado") throw new Error("Solo se entrega parcialmente un pedido cobrado.");
+  if (!input.items.length) throw new Error("Seleccioná al menos un ítem para entregar.");
+
+  const itemIds = new Set(pedido.items.map((i) => i.id));
+  for (const it of input.items) {
+    if (!itemIds.has(it.itemId)) throw new Error("Ítem inválido.");
+    if (it.cantidad <= 0) throw new Error("La cantidad debe ser mayor a 0.");
+    const original = pedido.items.find((i) => i.id === it.itemId)!;
+    const pendiente = original.cantidad - original.cantidadEntregada;
+    if (it.cantidad > pendiente + 0.001) {
+      throw new Error(`La cantidad de "${original.nombre}" supera lo pendiente (${pendiente}).`);
+    }
+  }
+
+  for (const it of input.items) {
+    const nota = it.nota?.trim() || null;
+    await sql`
+      update pedido_items
+      set cantidad_entregada = cantidad_entregada + ${it.cantidad},
+          nota_entrega = coalesce(${nota}, nota_entrega)
+      where id = ${it.itemId} and pedido_id = ${input.pedidoId}
+    `;
+  }
+
+  // Check if all items are fully delivered -> mark order as "entregado"
+  const updated = await loadPedido(input.pedidoId, staff.tenantId);
+  if (updated) {
+    const allDelivered = updated.items.every(
+      (i) => i.cantidadEntregada >= i.cantidad - 0.001,
+    );
+    if (allDelivered) {
+      const checklist = await verificarChecklistCompleto(input.pedidoId, staff.tenantId);
+      if (checklist.ok) {
+        await sql`
+          update pedidos set estado = 'entregado', updated_at = now()
+          where id = ${input.pedidoId} and tenant_id = ${staff.tenantId}
+        `;
+      }
+    }
+  }
+
+  await audit(staff.tenantId, staff, "entrega_parcial", "pedido", {
+    id: input.pedidoId,
+    items: input.items.map((i) => ({ itemId: i.itemId, cantidad: i.cantidad })),
+  });
+  return { ok: true as const, pedido: await loadPedido(input.pedidoId, staff.tenantId) };
 }

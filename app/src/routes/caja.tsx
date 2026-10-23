@@ -564,6 +564,8 @@ function CobroPanel({
                   unidad: p.unidad,
                   unidadLabel: p.unidadLabel,
                   subtotal: p.precio,
+                  cantidadEntregada: 0,
+                  notaEntrega: null,
                 },
               ];
             });

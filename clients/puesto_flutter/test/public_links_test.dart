@@ -11,13 +11,17 @@ import 'package:puesto_flutter/models/producto.dart';
 import 'package:puesto_flutter/models/staff_session.dart';
 import 'package:puesto_flutter/services/catalogo_service.dart';
 import 'package:puesto_flutter/services/dashboard_service.dart';
+import 'package:puesto_flutter/services/offline_queue_service.dart';
 import 'package:puesto_flutter/services/tenant_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class _AuthFake extends AuthController {
   @override
   AuthState build() => const AuthState.unauthenticated();
 }
+
+late SharedPreferences _prefs;
 
 Widget _screen(Widget home) => ProviderScope(
   overrides: [
@@ -29,11 +33,18 @@ Widget _screen(Widget home) => ProviderScope(
       (ref) async => const Catalogo(productos: [], version: null),
     ),
     dashboardProvider.overrideWith((ref) => throw StateError('Sin datos')),
+    sharedPreferencesProvider.overrideWithValue(_prefs),
   ],
   child: MaterialApp(theme: temaClaro(), home: home),
 );
 
 void main() {
+  setUpAll(() async {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    SharedPreferences.setMockInitialValues({});
+    _prefs = await SharedPreferences.getInstance();
+  });
+
   test('URLs públicas conservan /apps y sólo envían app=mostrador', () {
     for (final base in [
       'https://public.example/apps',

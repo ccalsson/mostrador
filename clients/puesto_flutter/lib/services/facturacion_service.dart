@@ -71,9 +71,11 @@ class FacturacionService {
     return Factura.fromJson(data['data'] as Map<String, dynamic>);
   }
 
-  Future<Factura> emitirNotaCredito(String facturaId) async {
+  Future<Factura> emitirNotaCredito(String facturaId, {String? motivo}) async {
+    final body = <String, dynamic>{'facturaId': facturaId};
+    if (motivo != null && motivo.isNotEmpty) body['motivo'] = motivo;
     final data = await _client.post('/api/v1/afip/notas-credito',
-        body: {'facturaId': facturaId}) as Map<String, dynamic>;
+        body: body) as Map<String, dynamic>;
     return Factura.fromJson(data['data'] as Map<String, dynamic>);
   }
 

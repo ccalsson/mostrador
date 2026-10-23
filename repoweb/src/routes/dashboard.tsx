@@ -3,12 +3,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Bar, BarChart, Cell, Line, LineChart, Area, AreaChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { AppShell } from "@/components/app-shell";
+import { Button } from "@/components/ui/button";
 import { ClimaDolar } from "@/components/clima-dolar";
 import { IdentidadPuesto } from "@/components/identidad-puesto";
 import { MesaTurno } from "@/components/mesa-turno";
 import { StockBoard } from "@/components/stock-board";
 import { SucursalesPuesto } from "@/components/sucursales-puesto";
-import { dashboardResumen, listAlertas, marcarAlertaLeida, rankingCargadores } from "@/lib/fn";
+import { dashboardResumen, listAlertas, marcarAlertaLeida, rankingCargadores, quienSoy, getMarca } from "@/lib/fn";
 import { cn } from "@/lib/cn";
 import { clock, money } from "@/lib/money";
 import { ESTADO_LABEL, PAGO_LABEL, type FormaPago, type PedidoEstado } from "@/lib/types";
@@ -139,6 +140,8 @@ function DashboardPage() {
           </div>
 
           <SucursalesPuesto />
+
+          <QrPuesto />
 
           <section className="rounded-[10px] border border-line bg-surface p-3">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -660,5 +663,71 @@ function Chip({ children, onClear }: { children: React.ReactNode; onClear: () =>
     <button type="button" onClick={onClear} className="rounded-full bg-ok-bg px-2.5 py-1 text-leaf">
       {children} · quitar
     </button>
+  );
+}
+
+function QrPuesto() {
+  const me = useQuery({ queryKey: ["quien"], queryFn: () => quienSoy() });
+  const marca = useQuery({ queryKey: ["marca"], queryFn: () => getMarca() });
+  const [qr, setQr] = useState<string | null>(null);
+  const [abierta, setAbierta] = useState(false);
+
+  const tenantId = me.data?.tipo === "staff" ? me.data.staff.tenantId : me.data?.tipo === "cliente" ? me.data.tenant?.id : null;
+  const nombre = marca.data?.nombre ?? (me.data?.tipo === "staff" ? me.data.tenant?.nombre : null);
+  const url = tenantId && typeof window !== "undefined" ? `${window.location.origin}/mercado?puesto=${tenantId}` : "";
+
+  useEffect(() => {
+    if (!url) return;
+    void import("qrcode")
+      .then((mod) => mod.default.toDataURL(url, { margin: 1, width: 240 }))
+      .then(setQr)
+      .catch(() => setQr(null));
+  }, [url]);
+
+  if (!tenantId || !url) return null;
+
+  function imprimir() {
+    window.print();
+  }
+
+  return (
+    <section className="rounded-[10px] border border-line bg-surface p-3">
+      <button type="button" className="flex w-full items-center justify-between text-left" onClick={() => setAbierta((v) => !v)}>
+        <h2 className="text-sm font-medium">QR del puesto</h2>
+        <span className="text-xs text-leaf">{abierta ? "Cerrar" : "Ver e imprimir"}</span>
+      </button>
+      {abierta ? (
+        <div className="mt-3 space-y-3">
+          <p className="text-xs text-muted">
+            Los compradores pueden escanear este QR para entrar directo a tu puesto en Mercado al Toque.
+          </p>
+          <div className="flex flex-col items-center gap-3">
+            {qr ? (
+              <img src={qr} alt={`QR de ${nombre ?? "puesto"}`} className="size-40 rounded-md border border-line" />
+            ) : (
+              <div className="flex size-40 items-center justify-center rounded-md border border-line bg-paper text-xs text-muted">
+                Generando…
+              </div>
+            )}
+            <p className="max-w-full break-all text-center text-xs text-muted">{url}</p>
+          </div>
+          <div className="flex gap-2">
+            <Button onClick={imprimir}>Imprimir QR</Button>
+            <Button
+              variant="secondary"
+              onClick={() => void navigator.clipboard?.writeText(url)}
+            >
+              Copiar enlace
+            </Button>
+          </div>
+        </div>
+      ) : null}
+      <div id="qr-print" className="hidden print:block">
+        <p className="qr-nombre">{nombre ?? "Mi puesto"}</p>
+        {qr ? <img src={qr} alt="" className="qr-imagen" /> : null}
+        <p className="qr-url">{url}</p>
+        <p className="qr-subtitulo">Escaneá para entrar en Mercado al Toque</p>
+      </div>
+    </section>
   );
 }

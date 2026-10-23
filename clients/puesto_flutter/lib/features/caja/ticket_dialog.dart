@@ -7,24 +7,70 @@ import '../../models/cobro.dart';
 import '../../models/ticket.dart';
 import '../../services/pedidos_service.dart';
 import '../../services/printer_service.dart';
+import '../../services/impresion_termica_service.dart';
 
 /// Vista previa del ticket de un cobro (`GET /api/v1/cobros/:id/ticket`)
-/// con impresión por fallback del sistema (`PrinterService`). La térmica
-/// queda para cuando se defina el hardware.
-class TicketDialog extends ConsumerWidget {
+/// con impresión directa a térmica Bluetooth/USB o fallback al sistema.
+class TicketDialog extends ConsumerStatefulWidget {
   const TicketDialog({super.key, required this.cobroId});
 
   final String cobroId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final ticketAsync = ref.watch(ticketProvider(cobroId));
+  ConsumerState<TicketDialog> createState() => _TicketDialogState();
+}
+
+class _TicketDialogState extends ConsumerState<TicketDialog> {
+  bool _buscandoImpresoras = false;
+  bool _conectando = false;
+  bool _imprimiendoTermica = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final ticketAsync = ref.watch(ticketProvider(widget.cobroId));
     final ticket = ticketAsync.value;
+    final termica = ref.watch(impresionTermicaServiceProvider);
+
     return AlertDialog(
       key: const Key('ticket_dialogo'),
       title: const Text('Ticket'),
-      content: SizedBox(width: 360, child: _cuerpo(context, ref, ticketAsync)),
+      content: SizedBox(
+        width: 400,
+        child: _cuerpo(context, ref, ticketAsync),
+      ),
       actions: [
+        // Botón de impresión térmica directa
+        if (termica.estaConectada)
+          FilledButton.icon(
+            key: const Key('ticket_imprimir_termica'),
+            onPressed: ticket == null || _imprimiendoTermica
+                ? null
+                : () => _imprimirTermica(context, ref, ticket),
+            icon: _imprimiendoTermica
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.bluetooth_connected),
+            label: Text(_imprimiendoTermica ? 'Imprimiendo...' : 'Térmica'),
+          ),
+        // Botón para buscar/conectar impresora térmica
+        OutlinedButton.icon(
+          key: const Key('ticket_buscar_termica'),
+          onPressed: _buscandoImpresoras || _conectando ? null : _mostrarDialogoImpresoras,
+          icon: _buscandoImpresoras
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.bluetooth_searching),
+          label: Text(termica.estaConectada
+              ? 'Cambiar térmica'
+              : 'Conectar térmica'),
+        ),
+        // Botón de impresión por sistema (fallback)
         FilledButton.icon(
           key: const Key('ticket_imprimir'),
           onPressed: ticket == null ? null : () => _imprimir(context, ref, ticket),
@@ -51,6 +97,102 @@ class TicketDialog extends ConsumerWidget {
     }
   }
 
+  Future<void> _imprimirTermica(
+    BuildContext context,
+    WidgetRef ref,
+    Ticket ticket,
+  ) async {
+    setState(() => _imprimiendoTermica = true);
+    try {
+      await ref.read(impresionTermicaServiceProvider).imprimirTicket(ticket);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Ticket impreso en térmica.')),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al imprimir: ${e.toString()}')),
+      );
+    } finally {
+      if (mounted) setState(() => _imprimiendoTermica = false);
+    }
+  }
+
+  Future<void> _mostrarDialogoImpresoras() async {
+    setState(() => _buscandoImpresoras = true);
+
+    try {
+      final termica = ref.read(impresionTermicaServiceProvider);
+      final impresoras = await termica.buscarImpresoras();
+
+      if (!mounted) return;
+      setState(() => _buscandoImpresoras = false);
+
+      final seleccion = await showDialog<ImpresoraBluetooth>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Seleccionar impresora térmica'),
+          content: SizedBox(
+            width: 320,
+            child: impresoras.isEmpty
+                ? const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Text(
+                      'No se encontraron impresoras térmicas.\n'
+                      'Asegúrate de que la impresora esté encendida y cerca.',
+                      textAlign: TextAlign.center,
+                    ),
+                  )
+                : ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: impresoras.length,
+                    itemBuilder: (context, index) {
+                      final impresora = impresoras[index];
+                      return ListTile(
+                        leading: const Icon(Icons.print),
+                        title: Text(impresora.nombre),
+                        subtitle: Text(impresora.macAddress),
+                        onTap: () => Navigator.pop(context, impresora),
+                      );
+                    },
+                  ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar'),
+            ),
+          ],
+        ),
+      );
+
+      if (seleccion != null) {
+        setState(() => _conectando = true);
+        try {
+          await termica.conectar(seleccion.macAddress);
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Conectado a ${seleccion.nombre}')),
+          );
+        } catch (e) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error al conectar: ${e.toString()}')),
+          );
+        } finally {
+          if (mounted) setState(() => _conectando = false);
+        }
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _buscandoImpresoras = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al buscar impresoras: ${e.toString()}')),
+      );
+    }
+  }
+
   Widget _cuerpo(BuildContext context, WidgetRef ref, AsyncValue<Ticket> ticketAsync) {
     if (ticketAsync.isLoading && !ticketAsync.hasValue) {
       return const Center(
@@ -72,7 +214,7 @@ class TicketDialog extends ConsumerWidget {
           const SizedBox(height: 16),
           FilledButton.tonal(
             key: const Key('ticket_reintentar'),
-            onPressed: () => ref.invalidate(ticketProvider(cobroId)),
+            onPressed: () => ref.invalidate(ticketProvider(widget.cobroId)),
             child: const Text('Reintentar'),
           ),
         ],

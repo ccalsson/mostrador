@@ -69,6 +69,34 @@ export async function escritorioDuenoForStaff(staff: Staff) {
     limit 8
   `;
 
+  const productosMargen = await sql<{
+    producto_id: string;
+    nombre: string;
+    costo_unitario: unknown;
+    cantidad_vendida: unknown;
+    cobrado: unknown;
+  }>`
+    select
+      p.id as producto_id,
+      p.nombre,
+      p.costo as costo_unitario,
+      coalesce(sum(pi.cantidad), 0) as cantidad_vendida,
+      coalesce(sum(pi.cantidad * pi.precio_unitario), 0) as cobrado
+    from productos p
+    left join pedido_items pi
+      on pi.producto_id = p.id
+     and pi.pedido_id in (
+       select id from pedidos
+       where tenant_id = ${staff.tenantId}
+         and estado in ('cobrado', 'entregado')
+         and created_at::date >= current_date - 6
+     )
+    where p.tenant_id = ${staff.tenantId}
+      and p.activo = true
+    group by p.id, p.nombre, p.costo
+    order by coalesce(sum(pi.cantidad * pi.precio_unitario), 0) desc
+  `;
+
   const deudas = await sql<{ id: string; nombre: string; saldo: unknown }>`
     select c.id, c.nombre, coalesce(sum(m.monto), 0) as saldo
     from clientes c
@@ -136,6 +164,24 @@ export async function escritorioDuenoForStaff(staff: Staff) {
         costo: num(row.costo),
         lineas: num(row.lineas),
       })),
+      productos: productosMargen.map((row) => {
+        const cobradoProd = num(row.cobrado);
+        const costoUnit = row.costo_unitario == null ? null : num(row.costo_unitario);
+        const cantVendida = num(row.cantidad_vendida);
+        const costoTotal = costoUnit != null ? costoUnit * cantVendida : null;
+        const margenMonto = costoTotal != null ? cobradoProd - costoTotal : null;
+        const margenPct = cobradoProd > 0 && margenMonto != null ? (margenMonto / cobradoProd) * 100 : null;
+        return {
+          id: row.producto_id,
+          nombre: row.nombre,
+          costo: costoUnit,
+          cantidad: cantVendida,
+          cobrado: cobradoProd,
+          costoTotal,
+          margenPct: margenPct != null ? Math.round(margenPct * 100) / 100 : null,
+          margenMonto: margenMonto != null ? Math.round(margenMonto * 100) / 100 : null,
+        };
+      }),
     },
     deudas: deudas.map((row) => ({ id: row.id, nombre: row.nombre, saldo: num(row.saldo) })),
     cierres: cierres.map((row) => ({

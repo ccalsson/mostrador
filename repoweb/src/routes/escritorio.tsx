@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { AppShell } from "@/components/app-shell";
 import { BandejaMensajes } from "@/components/pedido-chat";
 import { escritorioDueno } from "@/lib/fn";
@@ -21,12 +21,34 @@ type Vista = (typeof VISTAS)[number]["id"];
 
 function EscritorioPage() {
   const [vista, setVista] = useState<Vista>("mensajes");
+  const [margenOrden, setMargenOrden] = useState<"cobrado" | "margenPct" | "margenMonto">("cobrado");
+  const [margenAsc, setMargenAsc] = useState(false);
   const datos = useQuery({
     queryKey: ["escritorio-dueno"],
     queryFn: () => escritorioDueno(),
     enabled: vista !== "mensajes",
   });
   const d = datos.data;
+
+  const productosOrdenados = useMemo(() => {
+    if (!d) return [];
+    const arr = d.margen.productos.map((p) => ({ ...p }));
+    arr.sort((a, b) => {
+      const va = a[margenOrden] ?? -Infinity;
+      const vb = b[margenOrden] ?? -Infinity;
+      return margenAsc ? va - vb : vb - va;
+    });
+    return arr;
+  }, [d, margenOrden, margenAsc]);
+
+  function toggleOrden(col: "cobrado" | "margenPct" | "margenMonto") {
+    if (margenOrden === col) {
+      setMargenAsc(!margenAsc);
+    } else {
+      setMargenOrden(col);
+      setMargenAsc(false);
+    }
+  }
 
   return (
     <AppShell title="Escritorio">
@@ -97,6 +119,71 @@ function EscritorioPage() {
                 </li>
               ))}
             </ul>
+          </section>
+          <section className="overflow-hidden rounded-[10px] border border-line bg-surface">
+            <div className="flex items-center justify-between gap-2 border-b border-line px-3 py-3">
+              <h2 className="text-sm font-medium">Margen por producto</h2>
+              <p className="text-[11px] text-muted">Últimos 7 días · cobrado vs costo unitario</p>
+            </div>
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-line text-[11px] uppercase tracking-wide text-muted">
+                  <th className="px-3 py-2">Producto</th>
+                  <th className="px-3 py-2 text-right">Cant.</th>
+                  <th
+                    className="cursor-pointer px-3 py-2 text-right select-none"
+                    onClick={() => toggleOrden("cobrado")}
+                  >
+                    Cobrado {margenOrden === "cobrado" ? (margenAsc ? "↑" : "↓") : ""}
+                  </th>
+                  <th className="px-3 py-2 text-right">Costo unit.</th>
+                  <th
+                    className="cursor-pointer px-3 py-2 text-right select-none"
+                    onClick={() => toggleOrden("margenPct")}
+                  >
+                    Margen % {margenOrden === "margenPct" ? (margenAsc ? "↑" : "↓") : ""}
+                  </th>
+                  <th
+                    className="cursor-pointer px-3 py-2 text-right select-none"
+                    onClick={() => toggleOrden("margenMonto")}
+                  >
+                    Margen $ {margenOrden === "margenMonto" ? (margenAsc ? "↑" : "↓") : ""}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {productosOrdenados.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-3 py-4 text-muted">
+                      Todavía no hay ventas de productos en los últimos 7 días.
+                    </td>
+                  </tr>
+                ) : (
+                  productosOrdenados.map((p) => (
+                    <tr key={p.id} className="border-t border-line">
+                      <td className="px-3 py-2 font-medium">{p.nombre}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-muted">{p.cantidad || "—"}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{money(p.cobrado)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-muted">
+                        {p.costo != null ? money(p.costo) : "—"}
+                      </td>
+                      <td className={cn(
+                        "px-3 py-2 text-right tabular-nums",
+                        p.margenPct == null ? "text-muted" : p.margenPct >= 30 ? "text-leaf" : p.margenPct >= 15 ? "" : "text-terra",
+                      )}>
+                        {p.margenPct != null ? `${p.margenPct.toFixed(1)}%` : "—"}
+                      </td>
+                      <td className={cn(
+                        "px-3 py-2 text-right tabular-nums",
+                        p.margenMonto == null ? "text-muted" : p.margenMonto >= 0 ? "text-leaf" : "text-terra",
+                      )}>
+                        {p.margenMonto != null ? money(p.margenMonto) : "—"}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </section>
         </div>
       ) : null}

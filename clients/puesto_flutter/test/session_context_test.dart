@@ -20,8 +20,11 @@ import 'package:puesto_flutter/main.dart';
 import 'package:puesto_flutter/models/producto.dart';
 import 'package:puesto_flutter/models/suscripcion.dart';
 import 'package:puesto_flutter/services/catalogo_service.dart';
+import 'package:puesto_flutter/services/conectividad_service.dart';
+import 'package:puesto_flutter/services/offline_queue_service.dart';
 import 'package:puesto_flutter/services/suscripcion_service.dart';
 import 'package:puesto_flutter/services/tenant_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class _Tokens extends TokenStore {
   String? value = 'test-session';
@@ -38,6 +41,25 @@ class _Tokens extends TokenStore {
     clears++;
     value = null;
   }
+}
+
+class _ConectividadFake implements ConectividadService {
+  bool conectado = true;
+
+  @override
+  Future<bool> hayConexion() async => conectado;
+
+  @override
+  void iniciar() {}
+
+  @override
+  void dispose() {}
+
+  @override
+  void addListener(void Function(bool) listener) {}
+
+  @override
+  void removeListener(void Function(bool) listener) {}
 }
 
 ApiClient _api(
@@ -349,7 +371,10 @@ void main() {
     'reinicio elimina carrito, UUID, familia, formulario y Navigator',
     (tester) async {
       FlutterSecureStorage.setMockInitialValues({});
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
       final tokens = _Tokens();
+      final conectividad = _ConectividadFake();
       final containers = <ProviderContainer>[];
       final lateResponse = Completer<http.Response>();
       final lateStarted = Completer<void>();
@@ -360,6 +385,8 @@ void main() {
         SessionBoundary(
           overrides: [
             tokenStoreProvider.overrideWithValue(tokens),
+            sharedPreferencesProvider.overrideWithValue(prefs),
+            conectividadServiceProvider.overrideWithValue(conectividad),
             apiClientProvider.overrideWith((ref) {
               final api = _api((request) async {
                 if (request.url.path.endsWith('/anterior')) {
@@ -464,6 +491,8 @@ void main() {
     'cambio tardío tras timeout rechaza operaciones de los libros anteriores',
     (tester) async {
       FlutterSecureStorage.setMockInitialValues({});
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
       final tokens = _Tokens();
       final containers = <ProviderContainer>[];
       final usar = Completer<http.Response>();
@@ -473,6 +502,7 @@ void main() {
         SessionBoundary(
           overrides: [
             tokenStoreProvider.overrideWithValue(tokens),
+            sharedPreferencesProvider.overrideWithValue(prefs),
             apiClientProvider.overrideWith((ref) {
               final api = _api((request) async {
                 if (request.url.path.endsWith('/session')) {

@@ -153,14 +153,16 @@ export const listProductos = createServerFn({ method: "GET" })
       unidad_label: string;
       precio: unknown;
       moneda: unknown;
+      costo: unknown;
       stock: unknown;
       stock_minimo: unknown;
       alias: unknown;
       activo: boolean;
       orden: unknown;
       publicado_online: boolean | null;
+      foto_url: string | null;
     }>`
-      select id, nombre, unidad, unidad_label, precio, moneda, stock, stock_minimo, alias, activo, orden, publicado_online
+      select id, nombre, unidad, unidad_label, precio, moneda, costo, stock, stock_minimo, alias, activo, orden, publicado_online, foto_url
       from productos
       where tenant_id = ${staff.tenantId}
       order by orden nulls last, lower(nombre)
@@ -741,12 +743,75 @@ export const marcarEntregado = createServerFn({ method: "POST" })
     if (!pedido) throw new Error("Pedido no encontrado.");
     if (pedido.estado !== "cobrado") throw new Error("Solo se entrega un pedido ya cobrado.");
     const sql = await getSql();
+    // Mark all items as fully delivered for consistency
+    await sql`
+      update pedido_items
+      set cantidad_entregada = cantidad
+      where pedido_id = ${id} and cantidad_entregada < cantidad
+    `;
     await sql`
       update pedidos set estado = 'entregado', updated_at = now()
       where id = ${id} and tenant_id = ${staff.tenantId}
     `;
     await audit(staff.tenantId, staff, "entregar", "pedido", { id });
     return { ok: true };
+  });
+
+export const entregarParcial = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: {
+    pedidoId: string;
+    items: { itemId: string; cantidad: number; nota?: string }[];
+  }) => input)
+  .handler(async ({ context, data }) => {
+    const staff = await ensureStaffForUser(context.userId);
+    assertRole(staff, ["admin", "cajero", "vendedor"]);
+    const sql = await getSql();
+    const pedido = await loadPedido(data.pedidoId, staff.tenantId);
+    if (!pedido) throw new Error("Pedido no encontrado.");
+    if (pedido.estado !== "cobrado") throw new Error("Solo se entrega parcialmente un pedido cobrado.");
+    if (!data.items.length) throw new Error("Seleccioná al menos un ítem para entregar.");
+
+    const itemIds = new Set(pedido.items.map((i) => i.id));
+    for (const it of data.items) {
+      if (!itemIds.has(it.itemId)) throw new Error("Ítem inválido.");
+      if (it.cantidad <= 0) throw new Error("La cantidad debe ser mayor a 0.");
+      const original = pedido.items.find((i) => i.id === it.itemId)!;
+      const pendiente = original.cantidad - original.cantidadEntregada;
+      if (it.cantidad > pendiente + 0.001) {
+        throw new Error(`La cantidad de "${original.nombre}" supera lo pendiente (${pendiente}).`);
+      }
+    }
+
+    for (const it of data.items) {
+      const nota = it.nota?.trim() || null;
+      await sql`
+        update pedido_items
+        set cantidad_entregada = cantidad_entregada + ${it.cantidad},
+            nota_entrega = coalesce(${nota}, nota_entrega)
+        where id = ${it.itemId} and pedido_id = ${data.pedidoId}
+      `;
+    }
+
+    // Check if all items fully delivered -> mark order as "entregado"
+    const updated = await loadPedido(data.pedidoId, staff.tenantId);
+    if (updated) {
+      const allDelivered = updated.items.every(
+        (i) => i.cantidadEntregada >= i.cantidad - 0.001,
+      );
+      if (allDelivered) {
+        await sql`
+          update pedidos set estado = 'entregado', updated_at = now()
+          where id = ${data.pedidoId} and tenant_id = ${staff.tenantId}
+        `;
+      }
+    }
+
+    await audit(staff.tenantId, staff, "entrega_parcial", "pedido", {
+      id: data.pedidoId,
+      items: data.items.map((i) => ({ itemId: i.itemId, cantidad: i.cantidad })),
+    });
+    return { ok: true, pedido: await loadPedido(data.pedidoId, staff.tenantId) };
   });
 
 export const updatePedidoItems = createServerFn({ method: "POST" })
@@ -1414,6 +1479,90 @@ export const historialProducto = createServerFn({ method: "GET" })
     };
   });
 
+export const reposicionSugerencia = createServerFn({ method: "GET" })
+  .middleware([authMiddleware])
+  .validator((input?: { dias?: number; stockMinimo?: number } | undefined) => {
+    const dias = input?.dias ?? 7;
+    const stockMinimo = input?.stockMinimo ?? 5;
+    if (!Number.isInteger(dias) || dias < 1 || dias > 365) throw new Error("dias debe ser un entero entre 1 y 365.");
+    if (!Number.isFinite(stockMinimo) || stockMinimo < 0) throw new Error("stockMinimo debe ser un número positivo.");
+    return { dias, stockMinimo };
+  })
+  .handler(async ({ context, data }) => {
+    const staff = await ensureStaffForUser(context.userId);
+    assertRole(staff, ["admin"]);
+    const sql = await getSql();
+    const { dias, stockMinimo } = data;
+
+    const ventas = await sql.query<{
+      producto_id: string;
+      nombre: string;
+      total_cantidad: unknown;
+    }>(
+      `select i.producto_id,
+              max(i.nombre_snapshot) as nombre,
+              sum(i.cantidad) as total_cantidad
+       from pedido_items i
+       join pedidos p on p.id = i.pedido_id
+       where p.tenant_id = $1
+         and p.estado in ('cobrado', 'entregado')
+         and p.created_at::date >= current_date - ($2::int - 1)
+       group by i.producto_id`,
+      [staff.tenantId, dias],
+    );
+
+    if (ventas.length === 0) {
+      return { dias, sugerencias: [] };
+    }
+
+    const productoIds = ventas.map((v) => v.producto_id);
+    const stocks = await sql.query<{ id: string; stock: unknown }>(
+      `select id, stock from productos
+       where id = any($1::text[]) and tenant_id = $2`,
+      [productoIds, staff.tenantId],
+    );
+
+    const stockPorProducto = new Map<string, number>();
+    for (const row of stocks) {
+      stockPorProducto.set(row.id, num(row.stock));
+    }
+
+    type Sugerencia = {
+      productoId: string;
+      nombre: string;
+      cantidadSugerida: number;
+      stockActual: number;
+      promedioDiario: number;
+      diasHastaAgotar: number | null;
+    };
+
+    const sugerencias: Sugerencia[] = [];
+
+    for (const venta of ventas) {
+      const cantidadTotal = num(venta.total_cantidad);
+      const promedioDiario = cantidadTotal / dias;
+      const necesarioSemana = promedioDiario * 7;
+      const stockActual = stockPorProducto.get(venta.producto_id) ?? 0;
+      const cantidadSugerida = necesarioSemana - stockActual;
+      const diasHastaAgotar = promedioDiario > 0 ? stockActual / promedioDiario : null;
+
+      if (cantidadSugerida > stockMinimo) {
+        sugerencias.push({
+          productoId: venta.producto_id,
+          nombre: venta.nombre,
+          cantidadSugerida: Math.round(cantidadSugerida * 100) / 100,
+          stockActual,
+          promedioDiario: Math.round(promedioDiario * 100) / 100,
+          diasHastaAgotar: diasHastaAgotar !== null ? Math.round(diasHastaAgotar * 10) / 10 : null,
+        });
+      }
+    }
+
+    sugerencias.sort((a, b) => b.cantidadSugerida - a.cantidadSugerida);
+
+    return { dias, sugerencias };
+  });
+
 export const rankingCargadores = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
   .handler(async ({ context }) => {
@@ -1619,7 +1768,14 @@ export const estadoCaja = createServerFn({ method: "GET" })
       where tenant_id = ${staff.tenantId} and anulado = false and created_at >= ${desde}::timestamptz
       group by forma_pago
     `;
-    const esperado = totales.reduce((acc, t) => acc + num(t.total), 0);
+    const [egresoRow] = await sql<{ total: unknown }>`
+      select coalesce(sum(monto), 0) as total
+      from egresos_caja
+      where tenant_id = ${staff.tenantId} and cierre_id = ${open[0].id}
+    `;
+    const cobrado = totales.reduce((acc, t) => acc + num(t.total), 0);
+    const egresos = num(egresoRow?.total ?? 0);
+    const esperado = cobrado - egresos;
     const ultimos = await sql<{
       id: string;
       monto: unknown;
@@ -1649,6 +1805,7 @@ export const estadoCaja = createServerFn({ method: "GET" })
       id: open[0].id,
       abiertoAt: open[0].abierto_at,
       esperado,
+      egresos,
       totales: totales.map((t) => ({
         formaPago: t.forma_pago as FormaPago,
         total: num(t.total),
@@ -1785,6 +1942,33 @@ export const escritorioDueno = createServerFn({ method: "GET" })
       order by r.confirmado_at desc
       limit 8
     `;
+    const productosMargen = await sql<{
+      producto_id: string;
+      nombre: string;
+      costo_unitario: unknown;
+      cantidad_vendida: unknown;
+      cobrado: unknown;
+    }>`
+      select
+        p.id as producto_id,
+        p.nombre,
+        p.costo as costo_unitario,
+        coalesce(sum(pi.cantidad), 0) as cantidad_vendida,
+        coalesce(sum(pi.cantidad * pi.precio_unitario), 0) as cobrado
+      from productos p
+      left join pedido_items pi
+        on pi.producto_id = p.id
+       and pi.pedido_id in (
+         select id from pedidos
+         where tenant_id = ${staff.tenantId}
+           and estado in ('cobrado', 'entregado')
+           and created_at::date >= current_date - 6
+       )
+      where p.tenant_id = ${staff.tenantId}
+        and p.activo = true
+      group by p.id, p.nombre, p.costo
+      order by coalesce(sum(pi.cantidad * pi.precio_unitario), 0) desc
+    `;
     const deudas = await sql<{ id: string; nombre: string; saldo: unknown }>`
       select c.id, c.nombre, coalesce(sum(m.monto), 0) as saldo
       from clientes c
@@ -1847,6 +2031,24 @@ export const escritorioDueno = createServerFn({ method: "GET" })
           costo: num(row.costo),
           lineas: num(row.lineas),
         })),
+        productos: productosMargen.map((row) => {
+          const cobrado = num(row.cobrado);
+          const costoUnit = row.costo_unitario == null ? null : num(row.costo_unitario);
+          const cantVendida = num(row.cantidad_vendida);
+          const costoTotal = costoUnit != null ? costoUnit * cantVendida : null;
+          const margenMonto = costoTotal != null ? cobrado - costoTotal : null;
+          const margenPct = cobrado > 0 && margenMonto != null ? (margenMonto / cobrado) * 100 : null;
+          return {
+            id: row.producto_id,
+            nombre: row.nombre,
+            costo: costoUnit,
+            cantidad: cantVendida,
+            cobrado,
+            costoTotal,
+            margenPct: margenPct != null ? Math.round(margenPct * 100) / 100 : null,
+            margenMonto: margenMonto != null ? Math.round(margenMonto * 100) / 100 : null,
+          };
+        }),
       },
       deudas: deudas.map((row) => ({ id: row.id, nombre: row.nombre, saldo: num(row.saldo) })),
       cierres: cierres.map((row) => ({
@@ -1892,7 +2094,14 @@ export const cerrarCaja = createServerFn({ method: "POST" })
       where tenant_id = ${staff.tenantId} and anulado = false and created_at >= ${open[0].abierto_at}::timestamptz
       group by forma_pago
     `;
-    const esperado = totales.reduce((acc, t) => acc + num(t.total), 0);
+    const [egresoRow] = await sql<{ total: unknown }>`
+      select coalesce(sum(monto), 0) as total
+      from egresos_caja
+      where tenant_id = ${staff.tenantId} and cierre_id = ${open[0].id}
+    `;
+    const cobrado = totales.reduce((acc, t) => acc + num(t.total), 0);
+    const egresos = num(egresoRow?.total ?? 0);
+    const esperado = cobrado - egresos;
     const diferencia = Math.round((data.real - esperado) * 100) / 100;
     await sql.query(
       `update cierres_caja
@@ -2176,4 +2385,139 @@ export const parseRemitoVision = createServerFn({ method: "POST" })
     }
   });
 
+// ── Egresos del turno ──────────────────────────────────────────────────────
+
+export const CATEGORIAS_EGRESO = [
+  { id: "alquiler", label: "Alquiler" },
+  { id: "combustible", label: "Combustible" },
+  { id: "servicios", label: "Servicios" },
+  { id: "proveedores", label: "Proveedores" },
+  { id: "mercaderia", label: "Mercadería" },
+  { id: "sueldos", label: "Sueldos" },
+  { id: "otros", label: "Otros" },
+] as const;
+
+const EGRESO_CATS = new Set<string>(CATEGORIAS_EGRESO.map((c) => c.id));
+
+export const listEgresosTurno = createServerFn({ method: "GET" })
+  .middleware([authMiddleware])
+  .handler(async ({ context }) => {
+    const staff = await ensureStaffForUser(context.userId);
+    assertRole(staff, ["admin", "cajero"]);
+    const sql = await getSql();
+    const open = await sql<{ id: string }>`
+      select id from cierres_caja
+      where tenant_id = ${staff.tenantId} and cerrado_at is null
+      order by abierto_at desc limit 1
+    `;
+    if (!open[0]) return { items: [] as Array<{ id: string; monto: number; concepto: string; categoria: string; usuarioNombre: string; creadoAt: string }> };
+    const rows = await sql<{
+      id: string;
+      monto: unknown;
+      concepto: string;
+      categoria: string;
+      usuario_id: string;
+      creado_at: string;
+      usuario_nombre: string;
+    }>`
+      select e.id, e.monto, e.concepto, e.categoria, e.usuario_id, e.creado_at::text as creado_at,
+             coalesce(s.nombre, 'Sin nombre') as usuario_nombre
+      from egresos_caja e
+      left join staff s on s.id = e.usuario_id
+      where e.tenant_id = ${staff.tenantId} and e.cierre_id = ${open[0].id}
+      order by e.creado_at desc
+    `;
+    return {
+      items: rows.map((r) => ({
+        id: r.id,
+        monto: num(r.monto),
+        concepto: r.concepto,
+        categoria: r.categoria,
+        usuarioNombre: r.usuario_nombre,
+        creadoAt: r.creado_at,
+      })),
+    };
+  });
+
+export const crearEgreso = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: { monto: number; concepto: string; categoria: string }) => input)
+  .handler(async ({ context, data }) => {
+    const staff = await ensureStaffForUser(context.userId);
+    assertRole(staff, ["admin", "cajero"]);
+    if (data.monto <= 0) throw new Error("El monto debe ser mayor a cero.");
+    const concepto = data.concepto.trim();
+    if (!concepto) throw new Error("El concepto es obligatorio.");
+    if (concepto.length > 200) throw new Error("El concepto es demasiado largo.");
+    if (!EGRESO_CATS.has(data.categoria)) throw new Error("Categoría inválida.");
+
+    const sql = await getSql();
+    const open = await sql<{ id: string }>`
+      select id from cierres_caja
+      where tenant_id = ${staff.tenantId} and cerrado_at is null
+      order by abierto_at desc limit 1
+    `;
+    if (!open[0]) throw new Error("No hay una caja abierta.");
+
+    const id = newId("egr");
+    await sql`
+      insert into egresos_caja (id, tenant_id, cierre_id, monto, concepto, categoria, usuario_id)
+      values (${id}, ${staff.tenantId}, ${open[0].id}, ${data.monto}, ${concepto}, ${data.categoria}, ${staff.id})
+    `;
+    await audit(staff.tenantId, staff, "alta_egreso", "caja", {
+      id,
+      monto: data.monto,
+      concepto,
+      categoria: data.categoria,
+    });
+    return { id, ok: true as const };
+  });
+
+export const anularEgreso = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((id: string) => id)
+  .handler(async ({ context, data: id }) => {
+    const staff = await ensureStaffForUser(context.userId);
+    assertRole(staff, ["admin", "cajero"]);
+    const sql = await getSql();
+    const rows = await sql<{ id: string; cierre_id: string; usuario_id: string }>`
+      select e.id, e.cierre_id, e.usuario_id
+      from egresos_caja e
+      join cierres_caja c on c.id = e.cierre_id
+      where e.id = ${id} and e.tenant_id = ${staff.tenantId}
+        and c.cerrado_at is null
+      limit 1
+    `;
+    if (!rows[0]) throw new Error("Egreso no encontrado o la caja ya está cerrada.");
+    if (staff.rol !== "admin" && rows[0].usuario_id !== staff.id) {
+      throw new Error("Solo podés anular tus propios egresos.");
+    }
+    await sql`delete from egresos_caja where id = ${id}`;
+    await audit(staff.tenantId, staff, "anular_egreso", "caja", { id });
+    return { ok: true as const };
+  });
+
+export const subirFotoProducto = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: { productoId: string; fileBase64: string; fileName: string; fileType: string; fileSize: number }) => input)
+  .handler(async ({ context, data }) => {
+    const staff = await ensureStaffForUser(context.userId);
+    const { subirFotoProductoForStaff } = await import("@/lib/server/productos-foto");
+    const buffer = Buffer.from(data.fileBase64, "base64");
+    return subirFotoProductoForStaff(staff, data.productoId, {
+      name: data.fileName,
+      type: data.fileType,
+      size: data.fileSize,
+      arrayBuffer: async () => buffer.buffer as ArrayBuffer,
+    });
+  });
+
+export const borrarFotoProducto = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((productoId: string) => productoId)
+  .handler(async ({ context, data: productoId }) => {
+    const staff = await ensureStaffForUser(context.userId);
+    const { borrarFotoProductoForStaff } = await import("@/lib/server/productos-foto");
+    return borrarFotoProductoForStaff(staff, productoId);
+  });
 

@@ -120,6 +120,16 @@ void main() {
     expect(nc.esNotaCredito, true);
   });
 
+  test('Factura.tipoLabel devuelve el nombre correcto por cbteTipo', () {
+    expect(Factura.fromJson({..._facturaPayload(), 'cbteTipo': 1}).tipoLabel, 'Factura A');
+    expect(Factura.fromJson({..._facturaPayload(), 'cbteTipo': 3}).tipoLabel, 'Nota de crédito A');
+    expect(Factura.fromJson({..._facturaPayload(), 'cbteTipo': 6}).tipoLabel, 'Factura B');
+    expect(Factura.fromJson({..._facturaPayload(), 'cbteTipo': 8}).tipoLabel, 'Nota de crédito B');
+    expect(Factura.fromJson({..._facturaPayload(), 'cbteTipo': 11}).tipoLabel, 'Factura C');
+    expect(Factura.fromJson({..._facturaPayload(), 'cbteTipo': 13}).tipoLabel, 'Nota de crédito C');
+    expect(Factura.fromJson({..._facturaPayload(), 'cbteTipo': 99}).tipoLabel, 'Comprobante 99');
+  });
+
   test('FacturacionPanel.fromJson parsea config + pendientes + emitidas', () {
     final panel = FacturacionPanel.fromJson({
       'config': _configPayload(),
@@ -183,6 +193,60 @@ void main() {
     final body = jsonDecode(visto.body) as Map<String, dynamic>;
     expect(body['cobroId'], 'cob_1');
     expect(factura.estado, 'autorizada');
+  });
+
+  test('emitirNotaCredito() POST con facturaId y motivo opcional', () async {
+    late http.Request visto;
+    final servicio = _servicio(MockClient((request) async {
+      visto = request;
+      return http.Response(
+        jsonEncode({'data': _facturaPayload()}),
+        200,
+        headers: {'content-type': 'application/json; charset=utf-8'},
+      );
+    }));
+
+    final nc = await servicio.emitirNotaCredito('fac_1', motivo: 'Devolución');
+    expect(visto.method, 'POST');
+    expect(visto.url.path, '/api/v1/afip/notas-credito');
+    final body = jsonDecode(visto.body) as Map<String, dynamic>;
+    expect(body['facturaId'], 'fac_1');
+    expect(body['motivo'], 'Devolución');
+    expect(nc.estado, 'autorizada');
+  });
+
+  test('emitirNotaCredito() sin motivo no incluye el campo', () async {
+    late http.Request visto;
+    final servicio = _servicio(MockClient((request) async {
+      visto = request;
+      return http.Response(
+        jsonEncode({'data': _facturaPayload()}),
+        200,
+        headers: {'content-type': 'application/json; charset=utf-8'},
+      );
+    }));
+
+    await servicio.emitirNotaCredito('fac_1');
+    final body = jsonDecode(visto.body) as Map<String, dynamic>;
+    expect(body.containsKey('motivo'), false);
+  });
+
+  test('getFactura() llama GET /api/v1/afip/facturas/{id}', () async {
+    late http.Request visto;
+    final servicio = _servicio(MockClient((request) async {
+      visto = request;
+      return http.Response(
+        jsonEncode({'data': _facturaPayload()}),
+        200,
+        headers: {'content-type': 'application/json; charset=utf-8'},
+      );
+    }));
+
+    final factura = await servicio.getFactura('fac_1');
+    expect(visto.method, 'GET');
+    expect(visto.url.path, '/api/v1/afip/facturas/fac_1');
+    expect(factura.id, 'fac_1');
+    expect(factura.cae, '75012345678901');
   });
 
   test('AfipProbarResultado parsea respuesta de probar conexion', () {

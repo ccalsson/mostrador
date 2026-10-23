@@ -10,11 +10,13 @@ import '../../services/suscripcion_service.dart';
 import '../../services/tenant_service.dart';
 import '../admin/alertas_pane.dart';
 import '../admin/auditoria_pane.dart';
+import '../admin/clientes_app_pane.dart';
 import '../admin/clientes_pane.dart';
 import '../admin/dashboard_pane.dart';
 import '../admin/escritorio_pane.dart';
 import '../admin/facturacion_pane.dart';
 import '../admin/identidad_pane.dart';
+import '../admin/marketing_pane.dart';
 import '../admin/qr_pane.dart';
 import '../admin/productos_pane.dart';
 import '../admin/proveedores_pane.dart';
@@ -29,6 +31,7 @@ import '../catalog/catalogo_screen.dart';
 import '../carrito/carrito_pane.dart';
 import '../pedidos/pedidos_pane.dart';
 import 'mesa_turno_widget.dart';
+import 'clima_dolar_widget.dart';
 
 /// Shell del puesto con navegación lateral agrupada (replica la web).
 ///
@@ -64,6 +67,7 @@ class _Destino {
     required this.pantalla,
     this.roles,
     this.premium = false,
+    this.mercado = false,
   });
 
   final _Grupo grupo;
@@ -72,6 +76,7 @@ class _Destino {
   final Widget pantalla;
   final Set<Rol>? roles;
   final bool premium;
+  final bool mercado;
 }
 
 final _destinos = <_Destino>[
@@ -132,6 +137,14 @@ final _destinos = <_Destino>[
     pantalla: ClientesPane(),
     roles: {Rol.admin},
   ),
+  _Destino(
+    grupo: _Grupo.catalogo,
+    icono: Icons.shopping_bag_outlined,
+    etiqueta: 'Clientes app',
+    pantalla: ClientesAppPane(),
+    roles: {Rol.admin},
+    mercado: true,
+  ),
   // Administración
   _Destino(
     grupo: _Grupo.administracion,
@@ -144,6 +157,13 @@ final _destinos = <_Destino>[
     icono: Icons.palette_outlined,
     etiqueta: 'Identidad',
     pantalla: IdentidadPane(),
+    roles: {Rol.admin},
+  ),
+  _Destino(
+    grupo: _Grupo.administracion,
+    icono: Icons.campaign_outlined,
+    etiqueta: 'Marketing',
+    pantalla: MarketingPane(),
     roles: {Rol.admin},
   ),
   _Destino(
@@ -226,10 +246,14 @@ const _quiebreSidebar = 900.0;
 class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
   int _indice = 0;
 
-  List<_Destino> _destinosVisibles({bool esPremium = false}) {
+  List<_Destino> _destinosVisibles({
+    bool esPremium = false,
+    bool tieneMercado = false,
+  }) {
     return _destinos.where((d) {
       if (d.roles != null && !d.roles!.contains(widget.rol)) return false;
       if (d.premium && !esPremium) return false;
+      if (d.mercado && !tieneMercado) return false;
       return true;
     }).toList();
   }
@@ -261,7 +285,12 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
         widget.rol == Rol.admin || widget.rol == Rol.cajero;
     final suscripcionAsync = ref.watch(suscripcionProvider);
     final esPremium = suscripcionAsync.value?.plan.codigo == 'pro';
-    final visibles = _destinosVisibles(esPremium: esPremium);
+    final tieneMercado =
+        suscripcionAsync.value?.mercadoAlToqueContratado == true;
+    final visibles = _destinosVisibles(
+      esPremium: esPremium,
+      tieneMercado: tieneMercado,
+    );
     final indiceActual = _indice.clamp(0, visibles.length - 1);
     final destinoActual = indiceActual < visibles.length
         ? visibles[indiceActual]
@@ -294,6 +323,7 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
                   mostrarMenu: !sidebarVisible,
                   onMenu: () => _abrirDrawer(context, visibles, indiceActual),
                   destinoActual: destinoActual,
+                  rol: widget.rol,
                 ),
                 const Divider(height: 1),
                 if (mostrarMesa) const MesaTurnoWidget(),
@@ -624,6 +654,7 @@ class _TopBar extends ConsumerWidget {
     required this.mostrarMenu,
     required this.onMenu,
     required this.destinoActual,
+    required this.rol,
   });
 
   final TokensMostrador tokens;
@@ -634,6 +665,7 @@ class _TopBar extends ConsumerWidget {
   final bool mostrarMenu;
   final VoidCallback onMenu;
   final _Destino? destinoActual;
+  final Rol rol;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -677,6 +709,8 @@ class _TopBar extends ConsumerWidget {
               ],
             ),
           ),
+          if (rol == Rol.admin || rol == Rol.cajero)
+            const ClimaDolarWidget(),
           IconButton(
             key: const Key('refresh_button'),
             tooltip: 'Actualizar catálogo',

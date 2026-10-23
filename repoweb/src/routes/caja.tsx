@@ -4,6 +4,7 @@ import { Banknote, Minus, Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
+import { CajaEgresos } from "@/components/caja-egresos";
 import { ClimaDolar } from "@/components/clima-dolar";
 import { MesaTurno } from "@/components/mesa-turno";
 import { TermicaBoton } from "@/components/termica-boton";
@@ -117,6 +118,7 @@ function CajaPage() {
   const refrescar = () => {
     void qc.invalidateQueries({ queryKey: ["bandeja"] });
     void qc.invalidateQueries({ queryKey: ["caja"] });
+    void qc.invalidateQueries({ queryKey: ["caja-egresos"] });
     void qc.invalidateQueries({ queryKey: ["productos"] });
     void qc.invalidateQueries({ queryKey: ["por-entregar"] });
     void qc.invalidateQueries({ queryKey: ["entregados"] });
@@ -333,6 +335,9 @@ function CajaPage() {
                 ))}
             </ul>
           </section>
+          <section className="w-full md:w-56 md:shrink-0">
+            <CajaEgresos verMontos={verMontos} />
+          </section>
           <section
             className={cn(
               "w-full rounded-lg border bg-surface p-3 transition-colors md:ml-auto md:w-44 md:shrink-0",
@@ -353,6 +358,11 @@ function CajaPage() {
               esperado
               {caja.data?.abiertoAt ? ` · ${clock(caja.data.abiertoAt)}` : ""}
             </p>
+            {(caja.data?.egresos ?? 0) > 0 ? (
+              <p className="mt-0.5 text-xs text-terra">
+                egresos {verMontos ? money(caja.data?.egresos ?? 0) : "····"}
+              </p>
+            ) : null}
             <ul className="mt-2 space-y-1">
               {(caja.data?.totales ?? []).length === 0 ? (
                 <li className="text-xs text-muted">Sin cobros.</li>
@@ -607,6 +617,8 @@ function CobroPanel({
                   unidad: p.unidad,
                   unidadLabel: p.unidadLabel,
                   subtotal: p.precio,
+                  cantidadEntregada: 0,
+                  notaEntrega: null,
                 },
               ];
             });

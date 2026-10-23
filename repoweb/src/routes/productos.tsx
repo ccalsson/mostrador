@@ -1,12 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ajustarStock, canalMercado, guardarCanalMercado, historialProducto, listProductos, resumenVentasProductos, saveProducto } from "@/lib/fn";
+import { ajustarStock, borrarFotoProducto, canalMercado, guardarCanalMercado, historialProducto, listProductos, reposicionSugerencia, resumenVentasProductos, saveProducto, subirFotoProducto } from "@/lib/fn";
 import { cn } from "@/lib/cn";
 import { money } from "@/lib/money";
 import type { Moneda, Producto, Unidad } from "@/lib/types";
@@ -24,6 +24,7 @@ function empty(): Omit<Producto, "id" | "stock" | "stockBajo" | "orden"> {
     alias: [],
     activo: true,
     publicadoOnline: false,
+    fotoUrl: null,
   };
 }
 
@@ -41,6 +42,13 @@ function ProductosPage() {
   const [sel, setSel] = useState<string | null>(null);
   const [edit, setEdit] = useState<(ReturnType<typeof empty> & { id?: string }) | null>(null);
   const [ajuste, setAjuste] = useState<{ id: string; cantidad: string; tipo: "ajuste" | "merma"; motivo: string } | null>(null);
+  const [reposicionDias, setReposicionDias] = useState(7);
+  const [reposicionVisible, setReposicionVisible] = useState(false);
+  const reposicion = useQuery({
+    queryKey: ["reposicion", reposicionDias],
+    queryFn: () => reposicionSugerencia({ data: { dias: reposicionDias } }),
+    enabled: reposicionVisible,
+  });
 
   const save = useMutation({
     mutationFn: () => {
@@ -84,6 +92,50 @@ function ProductosPage() {
       toast.success("Stock actualizado");
       setAjuste(null);
       void qc.invalidateQueries({ queryKey: ["productos"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const fotoInputRef = useRef<HTMLInputElement>(null);
+  const subirFoto = useMutation({
+    mutationFn: async (file: File) => {
+      if (!edit?.id) throw new Error("Guardá el producto antes de subir una foto.");
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = reader.result as string;
+          resolve(result.split(",")[1] ?? "");
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      return subirFotoProducto({
+        data: {
+          productoId: edit.id,
+          fileBase64: base64,
+          fileName: file.name,
+          fileType: file.type,
+          fileSize: file.size,
+        },
+      });
+    },
+    onSuccess: (data) => {
+      if (edit) setEdit({ ...edit, fotoUrl: data.foto_url });
+      void qc.invalidateQueries({ queryKey: ["productos"] });
+      toast.success("Foto subida");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const borrarFoto = useMutation({
+    mutationFn: () => {
+      if (!edit?.id) throw new Error("sin datos");
+      return borrarFotoProducto({ data: edit.id });
+    },
+    onSuccess: () => {
+      if (edit) setEdit({ ...edit, fotoUrl: null });
+      void qc.invalidateQueries({ queryKey: ["productos"] });
+      toast.success("Foto eliminada");
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -135,7 +187,8 @@ function ProductosPage() {
         />
         <div className="order-1 min-w-0 xl:order-2">
           <div className="overflow-hidden rounded-lg border border-line bg-surface text-sm">
-            <div className="hidden bg-paper-2 font-medium text-muted sm:grid sm:grid-cols-[minmax(0,1fr)_5.5rem_6.5rem_9.5rem]">
+            <div className="hidden bg-paper-2 font-medium text-muted sm:grid sm:grid-cols-[2.5rem_minmax(0,1fr)_5.5rem_6.5rem_9.5rem]">
+              <div className="px-2 py-2" />
               <div className="px-3 py-2">Nombre</div>
               <div className="px-3 py-2">Precio</div>
               <div className="px-3 py-2">Stock</div>
@@ -157,10 +210,25 @@ function ProductosPage() {
                     }
                   }}
                   className={cn(
-                    "grid cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 border-t border-line px-3 py-2 first:border-t-0 sm:grid-cols-[minmax(0,1fr)_5.5rem_6.5rem_9.5rem] sm:px-0 sm:py-0",
+                    "grid cursor-pointer grid-cols-[2.5rem_minmax(0,1fr)_auto] items-center gap-x-2 border-t border-line px-2 py-2 first:border-t-0 sm:grid-cols-[2.5rem_minmax(0,1fr)_5.5rem_6.5rem_9.5rem] sm:px-0 sm:py-0",
                     sel === p.id ? "bg-ok-bg" : "hover:bg-paper",
                   )}
                 >
+                  <div className="flex items-center justify-center sm:py-2">
+                    {p.fotoUrl ? (
+                      <img
+                        src={p.fotoUrl}
+                        alt={p.nombre}
+                        className="h-9 w-9 rounded object-cover"
+                        loading="lazy"
+                        style={{ maxWidth: 800 }}
+                      />
+                    ) : (
+                      <div className="flex h-9 w-9 items-center justify-center rounded bg-paper-2 text-xs text-muted">
+                        --
+                      </div>
+                    )}
+                  </div>
                   <div className="min-w-0 sm:px-3 sm:py-2">
                     <span className="font-medium">{p.nombre}</span>
                     {p.stockBajo ? (
@@ -230,6 +298,16 @@ function ProductosPage() {
         </div>
       </div>
 
+      <ReposicionPanel
+        visible={reposicionVisible}
+        onToggle={() => setReposicionVisible((v) => !v)}
+        dias={reposicionDias}
+        onDiasChange={setReposicionDias}
+        sugerencias={reposicion.data?.sugerencias ?? []}
+        cargando={reposicion.isPending}
+        onRefrescar={() => void reposicion.refetch()}
+      />
+
       {edit ? (
         <Modal title={edit.id ? "Editar producto" : "Nuevo producto"} onClose={() => setEdit(null)}>
           <Field label="Nombre" value={edit.nombre} onChange={(v) => setEdit({ ...edit, nombre: v })} />
@@ -292,6 +370,57 @@ function ProductosPage() {
             Publicado en Mercado al Toque
           </label>
           {!canal.data?.presencia ? <p className="mt-1 text-xs text-muted">Hace falta Presencia o Pro para publicar en Mercado.</p> : null}
+          {edit.id ? (
+            <div className="mt-3">
+              <span className="block text-sm font-medium">Foto del producto</span>
+              <div className="mt-1.5 flex items-center gap-3">
+                {edit.fotoUrl ? (
+                  <img
+                    src={edit.fotoUrl}
+                    alt={edit.nombre}
+                    className="h-16 w-16 rounded-md border border-line object-cover"
+                    loading="lazy"
+                    style={{ maxWidth: 800 }}
+                  />
+                ) : (
+                  <div className="flex h-16 w-16 items-center justify-center rounded-md border border-dashed border-line bg-paper-2 text-xs text-muted">
+                    Sin foto
+                  </div>
+                )}
+                <div className="flex flex-col gap-1.5">
+                  <input
+                    ref={fotoInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) void subirFoto.mutate(file);
+                      e.target.value = "";
+                    }}
+                  />
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={subirFoto.isPending}
+                    onClick={() => fotoInputRef.current?.click()}
+                  >
+                    {subirFoto.isPending ? "Subiendo..." : edit.fotoUrl ? "Cambiar foto" : "Subir foto"}
+                  </Button>
+                  {edit.fotoUrl ? (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      disabled={borrarFoto.isPending}
+                      onClick={() => borrarFoto.mutate()}
+                    >
+                      Borrar foto
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          ) : null}
           <Button className="mt-4 w-full" onClick={() => save.mutate()} disabled={save.isPending}>
             Guardar
           </Button>
@@ -377,5 +506,122 @@ function Modal({ title, children, onClose }: { title: string; children: React.Re
         {children}
       </div>
     </div>
+  );
+}
+
+type SugerenciaRepo = {
+  productoId: string;
+  nombre: string;
+  cantidadSugerida: number;
+  stockActual: number;
+  promedioDiario: number;
+  diasHastaAgotar: number | null;
+};
+
+function ReposicionPanel({
+  visible,
+  onToggle,
+  dias,
+  onDiasChange,
+  sugerencias,
+  cargando,
+  onRefrescar,
+}: {
+  visible: boolean;
+  onToggle: () => void;
+  dias: number;
+  onDiasChange: (d: number) => void;
+  sugerencias: SugerenciaRepo[];
+  cargando: boolean;
+  onRefrescar: () => void;
+}) {
+  return (
+    <section className={cn("mt-4 rounded-lg border border-line bg-surface", visible && "border-t-2 border-t-terra")}>
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex w-full items-center justify-between px-4 py-3 text-left"
+      >
+        <div className="flex items-center gap-2">
+          <h2 className="font-display text-base font-semibold">Reposición según historial</h2>
+          {sugerencias.length > 0 && visible ? (
+            <Badge tone="terra">{sugerencias.length} productos</Badge>
+          ) : null}
+        </div>
+        <span className="text-sm text-muted">{visible ? "Cerrar" : "Ver sugerencias"}</span>
+      </button>
+      {visible ? (
+        <div className="border-t border-line px-4 pb-4 pt-3">
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <span className="text-xs font-medium text-muted">Período de análisis:</span>
+            {[7, 14, 30].map((d) => (
+              <button
+                key={d}
+                type="button"
+                onClick={() => onDiasChange(d)}
+                className={cn(
+                  "rounded-md px-2.5 py-1 text-xs font-medium",
+                  dias === d ? "bg-terra text-white" : "bg-paper-2 text-muted hover:text-ink",
+                )}
+              >
+                {d} días
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={onRefrescar}
+              disabled={cargando}
+              className="ml-auto rounded-md bg-paper-2 px-2.5 py-1 text-xs font-medium text-muted hover:text-ink disabled:opacity-50"
+            >
+              {cargando ? "Calculando..." : "Refrescar"}
+            </button>
+          </div>
+          {cargando ? (
+            <p className="py-6 text-center text-sm text-muted">Calculando sugerencias de reposición...</p>
+          ) : sugerencias.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted">
+              No hay productos que necesiten reposición en los últimos {dias} días.
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b border-line text-xs font-medium text-muted">
+                    <th className="pb-2 pr-3">Producto</th>
+                    <th className="pb-2 pr-3 text-right tabular-nums">Stock actual</th>
+                    <th className="pb-2 pr-3 text-right tabular-nums">Venta/día</th>
+                    <th className="pb-2 pr-3 text-right tabular-nums">Días hasta agotar</th>
+                    <th className="pb-2 text-right tabular-nums">Sugerido</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sugerencias.map((s) => (
+                    <tr key={s.productoId} className="border-b border-line last:border-b-0">
+                      <td className="py-2 pr-3 font-medium">{s.nombre}</td>
+                      <td className="py-2 pr-3 text-right tabular-nums">{s.stockActual}</td>
+                      <td className="py-2 pr-3 text-right tabular-nums text-muted">{s.promedioDiario}</td>
+                      <td className="py-2 pr-3 text-right tabular-nums">
+                        {s.diasHastaAgotar === null ? (
+                          <span className="text-muted">—</span>
+                        ) : s.diasHastaAgotar <= 1 ? (
+                          <span className="font-medium text-alerta">{s.diasHastaAgotar} d</span>
+                        ) : s.diasHastaAgotar <= 3 ? (
+                          <span className="font-medium text-terra">{s.diasHastaAgotar} d</span>
+                        ) : (
+                          <span className="text-muted">{s.diasHastaAgotar} d</span>
+                        )}
+                      </td>
+                      <td className="py-2 text-right tabular-nums font-medium text-terra">
+                        +{s.cantidadSugerida}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      ) : null}
+    </section>
   );
 }

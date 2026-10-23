@@ -58,6 +58,11 @@ export type Producto = {
   publicadoOnline?: boolean;
   stockBajo: boolean;
   orden: number | null;
+  fotoUrl?: string | null;
+  /** Costo unitario del producto (de remitos o carga manual). Null si no se cargó. */
+  costo?: number | null;
+  /** Margen porcentual: ((precio - costo) / precio) * 100. Null si no hay costo. */
+  margen?: number | null;
 };
 
 export type Cliente = {
@@ -82,6 +87,8 @@ export type PedidoItem = {
   unidad: Unidad;
   unidadLabel: string;
   subtotal: number;
+  cantidadEntregada: number;
+  notaEntrega: string | null;
 };
 
 export type Pedido = {

@@ -22,6 +22,7 @@ dependencies:
   qr_flutter: ^4.1.0
   shared_preferences: ^2.3.3
   connectivity_plus: ^6.1.0
+  flutter_blue_plus: ^1.35.5
 
 dev_dependencies:
   flutter_test:

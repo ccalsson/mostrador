@@ -92,6 +92,8 @@ export type PedidoItem = {
   unidad: Unidad;
   unidadLabel: string;
   subtotal: number;
+  cantidadEntregada: number;
+  notaEntrega: string | null;
 };
 
 export type Pedido = {

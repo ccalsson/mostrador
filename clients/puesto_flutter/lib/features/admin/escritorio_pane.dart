@@ -465,7 +465,7 @@ class _SectionCard extends StatelessWidget {
                       .titleSmall
                       ?.copyWith(fontWeight: FontWeight.w500)),
               const Spacer(),
-              if (trailing != null) trailing!,
+              ?trailing,
             ],
           ),
           const Divider(height: 20),

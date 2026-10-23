@@ -1,13 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Copy, Minus, Plus, Search, Send, Trash2 } from "lucide-react";
+import { AlertTriangle, CheckSquare, ChevronDown, Copy, Minus, Package, Plus, Search, Send, Square, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { calificarCompradorMercado, crearPedido, createCliente, listClientes, listPedidos, listProductos, marcarEntregado } from "@/lib/fn";
+import { calificarCompradorMercado, crearPedido, createCliente, entregarParcial, listClientes, listPedidos, listProductos, marcarEntregado } from "@/lib/fn";
 import { enqueuePedido, readQueue, removeQueued } from "@/lib/offline-queue";
 import { money } from "@/lib/money";
 import { cn } from "@/lib/cn";
@@ -32,6 +32,11 @@ function VendedorPage() {
   const [tab, setTab] = useState<"catalogo" | "pedidos">("catalogo");
   const [queued, setQueued] = useState(readQueue);
   const [pasando, setPasando] = useState<string | null>(null);
+  const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
+  const [checkedItems, setCheckedItems] = useState<Set<string>>(new Set());
+  const [deliveryQty, setDeliveryQty] = useState<Record<string, number>>({});
+  const [deliveryNotes, setDeliveryNotes] = useState<Record<string, string>>({});
+  const [entregandoParcial, setEntregandoParcial] = useState<string | null>(null);
 
   useEffect(() => {
     if (!clienteId && clientes.data?.length) {
@@ -208,6 +213,19 @@ function VendedorPage() {
                 const n = cart[p.id] ?? 0;
                 return (
                   <li key={p.id} className="flex items-center gap-2 px-2.5 py-1.5 sm:px-3 sm:py-2">
+                    {p.fotoUrl ? (
+                      <img
+                        src={p.fotoUrl}
+                        alt={p.nombre}
+                        className="h-10 w-10 shrink-0 rounded object-cover"
+                        loading="lazy"
+                        style={{ maxWidth: 800 }}
+                      />
+                    ) : (
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-paper-2 text-xs text-muted">
+                        --
+                      </div>
+                    )}
                     <button type="button" className="min-w-0 flex-1 text-left" onClick={() => add(p.id, 1)}>
                       <span className="block truncate font-medium leading-tight">{p.nombre}</span>
                       <span className="mt-0.5 flex flex-wrap items-center gap-2 text-sm text-muted">
@@ -315,12 +333,14 @@ function VendedorPage() {
             .filter((p) => p.estado !== "entregado")
             .map((p) => {
               const listo = pasando === p.id;
+              const expanded = expandedOrder === p.id;
+              const entregando = entregandoParcial === p.id;
               return (
             <li
               key={p.id}
-              className={cn("rounded-lg border bg-surface p-4 transition-colors", listo ? "border-leaf bg-ok-bg" : "border-line")}
+              className={cn("rounded-lg border bg-surface transition-colors", listo ? "border-leaf bg-ok-bg" : "border-line")}
             >
-              <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center justify-between gap-2 p-4">
                 <div>
                   <div className="font-medium">{p.clienteNombre}</div>
                   <div className="text-sm text-muted">
@@ -332,25 +352,54 @@ function VendedorPage() {
                     {listo ? "Entregado" : ESTADO_LABEL[p.estado]}
                   </Badge>
                   {p.estado === "cobrado" ? (
-                    <Button
-                      size="sm"
-                      disabled={pasando !== null}
-                      onClick={() => {
-                        if (pasando) return;
-                        setPasando(p.id);
-                        window.setTimeout(() => {
-                          void marcarEntregado({ data: p.id })
-                            .then(() => {
-                              toast.success("Pasó a entregados");
-                              void qc.invalidateQueries({ queryKey: ["mis-pedidos"] });
-                            })
-                            .catch((e: Error) => toast.error(e.message))
-                            .finally(() => setPasando(null));
-                        }, 450);
-                      }}
-                    >
-                      Entregado
-                    </Button>
+                    <>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => {
+                          if (expanded) {
+                            setExpandedOrder(null);
+                          } else {
+                            setExpandedOrder(p.id);
+                            // Initialize defaults: all items checked with full pending qty
+                            const next = new Set<string>();
+                            const qty: Record<string, number> = {};
+                            for (const it of p.items) {
+                              const pendiente = it.cantidad - it.cantidadEntregada;
+                              if (pendiente > 0) {
+                                next.add(it.id);
+                                qty[it.id] = pendiente;
+                              }
+                            }
+                            setCheckedItems(next);
+                            setDeliveryQty(qty);
+                          }
+                        }}
+                      >
+                        <Package className="mr-1 size-3.5" />
+                        {expanded ? "Cerrar" : "Entrega"}
+                        {expanded ? <ChevronDown className="ml-1 size-3.5 rotate-180" /> : <ChevronDown className="ml-1 size-3.5" />}
+                      </Button>
+                      <Button
+                        size="sm"
+                        disabled={pasando !== null}
+                        onClick={() => {
+                          if (pasando) return;
+                          setPasando(p.id);
+                          window.setTimeout(() => {
+                            void marcarEntregado({ data: p.id })
+                              .then(() => {
+                                toast.success("Pasó a entregados");
+                                void qc.invalidateQueries({ queryKey: ["mis-pedidos"] });
+                              })
+                              .catch((e: Error) => toast.error(e.message))
+                              .finally(() => setPasando(null));
+                          }, 450);
+                        }}
+                      >
+                        Entregado
+                      </Button>
+                    </>
                   ) : null}
                   <Button variant="secondary" size="sm" onClick={() => loadPedido(p)}>
                     <Copy className="size-3.5" />
@@ -358,6 +407,63 @@ function VendedorPage() {
                   </Button>
                 </div>
               </div>
+              {expanded && p.estado === "cobrado" ? (
+                <EntregaChecklist
+                  pedido={p}
+                  checkedItems={checkedItems}
+                  deliveryQty={deliveryQty}
+                  deliveryNotes={deliveryNotes}
+                  onToggleItem={(itemId) => {
+                    setCheckedItems((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(itemId)) {
+                        next.delete(itemId);
+                        setDeliveryQty((q) => { const n = { ...q }; delete n[itemId]; return n; });
+                        setDeliveryNotes((n) => { const m = { ...n }; delete m[itemId]; return m; });
+                      } else {
+                        next.add(itemId);
+                        const it = p.items.find((x) => x.id === itemId);
+                        if (it) {
+                          const pendiente = it.cantidad - it.cantidadEntregada;
+                          setDeliveryQty((q) => ({ ...q, [itemId]: pendiente }));
+                        }
+                      }
+                      return next;
+                    });
+                  }}
+                  onQtyChange={(itemId, qty) => setDeliveryQty((prev) => ({ ...prev, [itemId]: qty }))}
+                  onNoteChange={(itemId, nota) => setDeliveryNotes((prev) => ({ ...prev, [itemId]: nota }))}
+                  onEntregar={async () => {
+                    const items = Array.from(checkedItems)
+                      .map((itemId) => {
+                        const it = p.items.find((x) => x.id === itemId);
+                        if (!it) return null;
+                        return {
+                          itemId,
+                          cantidad: deliveryQty[itemId] ?? (it.cantidad - it.cantidadEntregada),
+                          nota: deliveryNotes[itemId]?.trim() || undefined,
+                        };
+                      })
+                      .filter((x): x is { itemId: string; cantidad: number; nota: string | undefined } => x !== null && x.cantidad > 0);
+                    if (!items.length) {
+                      toast.error("Marcá al menos un ítem con cantidad > 0.");
+                      return;
+                    }
+                    setEntregandoParcial(p.id);
+                    try {
+                      await entregarParcial({ data: { pedidoId: p.id, items } });
+                      toast.success("Entrega registrada");
+                      setExpandedOrder(null);
+                      void qc.invalidateQueries({ queryKey: ["mis-pedidos"] });
+                    } catch (e: unknown) {
+                      toast.error(e instanceof Error ? e.message : "Error al entregar");
+                    } finally {
+                      setEntregandoParcial(null);
+                    }
+                  }}
+                  entregando={entregando}
+                />
+              ) : null}
             </li>
               );
             })}
@@ -366,7 +472,9 @@ function VendedorPage() {
           ) : null}
           {(pedidos.data ?? [])
             .filter((p) => p.estado === "entregado" && p.id !== pasando)
-            .map((p) => (
+            .map((p) => {
+              const conNota = p.items.filter((it) => it.notaEntrega);
+              return (
             <li key={p.id} className="rounded-lg border border-leaf/40 bg-ok-bg p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
@@ -374,6 +482,15 @@ function VendedorPage() {
                   <div className="text-sm text-ok">
                     Entregado · {p.items.length} ítems · {money(p.total)}
                   </div>
+                  {conNota.length > 0 ? (
+                    <div className="mt-1 space-y-0.5">
+                      {conNota.map((it) => (
+                        <div key={it.id} className="text-xs text-muted">
+                          <span className="font-medium">{it.nombre}</span>: {it.notaEntrega}
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
                 <Button variant="secondary" size="sm" onClick={() => loadPedido(p)}>
                   <Copy className="size-3.5" />
@@ -397,10 +514,133 @@ function VendedorPage() {
                 </span>
               </div>
             </li>
-          ))}
+              );
+            })}
         </ul>
       )}
     </AppShell>
+  );
+}
+
+function EntregaChecklist({
+  pedido,
+  checkedItems,
+  deliveryQty,
+  deliveryNotes,
+  onToggleItem,
+  onQtyChange,
+  onNoteChange,
+  onEntregar,
+  entregando,
+}: {
+  pedido: Pedido;
+  checkedItems: Set<string>;
+  deliveryQty: Record<string, number>;
+  deliveryNotes: Record<string, string>;
+  onToggleItem: (itemId: string) => void;
+  onQtyChange: (itemId: string, qty: number) => void;
+  onNoteChange: (itemId: string, nota: string) => void;
+  onEntregar: () => void;
+  entregando: boolean;
+}) {
+  const itemsConPendiente = pedido.items.filter((it) => it.cantidad - it.cantidadEntregada > 0);
+  const seleccionados = Array.from(checkedItems).length;
+
+  return (
+    <div className="border-t border-line px-4 pt-3 pb-4">
+      <div className="mb-2 flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-ink">Checklist de entrega</h3>
+        <span className="text-xs text-muted">{seleccionados} de {itemsConPendiente.length} seleccionados</span>
+      </div>
+      <ul className="space-y-2">
+        {pedido.items.map((it) => {
+          const pendiente = it.cantidad - it.cantidadEntregada;
+          const yaEntregado = it.cantidadEntregada;
+          const checked = checkedItems.has(it.id);
+          return (
+            <li
+              key={it.id}
+              className={cn(
+                "rounded-md border p-2.5 transition-colors",
+                checked ? "border-leaf/50 bg-ok-bg/40" : "border-line bg-paper",
+                pendiente <= 0 && "opacity-60",
+              )}
+            >
+              <div className="flex items-start gap-2">
+                <button
+                  type="button"
+                  className="mt-0.5 shrink-0 text-leaf"
+                  onClick={() => onToggleItem(it.id)}
+                  disabled={pendiente <= 0}
+                  aria-label={checked ? "Desmarcar" : "Marcar"}
+                >
+                  {checked
+                    ? <CheckSquare className="size-5" />
+                    : <Square className="size-5 text-muted" />}
+                </button>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="truncate text-sm font-medium">{it.nombre}</span>
+                    <span className="shrink-0 text-xs tabular-nums text-muted">
+                      {it.cantidad} {it.unidadLabel}
+                    </span>
+                  </div>
+                  {yaEntregado > 0 ? (
+                    <div className="mt-0.5 text-xs text-ok">
+                      {yaEntregado} {it.unidadLabel} ya entregado(s)
+                    </div>
+                  ) : null}
+                  {pendiente <= 0 ? (
+                    <div className="mt-0.5 text-xs text-ok font-medium">Completo</div>
+                  ) : checked ? (
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <label className="flex items-center gap-1 text-xs">
+                        <span className="text-muted">Entregar:</span>
+                        <input
+                          type="number"
+                          min={0.001}
+                          max={pendiente}
+                          step={it.unidad === "kg" ? 0.01 : 1}
+                          value={deliveryQty[it.id] ?? pendiente}
+                          onChange={(e) => onQtyChange(it.id, parseFloat(e.target.value) || 0)}
+                          className="h-7 w-16 rounded border border-line bg-surface px-1.5 text-xs tabular-nums"
+                        />
+                        <span className="text-muted">{it.unidadLabel}</span>
+                      </label>
+                    </div>
+                  ) : null}
+                  {checked && pendiente > 0 ? (
+                    <input
+                      type="text"
+                      placeholder="Nota / observación (opcional)"
+                      value={deliveryNotes[it.id] ?? ""}
+                      onChange={(e) => onNoteChange(it.id, e.target.value)}
+                      className="mt-1.5 h-7 w-full rounded border border-line bg-surface px-2 text-xs"
+                      maxLength={500}
+                    />
+                  ) : null}
+                </div>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+      <div className="mt-3 flex items-center justify-between gap-2">
+        <p className="text-xs text-muted">
+          {seleccionados > 0
+            ? `${seleccionados} ítem(s) a entregar`
+            : "Marcá los ítems que entregás"}
+        </p>
+        <Button
+          size="sm"
+          disabled={seleccionados === 0 || entregando}
+          onClick={onEntregar}
+        >
+          <Package className="mr-1 size-3.5" />
+          {entregando ? "Entregando..." : "Entregar seleccionados"}
+        </Button>
+      </div>
+    </div>
   );
 }
 

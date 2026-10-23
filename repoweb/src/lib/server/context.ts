@@ -101,23 +101,30 @@ export function mapProducto(r: {
   unidad_label: string;
   precio: unknown;
   moneda?: unknown;
+  costo?: unknown;
   stock: unknown;
   stock_minimo: unknown;
   alias: unknown;
   activo: boolean;
   orden?: unknown;
   publicado_online?: unknown;
+  foto_url?: string | null;
 }): Producto {
   const alias = parseAlias(r.alias);
   const stock = num(r.stock);
   const stockMinimo = num(r.stock_minimo);
+  const precio = num(r.precio);
+  const costo = r.costo == null ? null : num(r.costo);
+  const margen = calcularMargen(precio, costo);
   return {
     id: r.id,
     nombre: r.nombre,
     unidad: r.unidad,
     unidadLabel: r.unidad_label,
-    precio: num(r.precio),
+    precio,
     moneda: r.moneda === "USD" || r.moneda === "ARS" ? r.moneda : undefined,
+    costo,
+    margen,
     stock,
     stockMinimo,
     alias,
@@ -125,7 +132,20 @@ export function mapProducto(r: {
     publicadoOnline: Boolean(r.publicado_online),
     stockBajo: stock <= stockMinimo,
     orden: r.orden == null ? null : num(r.orden),
+    fotoUrl: r.foto_url ?? null,
   };
+}
+
+/**
+ * Calcula el margen de ganancia en porcentaje.
+ * Si precio > 0 y costo > 0: margen = ((precio - costo) / precio) * 100
+ * Si no: margen = null
+ */
+export function calcularMargen(precio: number, costo: number | null): number | null {
+  if (precio > 0 && costo != null && costo > 0) {
+    return ((precio - costo) / precio) * 100;
+  }
+  return null;
 }
 
 function parseAlias(value: unknown): string[] {
@@ -206,8 +226,11 @@ export async function loadItems(pedidoId: string): Promise<PedidoItem[]> {
     precio_unitario: unknown;
     unidad: PedidoItem["unidad"];
     unidad_label: string;
+    cantidad_entregada: unknown;
+    nota_entrega: string | null;
   }>`
-    select id, producto_id, nombre_snapshot, cantidad, precio_unitario, unidad, unidad_label
+    select id, producto_id, nombre_snapshot, cantidad, precio_unitario, unidad, unidad_label,
+           cantidad_entregada, nota_entrega
     from pedido_items
     where pedido_id = ${pedidoId}
     order by nombre_snapshot
@@ -224,6 +247,8 @@ export async function loadItems(pedidoId: string): Promise<PedidoItem[]> {
       unidad: r.unidad,
       unidadLabel: r.unidad_label,
       subtotal: Math.round(cantidad * precioUnitario * 100) / 100,
+      cantidadEntregada: num(r.cantidad_entregada),
+      notaEntrega: r.nota_entrega,
     };
   });
 }

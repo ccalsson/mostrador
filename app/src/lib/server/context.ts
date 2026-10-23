@@ -173,6 +173,8 @@ type ItemRow = {
   precio_unitario: unknown;
   unidad: PedidoItem["unidad"];
   unidad_label: string;
+  cantidad_entregada: unknown;
+  nota_entrega: string | null;
 };
 
 const PEDIDO_SELECT = `
@@ -220,6 +222,8 @@ function mapItem(r: ItemRow): PedidoItem {
     unidad: r.unidad,
     unidadLabel: r.unidad_label,
     subtotal: Math.round(cantidad * precioUnitario * 100) / 100,
+    cantidadEntregada: num(r.cantidad_entregada),
+    notaEntrega: r.nota_entrega,
   };
 }
 
@@ -245,7 +249,8 @@ export async function loadPedidos(pedidoIds: string[], tenantId: string): Promis
     [pedidoIds, tenantId],
   );
   const lineas = await sql.query<ItemRow & { pedido_id: string }>(
-    `select pedido_id, id, producto_id, nombre_snapshot, cantidad, precio_unitario, unidad, unidad_label
+    `select pedido_id, id, producto_id, nombre_snapshot, cantidad, precio_unitario, unidad, unidad_label,
+            cantidad_entregada, nota_entrega
      from pedido_items
      where pedido_id = any($1::text[])
      order by nombre_snapshot`,
@@ -270,7 +275,8 @@ export async function loadPedidos(pedidoIds: string[], tenantId: string): Promis
 export async function loadItems(pedidoId: string): Promise<PedidoItem[]> {
   const sql = await getSql();
   const rows = await sql<ItemRow>`
-    select id, producto_id, nombre_snapshot, cantidad, precio_unitario, unidad, unidad_label
+    select id, producto_id, nombre_snapshot, cantidad, precio_unitario, unidad, unidad_label,
+           cantidad_entregada, nota_entrega
     from pedido_items
     where pedido_id = ${pedidoId}
     order by nombre_snapshot

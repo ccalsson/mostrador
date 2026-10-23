@@ -163,6 +163,16 @@ class Factura {
 
   bool get esNotaCredito => [3, 8, 13].contains(cbteTipo);
 
+  String get tipoLabel => switch (cbteTipo) {
+        1 => 'Factura A',
+        3 => 'Nota de crédito A',
+        6 => 'Factura B',
+        8 => 'Nota de crédito B',
+        11 => 'Factura C',
+        13 => 'Nota de crédito C',
+        _ => 'Comprobante $cbteTipo',
+      };
+
   String get numeroFiscal {
     if (numero == null) return '—';
     final pv = puntoVenta.toString().padLeft(4, '0');

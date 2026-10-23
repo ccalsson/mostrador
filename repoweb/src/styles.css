@@ -168,7 +168,9 @@ html.dark textarea {
   #ticket-print,
   #ticket-print *,
   #factura-print,
-  #factura-print * {
+  #factura-print *,
+  #qr-print,
+  #qr-print * {
     visibility: visible;
   }
   #ticket-print {
@@ -192,5 +194,42 @@ html.dark textarea {
     width: 100%;
     background: white;
     color: black;
+  }
+  #qr-print {
+    position: absolute;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100%;
+    background: white;
+    color: black;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 20mm;
+    box-sizing: border-box;
+  }
+  #qr-print .qr-nombre {
+    font-size: 22pt;
+    font-weight: 700;
+    margin-bottom: 6mm;
+    text-align: center;
+  }
+  #qr-print .qr-imagen {
+    width: 60mm;
+    height: 60mm;
+  }
+  #qr-print .qr-url {
+    margin-top: 6mm;
+    font-size: 10pt;
+    word-break: break-all;
+    text-align: center;
+    max-width: 160mm;
+  }
+  #qr-print .qr-subtitulo {
+    margin-top: 3mm;
+    font-size: 9pt;
+    color: #555;
+    text-align: center;
   }
 }
