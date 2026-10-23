@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS torre.compras_pendientes (
   estado text NOT NULL DEFAULT 'pending' CHECK (estado IN ('pending', 'active', 'expired')),
   habilitado_at timestamptz,
   vence_at timestamptz,
-  tenant_id uuid REFERENCES torre.saas_tenants(id),
+  tenant_id text,
   creado_at timestamptz DEFAULT now()
 );
 
