@@ -1,13 +1,19 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
 
 import '../../core/errors/api_exceptions.dart';
 import '../../core/format.dart';
 import '../../models/dashboard.dart';
+import '../../models/producto.dart';
+import '../../services/caja_service.dart';
+import '../../services/catalogo_service.dart';
 import '../../services/dashboard_service.dart';
+import '../caja/ticket_dialog.dart';
 
 enum _Metrica { ventas, tickets }
 
@@ -81,6 +87,8 @@ class _DashboardPaneState extends ConsumerState<DashboardPane> {
                       Text('en vivo',
                           style: Theme.of(context).textTheme.bodySmall),
                     ],
+                    const SizedBox(width: 12),
+                    const Flexible(child: _ClimaDolar()),
                   ],
                 ),
               ),
@@ -235,6 +243,8 @@ class _DashboardBody extends StatelessWidget {
             );
           },
         ),
+        const SizedBox(height: 16),
+        const _TurnoCard(),
         const SizedBox(height: 24),
         _SerieCard(
           data: data,
@@ -255,6 +265,8 @@ class _DashboardBody extends StatelessWidget {
           const SizedBox(height: 24),
           _ColaCard(cola: data.cola),
         ],
+        const SizedBox(height: 24),
+        const _StockBoardCard(),
         if (data.movimientos.isNotEmpty) ...[
           const SizedBox(height: 24),
           _MovimientosCard(movimientos: data.movimientos),
@@ -922,15 +934,33 @@ class _ColaCard extends StatelessWidget {
       };
 }
 
-class _MovimientosCard extends StatelessWidget {
+class _MovimientosCard extends StatefulWidget {
   const _MovimientosCard({required this.movimientos});
 
   final List<Movimiento> movimientos;
 
   @override
+  State<_MovimientosCard> createState() => _MovimientosCardState();
+}
+
+class _MovimientosCardState extends State<_MovimientosCard> {
+  String _filtro = '';
+
+  List<Movimiento> get _filtrados {
+    if (_filtro.isEmpty) return widget.movimientos;
+    final q = _filtro.toLowerCase();
+    return widget.movimientos
+        .where((m) =>
+            m.cliente.toLowerCase().contains(q) ||
+            m.productos.toLowerCase().contains(q) ||
+            m.formaPago.toLowerCase().contains(q))
+        .toList();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final visibles = movimientos.take(10).toList();
+    final visibles = _filtrados.take(10).toList();
     return Card(
       key: const Key('dashboard_movimientos_card'),
       child: Padding(
@@ -938,38 +968,87 @@ class _MovimientosCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(
-              'Últimos movimientos',
-              style: theme.textTheme.titleSmall,
-            ),
-            const SizedBox(height: 4),
-            for (final m in visibles)
-              ListTile(
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                leading: CircleAvatar(
-                  radius: 14,
-                  backgroundColor: theme.colorScheme.primaryContainer,
+            Row(
+              children: [
+                Expanded(
                   child: Text(
-                    m.numero?.toString() ?? '·',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: theme.colorScheme.onPrimaryContainer,
-                    ),
+                    'Últimos movimientos',
+                    style: theme.textTheme.titleSmall,
                   ),
                 ),
-                title: Text(m.cliente),
-                subtitle: Text(
-                  '${_horaCorta(m.createdAt)} · '
-                  '${m.productos.isEmpty ? '—' : m.productos}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                SizedBox(
+                  width: 180,
+                  height: 32,
+                  child: TextField(
+                    key: const Key('dashboard_movimientos_filtro'),
+                    decoration: InputDecoration(
+                      hintText: 'Filtrar…',
+                      prefixIcon: const Icon(Icons.search, size: 16),
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 6),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    style: theme.textTheme.bodySmall,
+                    onChanged: (v) => setState(() => _filtro = v),
+                  ),
                 ),
-                trailing: Text(
-                  moneda(m.monto),
-                  style: const TextStyle(fontWeight: FontWeight.w600),
+              ],
+            ),
+            const SizedBox(height: 4),
+            if (visibles.isEmpty && _filtro.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                child: Text(
+                  'Sin resultados para "$_filtro".',
+                  style: theme.textTheme.bodySmall,
+                  textAlign: TextAlign.center,
                 ),
-              ),
+              )
+            else
+              for (final m in visibles)
+                ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  onTap: () => showDialog<void>(
+                    context: context,
+                    builder: (_) => TicketDialog(cobroId: m.id),
+                  ),
+                  leading: CircleAvatar(
+                    radius: 14,
+                    backgroundColor: theme.colorScheme.primaryContainer,
+                    child: Text(
+                      m.numero?.toString() ?? '·',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: theme.colorScheme.onPrimaryContainer,
+                      ),
+                    ),
+                  ),
+                  title: Text(m.cliente),
+                  subtitle: Text(
+                    '${_horaCorta(m.createdAt)} · '
+                    '${m.productos.isEmpty ? '—' : m.productos}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        moneda(m.monto),
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(width: 4),
+                      Icon(
+                        Icons.receipt_outlined,
+                        size: 14,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ],
+                  ),
+                ),
             const SizedBox(height: 4),
           ],
         ),
@@ -977,11 +1056,384 @@ class _MovimientosCard extends StatelessWidget {
     );
   }
 
-  /// `2026-10-16 12:34:00` → `12:34`.
   static String _horaCorta(String createdAt) {
     final partes = createdAt.split(' ');
     if (partes.length < 2) return createdAt;
     final hora = partes[1];
     return hora.length >= 5 ? hora.substring(0, 5) : hora;
+  }
+}
+
+class _TurnoCard extends ConsumerWidget {
+  const _TurnoCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final caja = ref.watch(cajaEstadoProvider);
+    return caja.when(
+      loading: () => const SizedBox.shrink(),
+      error: (_, _) => const SizedBox.shrink(),
+      data: (estado) {
+        final theme = Theme.of(context);
+        final totalCobrado =
+            estado.totales.fold<double>(0, (a, t) => a + t.total);
+        final nCobros = estado.totales.fold<int>(0, (a, t) => a + t.n);
+        return Card(
+          key: const Key('dashboard_turno_card'),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            child: Row(
+              children: [
+                Icon(Icons.point_of_sale,
+                    size: 18, color: theme.colorScheme.secondary),
+                const SizedBox(width: 8),
+                Text('Turno', style: theme.textTheme.titleSmall),
+                const SizedBox(width: 16),
+                _TurnoChip(
+                  label: 'Cobrado',
+                  valor: moneda(totalCobrado),
+                  color: theme.colorScheme.primary,
+                ),
+                const SizedBox(width: 12),
+                _TurnoChip(
+                  label: 'Cobros',
+                  valor: '$nCobros',
+                  color: Colors.blue,
+                ),
+                if (estado.egresos > 0) ...[
+                  const SizedBox(width: 12),
+                  _TurnoChip(
+                    label: 'Egresos',
+                    valor: moneda(estado.egresos),
+                    color: Colors.red,
+                  ),
+                ],
+                const SizedBox(width: 12),
+                _TurnoChip(
+                  label: 'Esperado',
+                  valor: moneda(estado.esperado),
+                  color: theme.colorScheme.secondary,
+                ),
+                const Spacer(),
+                Text(
+                  'Desde ${_horaDesde(estado.abiertoAt)}',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  static String _horaDesde(String abiertoAt) {
+    final partes = abiertoAt.split(' ');
+    if (partes.length < 2) return abiertoAt;
+    final hora = partes[1];
+    return hora.length >= 5 ? hora.substring(0, 5) : hora;
+  }
+}
+
+class _TurnoChip extends StatelessWidget {
+  const _TurnoChip({
+    required this.label,
+    required this.valor,
+    required this.color,
+  });
+
+  final String label;
+  final String valor;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(valor,
+            style: theme.textTheme.bodyMedium
+                ?.copyWith(fontWeight: FontWeight.w600, color: color)),
+        Text(label, style: theme.textTheme.bodySmall?.copyWith(fontSize: 10)),
+      ],
+    );
+  }
+}
+
+class _StockBoardCard extends ConsumerWidget {
+  const _StockBoardCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final catalogo = ref.watch(catalogoProvider);
+    return catalogo.when(
+      loading: () => const SizedBox.shrink(),
+      error: (_, _) => const SizedBox.shrink(),
+      data: (cat) {
+        final activos =
+            cat.productos.where((p) => p.activo).toList(growable: false);
+        if (activos.isEmpty) return const SizedBox.shrink();
+        final sinStock = activos.where((p) => p.stock <= 0).length;
+        final theme = Theme.of(context);
+        return Card(
+          key: const Key('dashboard_stock_board'),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text.rich(TextSpan(children: [
+                        TextSpan(
+                          text: 'Stock ',
+                          style: theme.textTheme.titleSmall,
+                        ),
+                        TextSpan(
+                          text: '${activos.length} productos',
+                          style: theme.textTheme.bodySmall,
+                        ),
+                        if (sinStock > 0)
+                          TextSpan(
+                            text: ' · $sinStock sin stock',
+                            style: theme.textTheme.bodySmall
+                                ?.copyWith(color: Colors.red),
+                          ),
+                      ])),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    for (final p in activos) _StockCell(producto: p),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+enum _StockNivel { ok, mid, low, out }
+
+class _StockCell extends StatelessWidget {
+  const _StockCell({required this.producto});
+
+  final Producto producto;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final capacidad =
+        (producto.stockMinimo > 0 ? producto.stockMinimo : 1) * 4;
+    final fraccion = (producto.stock / capacidad).clamp(0.0, 1.0);
+    final nivel = producto.stock <= 0
+        ? _StockNivel.out
+        : fraccion < 0.25
+            ? _StockNivel.low
+            : fraccion < 0.5
+                ? _StockNivel.mid
+                : _StockNivel.ok;
+    final color = switch (nivel) {
+      _StockNivel.ok => Colors.green,
+      _StockNivel.mid => Colors.orange,
+      _StockNivel.low => Colors.amber.shade700,
+      _StockNivel.out => Colors.red,
+    };
+    return SizedBox(
+      width: 100,
+      height: 56,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          border: Border.all(color: theme.colorScheme.outlineVariant),
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(4),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                producto.nombre,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodySmall?.copyWith(fontSize: 10),
+              ),
+              const Spacer(),
+              Row(
+                children: [
+                  Expanded(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(2),
+                      child: LinearProgressIndicator(
+                        value: fraccion,
+                        minHeight: 6,
+                        backgroundColor:
+                            theme.colorScheme.surfaceContainerHighest,
+                        valueColor: AlwaysStoppedAnimation(color),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    '${producto.stock.toStringAsFixed(producto.stock == producto.stock.roundToDouble() ? 0 : 1)}'
+                    ' ${producto.unidadLabel}',
+                    style: TextStyle(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w600,
+                      color: color,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _Decoro {
+  const _Decoro({
+    required this.venta,
+    this.compra,
+    required this.temp,
+    required this.cielo,
+  });
+  final int venta;
+  final int? compra;
+  final int temp;
+  final String cielo;
+}
+
+class _ClimaDolar extends StatefulWidget {
+  const _ClimaDolar();
+
+  @override
+  State<_ClimaDolar> createState() => _ClimaDolarState();
+}
+
+class _ClimaDolarState extends State<_ClimaDolar> {
+  static const _lat = -34.7;
+  static const _lon = -58.5;
+  _Decoro? _dato;
+  bool _cargando = true;
+  Timer? _refresh;
+
+  @override
+  void initState() {
+    super.initState();
+    _cargar();
+    _refresh = Timer.periodic(const Duration(minutes: 30), (_) => _cargar());
+  }
+
+  @override
+  void dispose() {
+    _refresh?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _cargar() async {
+    try {
+      final respuestas = await Future.wait([
+        http.get(Uri.parse('https://dolarapi.com/v1/dolares/oficial')),
+        http.get(Uri.parse(
+          'https://api.open-meteo.com/v1/forecast'
+          '?latitude=$_lat&longitude=$_lon'
+          '&current=temperature_2m,weather_code'
+          '&timezone=America/Argentina/Buenos_Aires',
+        )),
+      ]);
+      if (!mounted) return;
+      if (respuestas[0].statusCode != 200 || respuestas[1].statusCode != 200) {
+        setState(() => _cargando = false);
+        return;
+      }
+      final dolar = jsonDecode(respuestas[0].body) as Map<String, dynamic>;
+      final clima = jsonDecode(respuestas[1].body) as Map<String, dynamic>;
+      final current = clima['current'] as Map<String, dynamic>?;
+      final ventaRaw = dolar['venta'];
+      final tempRaw = current?['temperature_2m'];
+      if (ventaRaw is! num || tempRaw is! num) {
+        setState(() => _cargando = false);
+        return;
+      }
+      final compraRaw = dolar['compra'];
+      setState(() {
+        _dato = _Decoro(
+          venta: ventaRaw.round(),
+          compra: compraRaw is num ? compraRaw.round() : null,
+          temp: tempRaw.round(),
+          cielo: _textoClima((current?['weather_code'] as num?)?.toInt() ?? -1),
+        );
+        _cargando = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _cargando = false);
+    }
+  }
+
+  static String _textoClima(int code) {
+    if (code == 0) return 'despejado';
+    if (code <= 3) return 'nublado';
+    if (code == 45 || code == 48) return 'niebla';
+    if (code <= 67) return 'lluvia';
+    if (code <= 77) return 'nieve';
+    if (code <= 82) return 'chaparrón';
+    if (code >= 95) return 'tormenta';
+    return 'variable';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_cargando) return const SizedBox.shrink();
+    final d = _dato;
+    if (d == null) return const SizedBox.shrink();
+    final style = Theme.of(context).textTheme.bodySmall;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+          decoration: BoxDecoration(
+            border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Text.rich(
+            TextSpan(children: [
+              const TextSpan(text: 'Oficial '),
+              TextSpan(
+                text: '\$${d.venta}',
+                style: style?.copyWith(fontWeight: FontWeight.w600),
+              ),
+              if (d.compra != null)
+                TextSpan(
+                  text: ' · compra \$${d.compra}',
+                  style: style?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+            ]),
+            style: style,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          '${d.temp}° ${d.cielo}',
+          style: style,
+        ),
+      ],
+    );
   }
 }

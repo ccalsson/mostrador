@@ -1,6 +1,22 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { configSinMercado, cupoDeLineas, incluidasPorBase, slugDe } from "./sucursales-reglas.ts";
+import { configSinMercado, contextoSucursalCoincide, cupoDeLineas, incluidasPorBase, slugDe } from "./sucursales-reglas.ts";
+
+for (const method of ["GET", "POST"]) {
+  test(`${method}: el contexto esperado sólo compara, no selecciona libros`, () => {
+    assert.equal(contextoSucursalCoincide(method, ["productos"], "casa", "casa"), true);
+    assert.equal(contextoSucursalCoincide(method, ["productos"], "casa", "sucursal"), false);
+    assert.equal(contextoSucursalCoincide(method, ["productos"], "", "casa"), false);
+    assert.equal(contextoSucursalCoincide(method, ["productos"], null, "casa"), true);
+  });
+}
+
+test("sólo GET /session puede recuperar un contexto desactualizado", () => {
+  assert.equal(contextoSucursalCoincide("GET", ["session"], "casa", "sucursal"), true);
+  assert.equal(contextoSucursalCoincide("POST", ["session"], "casa", "sucursal"), false);
+  assert.equal(contextoSucursalCoincide("GET", ["session", "otra"], "casa", "sucursal"), false);
+  assert.equal(contextoSucursalCoincide("POST", ["sucursales", "otra", "usar"], "casa", "sucursal"), false);
+});
 
 const linea = (over: Partial<Parameters<typeof cupoDeLineas>[0][number]>) => ({
   status: "active",

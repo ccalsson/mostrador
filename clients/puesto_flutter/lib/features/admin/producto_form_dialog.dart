@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/format.dart';
 import '../../models/producto.dart';
 import '../../services/productos_service.dart';
+import 'foto_producto_widget.dart';
 import 'producto_form_controller.dart';
 
 /// Diálogo de alta (`existente == null`) o edición de producto, con baja
@@ -29,11 +30,13 @@ class _ProductoFormDialogState extends ConsumerState<_ProductoFormDialog> {
   late final TextEditingController _nombre;
   late final TextEditingController _unidadLabel;
   late final TextEditingController _precio;
+  late final TextEditingController _costo;
   late final TextEditingController _minimo;
   late final TextEditingController _alias;
   late final TextEditingController _inicial;
   late String _unidad;
   late bool _activo;
+  late bool _publicadoOnline;
   String? _validacion;
 
   @override
@@ -42,14 +45,20 @@ class _ProductoFormDialogState extends ConsumerState<_ProductoFormDialog> {
     final p = widget.existente;
     _nombre = TextEditingController(text: p?.nombre ?? '');
     _unidadLabel = TextEditingController(text: p?.unidadLabel ?? 'kg');
-    _precio =
-        TextEditingController(text: p == null ? '' : cantidadNum(p.precio));
+    _precio = TextEditingController(
+      text: p == null ? '' : cantidadNum(p.precio),
+    );
+    _costo = TextEditingController(
+      text: p?.costo == null ? '' : cantidadNum(p!.costo!),
+    );
     _minimo = TextEditingController(
-        text: p == null ? '' : cantidadNum(p.stockMinimo));
+      text: p == null ? '' : cantidadNum(p.stockMinimo),
+    );
     _alias = TextEditingController(text: p?.alias.join(', ') ?? '');
     _inicial = TextEditingController();
     _unidad = p?.unidad ?? 'kg';
     _activo = p?.activo ?? true;
+    _publicadoOnline = p?.publicadoOnline ?? false;
     Future.microtask(() {
       if (mounted) ref.read(productoFormProvider.notifier).reiniciar();
     });
@@ -60,6 +69,7 @@ class _ProductoFormDialogState extends ConsumerState<_ProductoFormDialog> {
     _nombre.dispose();
     _unidadLabel.dispose();
     _precio.dispose();
+    _costo.dispose();
     _minimo.dispose();
     _alias.dispose();
     _inicial.dispose();
@@ -70,16 +80,22 @@ class _ProductoFormDialogState extends ConsumerState<_ProductoFormDialog> {
     final nombre = _nombre.text.trim();
     final unidadLabel = _unidadLabel.text.trim();
     final precio = parseDecimal(_precio.text);
+    final costoTexto = _costo.text.trim();
+    final costo = costoTexto.isEmpty ? null : parseDecimal(costoTexto);
     final minimo = parseDecimal(_minimo.text);
     if (nombre.isEmpty) {
       return setState(() => _validacion = 'Ingresá el nombre.');
     }
     if (unidadLabel.isEmpty || unidadLabel.length > 20) {
       return setState(
-          () => _validacion = 'Etiqueta de unidad requerida (máx. 20).');
+        () => _validacion = 'Etiqueta de unidad requerida (máx. 20).',
+      );
     }
     if (precio == null || precio <= 0) {
       return setState(() => _validacion = 'Precio inválido.');
+    }
+    if (costo != null && costo < 0) {
+      return setState(() => _validacion = 'El costo no puede ser negativo.');
     }
     if (minimo == null || minimo < 0) {
       return setState(() => _validacion = 'Stock mínimo inválido.');
@@ -93,7 +109,9 @@ class _ProductoFormDialogState extends ConsumerState<_ProductoFormDialog> {
       }
     }
     setState(() => _validacion = null);
-    final ok = await ref.read(productoFormProvider.notifier).guardar(
+    final ok = await ref
+        .read(productoFormProvider.notifier)
+        .guardar(
           ProductoInput(
             id: widget.existente?.id,
             nombre: nombre,
@@ -107,7 +125,9 @@ class _ProductoFormDialogState extends ConsumerState<_ProductoFormDialog> {
                 .where((a) => a.isNotEmpty)
                 .toList(),
             activo: _activo,
+            publicadoOnline: _publicadoOnline,
             stockInicial: inicial,
+            costo: costo,
           ),
         );
     if (ok && mounted) Navigator.of(context).pop();
@@ -196,23 +216,38 @@ class _ProductoFormDialogState extends ConsumerState<_ProductoFormDialog> {
                     child: TextField(
                       key: const Key('admin_prod_precio'),
                       controller: _precio,
-                      keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true),
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
                       decoration: const InputDecoration(labelText: 'Precio'),
                     ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: TextField(
-                      key: const Key('admin_prod_minimo'),
-                      controller: _minimo,
-                      keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true),
-                      decoration:
-                          const InputDecoration(labelText: 'Stock mínimo'),
+                      key: const Key('admin_prod_costo'),
+                      controller: _costo,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      decoration: const InputDecoration(
+                        labelText: 'Costo (opcional)',
+                        helperText: 'Para calcular margen',
+                      ),
                     ),
                   ),
                 ],
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                key: const Key('admin_prod_minimo'),
+                controller: _minimo,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: const InputDecoration(
+                  labelText: 'Stock mínimo',
+                ),
               ),
               const SizedBox(height: 12),
               TextField(
@@ -228,8 +263,9 @@ class _ProductoFormDialogState extends ConsumerState<_ProductoFormDialog> {
                 TextField(
                   key: const Key('admin_prod_inicial'),
                   controller: _inicial,
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
                   decoration: const InputDecoration(
                     labelText: 'Stock inicial (opcional)',
                   ),
@@ -243,14 +279,46 @@ class _ProductoFormDialogState extends ConsumerState<_ProductoFormDialog> {
                   value: _activo,
                   onChanged: (valor) => setState(() => _activo = valor),
                 ),
+              SwitchListTile(
+                key: const Key('admin_prod_publicado'),
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Publicar en Mercado'),
+                subtitle: const Text(
+                  'Requiere Presencia o Pro y el canal Mercado habilitado.',
+                ),
+                value: _publicadoOnline,
+                onChanged: estado.enviando
+                    ? null
+                    : (valor) => setState(() => _publicadoOnline = valor),
+              ),
+              if (p != null) ...[
+                const SizedBox(height: 12),
+                FotoProductoWidget(
+                  key: const Key('admin_prod_foto'),
+                  productoId: p.id,
+                  fotoUrl: p.fotoUrl,
+                  enabled: !estado.enviando,
+                  onUpload: (bytes, nombre, mime) async {
+                    await ref.read(productoFormProvider.notifier).subirFoto(
+                          productoId: p.id,
+                          bytes: bytes,
+                          nombreArchivo: nombre,
+                          mimeType: mime,
+                        );
+                  },
+                  onDelete: () async {
+                    await ref
+                        .read(productoFormProvider.notifier)
+                        .borrarFoto(p.id);
+                  },
+                ),
+              ],
               if (error != null) ...[
                 const SizedBox(height: 8),
                 Text(
                   error,
                   key: const Key('admin_prod_error'),
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.error,
-                  ),
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
                 ),
               ],
             ],
@@ -268,26 +336,20 @@ class _ProductoFormDialogState extends ConsumerState<_ProductoFormDialog> {
             ),
             child: const Text('Dar de baja'),
           ),
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextButton(
-              onPressed: estado.enviando ? null : () => Navigator.of(context).pop(),
-              child: const Text('Cancelar'),
-            ),
-            const SizedBox(width: 8),
-            FilledButton(
-              key: const Key('admin_guardar_producto'),
-              onPressed: estado.enviando ? null : _guardar,
-              child: estado.enviando
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text('Guardar'),
-            ),
-          ],
+        TextButton(
+          onPressed: estado.enviando ? null : () => Navigator.of(context).pop(),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton(
+          key: const Key('admin_guardar_producto'),
+          onPressed: estado.enviando ? null : _guardar,
+          child: estado.enviando
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Guardar'),
         ),
       ],
     );

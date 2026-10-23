@@ -4,9 +4,11 @@ import 'package:puesto_flutter/core/errors/api_exceptions.dart';
 import 'package:puesto_flutter/features/admin/ajuste_stock_controller.dart';
 import 'package:puesto_flutter/features/admin/producto_form_controller.dart';
 import 'package:puesto_flutter/models/alerta.dart';
+import 'package:puesto_flutter/models/escritorio.dart';
 import 'package:puesto_flutter/models/producto.dart';
 import 'package:puesto_flutter/services/alertas_service.dart';
 import 'package:puesto_flutter/services/catalogo_service.dart';
+import 'package:puesto_flutter/services/escritorio_service.dart';
 import 'package:puesto_flutter/services/productos_service.dart';
 
 class _ProductosFake implements ProductosAdminService {
@@ -16,7 +18,7 @@ class _ProductosFake implements ProductosAdminService {
   final List<ProductoInput> inputs = [];
   final List<String> idsBaja = [];
   final List<({String productoId, double cantidad, String tipo, String motivo})>
-      ajustesVistos = [];
+  ajustesVistos = [];
 
   Object? errorGuardar;
   Object? errorBajar;
@@ -56,6 +58,19 @@ class _ProductosFake implements ProductosAdminService {
     final error = errorAjustar;
     if (error != null) throw error;
   }
+  
+  @override
+  Future<String> subirFoto({
+    required String productoId,
+    required List<int> bytes,
+    required String nombreArchivo,
+    required String mimeType,
+  }) async {
+    return '/uploads/productos/$productoId/foto.jpg';
+  }
+  
+  @override
+  Future<void> borrarFoto(String productoId) async {}
 }
 
 class _CatalogoFake implements CatalogoService {
@@ -125,49 +140,99 @@ void main() {
   }
 
   group('ProductoFormController', () {
-    test('guardar exitoso: devuelve true e invalida catálogo y alertas',
-        () async {
-      mantenerVivos();
-      await leerLecturas();
-
-      final ok =
-          await container.read(productoFormProvider.notifier).guardar(_input);
-
-      expect(ok, isTrue);
-      expect(productos.guardados, 1);
-      expect(productos.inputs.single, same(_input));
+    test('guardar y bajar actualizan los publicados del escritorio', () async {
+      var lecturas = 0;
+      final cont = ProviderContainer(
+        overrides: [
+          productosAdminServiceProvider.overrideWithValue(productos),
+          escritorioProvider.overrideWith((ref) async {
+            lecturas++;
+            return EscritorioResumen.fromJson({
+              'premium': false,
+              'margen': {'cobrado': 0, 'costo': 0, 'diferencia': 0, 'sinPrecio': 0, 'serie': [], 'entradas': []},
+              'deudas': [],
+              'cierres': [],
+            });
+          }),
+        ],
+      );
+      addTearDown(cont.dispose);
+      cont.listen(escritorioProvider, (_, _) {});
+      await cont.read(escritorioProvider.future);
+      expect(lecturas, 1);
       expect(
-          container.read(productoFormProvider).fase, ProductoFormFase.inactiva,
-          reason: 'no queda fase de éxito colgada');
-      await leerLecturas();
-      expect(catalogo.lecturas, 2, reason: 'el catálogo se relee tras guardar');
-      expect(alertas.lecturas, 2,
-          reason: 'las alertas se releen (alta con stock bajo genera alerta)');
+        await cont.read(productoFormProvider.notifier).guardar(_input),
+        isTrue,
+      );
+      await cont.read(escritorioProvider.future);
+      expect(lecturas, 2);
+      expect(
+        await cont.read(productoFormProvider.notifier).bajar('p_1'),
+        isTrue,
+      );
+      await cont.read(escritorioProvider.future);
+      expect(lecturas, 3);
     });
 
-    test('error del backend al guardar: mensaje expuesto, sin relecturas',
-        () async {
-      productos.errorGuardar = ValidationException('unidad inválida');
-      mantenerVivos();
-      await leerLecturas();
+    test(
+      'guardar exitoso: devuelve true e invalida catálogo y alertas',
+      () async {
+        mantenerVivos();
+        await leerLecturas();
 
-      final ok =
-          await container.read(productoFormProvider.notifier).guardar(_input);
+        final ok = await container
+            .read(productoFormProvider.notifier)
+            .guardar(_input);
 
-      expect(ok, isFalse);
-      final estado = container.read(productoFormProvider);
-      expect(estado.fase, ProductoFormFase.error);
-      expect(estado.errorMensaje, 'unidad inválida');
-      await leerLecturas();
-      expect(catalogo.lecturas, 1, reason: 'un error no invalida lecturas');
-      expect(alertas.lecturas, 1);
-    });
+        expect(ok, isTrue);
+        expect(productos.guardados, 1);
+        expect(productos.inputs.single, same(_input));
+        expect(
+          container.read(productoFormProvider).fase,
+          ProductoFormFase.inactiva,
+          reason: 'no queda fase de éxito colgada',
+        );
+        await leerLecturas();
+        expect(
+          catalogo.lecturas,
+          2,
+          reason: 'el catálogo se relee tras guardar',
+        );
+        expect(
+          alertas.lecturas,
+          2,
+          reason: 'las alertas se releen (alta con stock bajo genera alerta)',
+        );
+      },
+    );
+
+    test(
+      'error del backend al guardar: mensaje expuesto, sin relecturas',
+      () async {
+        productos.errorGuardar = ValidationException('unidad inválida');
+        mantenerVivos();
+        await leerLecturas();
+
+        final ok = await container
+            .read(productoFormProvider.notifier)
+            .guardar(_input);
+
+        expect(ok, isFalse);
+        final estado = container.read(productoFormProvider);
+        expect(estado.fase, ProductoFormFase.error);
+        expect(estado.errorMensaje, 'unidad inválida');
+        await leerLecturas();
+        expect(catalogo.lecturas, 1, reason: 'un error no invalida lecturas');
+        expect(alertas.lecturas, 1);
+      },
+    );
 
     test('error inesperado al guardar: mensaje genérico', () async {
       productos.errorGuardar = Exception('boom interno');
 
-      final ok =
-          await container.read(productoFormProvider.notifier).guardar(_input);
+      final ok = await container
+          .read(productoFormProvider.notifier)
+          .guardar(_input);
 
       expect(ok, isFalse);
       final estado = container.read(productoFormProvider);
@@ -189,8 +254,9 @@ void main() {
       mantenerVivos();
       await leerLecturas();
 
-      final ok =
-          await container.read(productoFormProvider.notifier).bajar('p_1');
+      final ok = await container
+          .read(productoFormProvider.notifier)
+          .bajar('p_1');
 
       expect(ok, isTrue);
       expect(productos.idsBaja, ['p_1']);
@@ -199,23 +265,27 @@ void main() {
       expect(alertas.lecturas, 1, reason: 'la baja no toca alertas');
     });
 
-    test('bajar con error del backend: mensaje expuesto, sin relecturas',
-        () async {
-      productos.errorBajar =
-          ForbiddenException('No tenés permiso para esta acción.');
-      mantenerVivos();
-      await leerLecturas();
+    test(
+      'bajar con error del backend: mensaje expuesto, sin relecturas',
+      () async {
+        productos.errorBajar = ForbiddenException(
+          'No tenés permiso para esta acción.',
+        );
+        mantenerVivos();
+        await leerLecturas();
 
-      final ok =
-          await container.read(productoFormProvider.notifier).bajar('p_1');
+        final ok = await container
+            .read(productoFormProvider.notifier)
+            .bajar('p_1');
 
-      expect(ok, isFalse);
-      final estado = container.read(productoFormProvider);
-      expect(estado.fase, ProductoFormFase.error);
-      expect(estado.errorMensaje, contains('No tenés permiso'));
-      await leerLecturas();
-      expect(catalogo.lecturas, 1);
-    });
+        expect(ok, isFalse);
+        final estado = container.read(productoFormProvider);
+        expect(estado.fase, ProductoFormFase.error);
+        expect(estado.errorMensaje, contains('No tenés permiso'));
+        await leerLecturas();
+        expect(catalogo.lecturas, 1);
+      },
+    );
 
     test('reiniciar limpia el error de una apertura previa', () async {
       productos.errorGuardar = ValidationException('unidad inválida');
@@ -235,7 +305,11 @@ void main() {
     Future<bool> ajustar(AjusteModo modo, double cantidad) => container
         .read(ajusteStockProvider.notifier)
         .ajustar(
-            productoId: 'p_1', modo: modo, cantidad: cantidad, motivo: 'motivo');
+          productoId: 'p_1',
+          modo: modo,
+          cantidad: cantidad,
+          motivo: 'motivo',
+        );
 
     test('sumar: ajuste positivo con tipo ajuste', () async {
       expect(await ajustar(AjusteModo.sumar, 3.5), isTrue);
@@ -276,25 +350,30 @@ void main() {
 
       await leerLecturas();
       expect(catalogo.lecturas, 2);
-      expect(alertas.lecturas, 2,
-          reason: 'el ajuste puede cruzar el stock mínimo');
+      expect(
+        alertas.lecturas,
+        2,
+        reason: 'el ajuste puede cruzar el stock mínimo',
+      );
     });
 
-    test('error del backend en ajuste: mensaje expuesto, sin relecturas',
-        () async {
-      productos.errorAjustar = ValidationException('motivo requerido');
-      mantenerVivos();
-      await leerLecturas();
+    test(
+      'error del backend en ajuste: mensaje expuesto, sin relecturas',
+      () async {
+        productos.errorAjustar = ValidationException('motivo requerido');
+        mantenerVivos();
+        await leerLecturas();
 
-      expect(await ajustar(AjusteModo.sumar, 1), isFalse);
+        expect(await ajustar(AjusteModo.sumar, 1), isFalse);
 
-      final estado = container.read(ajusteStockProvider);
-      expect(estado.fase, AjusteFase.error);
-      expect(estado.errorMensaje, 'motivo requerido');
-      await leerLecturas();
-      expect(catalogo.lecturas, 1);
-      expect(alertas.lecturas, 1);
-    });
+        final estado = container.read(ajusteStockProvider);
+        expect(estado.fase, AjusteFase.error);
+        expect(estado.errorMensaje, 'motivo requerido');
+        await leerLecturas();
+        expect(catalogo.lecturas, 1);
+        expect(alertas.lecturas, 1);
+      },
+    );
 
     test('error inesperado en ajuste: mensaje genérico', () async {
       productos.errorAjustar = Exception('boom interno');
@@ -309,15 +388,17 @@ void main() {
     test('doble submit de ajuste: una sola llamada', () async {
       final notifier = container.read(ajusteStockProvider.notifier);
       final primera = notifier.ajustar(
-          productoId: 'p_1',
-          modo: AjusteModo.sumar,
-          cantidad: 1,
-          motivo: 'motivo');
+        productoId: 'p_1',
+        modo: AjusteModo.sumar,
+        cantidad: 1,
+        motivo: 'motivo',
+      );
       final segunda = notifier.ajustar(
-          productoId: 'p_1',
-          modo: AjusteModo.sumar,
-          cantidad: 1,
-          motivo: 'motivo');
+        productoId: 'p_1',
+        modo: AjusteModo.sumar,
+        cantidad: 1,
+        motivo: 'motivo',
+      );
 
       expect(await segunda, isFalse);
       expect(await primera, isTrue);

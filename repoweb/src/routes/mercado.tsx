@@ -830,7 +830,7 @@ function MercadoPage() {
   if (!token) {
     return (
       <main className="mx-auto min-h-dvh max-w-md bg-paper px-4 py-8 text-ink">
-        <p className="font-display text-3xl">Mercado al Toque</p>
+        <h1 className="font-display text-3xl">Mercado al Toque</h1>
         <p className="mt-1 text-sm text-muted">Comprá en los puestos o entrá como cargador.</p>
         <div className="mt-4 grid grid-cols-2 gap-2">
           <Button variant={como === "comprador" ? "primary" : "secondary"} onClick={() => setComo("comprador")}>

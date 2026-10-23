@@ -7,12 +7,25 @@ import { applyStock } from "@/lib/server/stock";
 import { puedeAparecer } from "@/lib/torre/presencia";
 import type { Producto, Staff } from "@/lib/types";
 
+/**
+ * Valida el costo de un producto.
+ * Retorna null si es válido (ausente o número positivo), o un mensaje de error.
+ */
+export function validarCosto(value: unknown): { ok: true; costo: number | null } | { ok: false; error: string } {
+  if (value === undefined || value === null) return { ok: true, costo: null };
+  const n = typeof value === "number" ? value : Number.NaN;
+  if (!Number.isFinite(n)) return { ok: false, error: "costo debe ser un número." };
+  if (n < 0) return { ok: false, error: "costo debe ser un número positivo." };
+  return { ok: true, costo: n };
+}
+
 export type SaveProductoInput = {
   id?: string;
   nombre: string;
   unidad: Producto["unidad"];
   unidadLabel: string;
   precio: number;
+  costo?: number | null;
   moneda?: Moneda;
   stockMinimo: number;
   alias: string[];
@@ -36,7 +49,7 @@ export async function saveProductoForStaff(staff: Staff, input: SaveProductoInpu
     await sql.query(
       `update productos
        set nombre=$1, unidad=$2, unidad_label=$3, precio=$4, stock_minimo=$5, alias=$6::jsonb, activo=$7,
-           publicado_online = coalesce($8, publicado_online), updated_at=now()
+           publicado_online = coalesce($8, publicado_online), costo=$11, updated_at=now()
        where id=$9 and tenant_id=$10`,
       [
         input.nombre.trim(),
@@ -49,6 +62,7 @@ export async function saveProductoForStaff(staff: Staff, input: SaveProductoInpu
         input.publicadoOnline ?? null,
         input.id,
         staff.tenantId,
+        input.costo ?? null,
       ],
     );
     if (prev[0] && num(prev[0].precio) !== input.precio) {
@@ -61,8 +75,8 @@ export async function saveProductoForStaff(staff: Staff, input: SaveProductoInpu
   } else {
     const moneda = input.moneda ?? "USD";
     await sql.query(
-      `insert into productos (id, tenant_id, nombre, unidad, unidad_label, precio, moneda, stock, stock_minimo, alias, activo, publicado_online)
-       values ($1,$2,$3,$4,$5,$6,$7,0,$8,$9::jsonb,$10,$11)`,
+      `insert into productos (id, tenant_id, nombre, unidad, unidad_label, precio, costo, moneda, stock, stock_minimo, alias, activo, publicado_online)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,0,$9,$10::jsonb,$11,$12)`,
       [
         id,
         staff.tenantId,
@@ -70,6 +84,7 @@ export async function saveProductoForStaff(staff: Staff, input: SaveProductoInpu
         input.unidad,
         input.unidadLabel.trim(),
         input.precio,
+        input.costo ?? null,
         moneda,
         input.stockMinimo,
         JSON.stringify(input.alias),

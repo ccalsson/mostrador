@@ -53,6 +53,9 @@ class MockRemitosService implements RemitosService {
 
   @override
   Future<void> confirmar(String id) async {}
+
+  @override
+  Future<int> tomarCostosDeRemito(String remitoId) async => 0;
 }
 
 void main() {

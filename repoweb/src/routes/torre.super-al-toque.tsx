@@ -9,6 +9,11 @@ export const Route = createFileRoute("/torre/super-al-toque")({ component: Page 
 
 type Rango = 1 | 7 | 30;
 
+/** Los KPIs llegan en centavos; `money()` formatea pesos. */
+function pesos(cents: number) {
+  return money(cents / 100);
+}
+
 function Page() {
   const [dias, setDias] = useState<Rango>(30);
   const data = useQuery({
@@ -48,9 +53,9 @@ function Page() {
         <>
           <h2 className="mb-2 text-sm text-muted">Ventas</h2>
           <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
-            <Kpi label="GMV" value={money(d.sales.gmvCents)} hint={`${d.sales.ordersCount} pedidos`} />
-            <Kpi label="Comisión plataforma" value={money(d.sales.commissionCents)} hint="se descuenta del comercio" />
-            <Kpi label="Ticket promedio" value={money(d.sales.avgTicketCents)} />
+            <Kpi label="GMV" value={pesos(d.sales.gmvCents)} hint={`${d.sales.ordersCount} pedidos`} />
+            <Kpi label="Comisión plataforma" value={pesos(d.sales.commissionCents)} hint="se descuenta del comercio" />
+            <Kpi label="Ticket promedio" value={pesos(d.sales.avgTicketCents)} />
             <Kpi
               label="Tiempo hasta entregar"
               value={`${d.sales.avgMinutesToDelivered} min`}
@@ -71,7 +76,7 @@ function Page() {
           <div className="grid grid-cols-2 gap-2 lg:grid-cols-3">
             <Kpi label="En curso" value={String(d.deliveries.inFlight)} />
             <Kpi label="Sin repartidor" value={String(d.deliveries.unassigned)} hint="hay que asignar" />
-            <Kpi label="Flete en juego" value={money(d.deliveries.deliveryFeeCents)} hint="lo cobra el comercio" />
+            <Kpi label="Flete en juego" value={pesos(d.deliveries.deliveryFeeCents)} hint="lo cobra el comercio" />
           </div>
 
           <section className="mt-4 rounded-lg border border-line bg-surface p-3">
@@ -84,10 +89,10 @@ function Page() {
                 <li key={m.merchantId} className="py-2">
                   <div className="flex items-baseline justify-between gap-3">
                     <span className="truncate font-medium">{m.name}</span>
-                    <span className="tabular-nums">{money(m.salesCents)}</span>
+                    <span className="tabular-nums">{pesos(m.salesCents)}</span>
                   </div>
                   <p className="text-xs text-muted">
-                    {m.ordersCount} pedidos · comisión {m.commissionRatePct}% ({money(m.commissionCents)}) · {m.status}
+                    {m.ordersCount} pedidos · comisión {m.commissionRatePct}% ({pesos(m.commissionCents)}) · {m.status}
                   </p>
                 </li>
               ))}

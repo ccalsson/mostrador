@@ -1,7 +1,7 @@
 import 'pedido.dart';
 
 /// Estado del envío del pedido en curso.
-enum EnvioEstado { inactivo, enviando, error, creado }
+enum EnvioEstado { inactivo, enviando, error, creado, guardadoOffline }
 
 /// Línea del carrito en memoria. El precio queda congelado al agregar.
 class CarritoLinea {
@@ -30,11 +30,12 @@ class CarritoLinea {
       );
 }
 
-/// Carrito en memoria del vendedor (Fase 3.1: sin persistencia offline).
+/// Carrito en memoria del vendedor con soporte de cola offline.
 ///
 /// [clientUuid] identifica el intento lógico de creación: se genera en el
 /// primer `confirmar`, sobrevive a los reintentos y recién se descarta
-/// cuando el pedido quedó creado.
+/// cuando el pedido quedó creado. Si no hay conexión, el pedido se guarda
+/// localmente (estado [EnvioEstado.guardadoOffline]).
 class Carrito {
   const Carrito({
     this.lineas = const [],

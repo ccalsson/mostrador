@@ -6,6 +6,16 @@ export type LineaCupo = {
   includedBranches?: number;
 };
 
+export function contextoSucursalCoincide(
+  method: string,
+  segments: string[],
+  esperado: string | null,
+  actual: string,
+): boolean {
+  if (method === "GET" && segments.length === 1 && segments[0] === "session") return true;
+  return esperado === null || esperado === actual;
+}
+
 export function incluidasPorBase(lines: LineaCupo[]): number {
   let n = 0;
   for (const line of lines) {

@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { getSql, type Sql } from "@/lib/db";
 import { money, num } from "@/lib/money";
 import { requireTorre, torreGuard } from "@/lib/torre-fn";
+import { leerKpisSuperAlToque } from "@/lib/torre/super-al-toque-fn";
 
 const CLAVES = [
   "negocios",
@@ -15,6 +16,7 @@ const CLAVES = [
   "publicidad",
   "finanzas",
   "operacion",
+  "super-al-toque",
   "legal",
   "procesadores",
   "apps",
@@ -731,6 +733,29 @@ async function armar(sql: Sql, clave: Clave): Promise<PanelTorre> {
       barras: barras.map((row) => ({ nombre: row.nombre, valor: num(row.valor) })),
       filasLabel: "Lo más reciente",
       filas,
+    };
+  }
+
+  if (clave === "super-al-toque") {
+    const k = await leerKpisSuperAlToque(30);
+    return {
+      titulo: "Super al Toque",
+      detalle: "KPIs leídos de la API con token de servicio. La Torre no toca la base de esa app.",
+      serieLabel: "Pedidos por día",
+      kpis: [
+        { label: "GMV", value: money(k.sales.gmvCents / 100) },
+        { label: "Comisión", value: money(k.sales.commissionCents / 100) },
+        { label: "Pedidos", value: String(k.sales.ordersCount) },
+        { label: "Sin repartidor", value: String(k.deliveries.unassigned) },
+      ],
+      serie: [],
+      barrasLabel: "Ventas por comercio",
+      barras: k.byMerchant.map((m) => ({ nombre: m.name, valor: Math.round(m.salesCents / 100) })),
+      filasLabel: "Para mirar",
+      filas: [
+        { titulo: "Comercios pendientes", detalle: `${k.merchants.pending} esperando aprobación` },
+        { titulo: "Flete en juego", detalle: money(k.deliveries.deliveryFeeCents / 100) },
+      ],
     };
   }
 

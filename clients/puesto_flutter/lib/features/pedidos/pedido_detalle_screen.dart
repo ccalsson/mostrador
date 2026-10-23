@@ -5,10 +5,13 @@ import '../../core/errors/api_exceptions.dart';
 import '../../core/format.dart';
 import '../../models/pedido.dart';
 import '../../services/pedidos_service.dart';
+import 'checklist_pane.dart';
 import 'entrega_controller.dart';
+import 'pedido_mensajes_pane.dart';
 
-/// Detalle de un pedido (`GET /api/v1/pedidos/:id`) con refresco y entrega
-/// confirmada (`POST /api/v1/pedidos/:id/entregar`).
+/// Detalle de un pedido (`GET /api/v1/pedidos/:id`) con tres pestanas:
+/// **Detalle** (info del pedido, items, entrega), **Checklist** (verificacion
+/// de items antes de entregar) y **Mensajes** (chat con el cliente).
 class PedidoDetalleScreen extends ConsumerWidget {
   const PedidoDetalleScreen({super.key, required this.pedidoId});
 
@@ -17,25 +20,37 @@ class PedidoDetalleScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final detalle = ref.watch(pedidoDetalleProvider(pedidoId));
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Detalle del pedido'),
-        actions: [
-          IconButton(
-            key: const Key('pedido_detalle_refrescar'),
-            tooltip: 'Actualizar pedido',
-            onPressed: detalle.isLoading
-                ? null
-                : () => ref.invalidate(pedidoDetalleProvider(pedidoId)),
-            icon: const Icon(Icons.refresh),
+    return DefaultTabController(
+      length: 3,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Detalle del pedido'),
+          actions: [
+            IconButton(
+              key: const Key('pedido_detalle_refrescar'),
+              tooltip: 'Actualizar pedido',
+              onPressed: detalle.isLoading
+                  ? null
+                  : () => ref.invalidate(pedidoDetalleProvider(pedidoId)),
+              icon: const Icon(Icons.refresh),
+            ),
+          ],
+          bottom: TabBar(
+            key: const Key('pedido_detalle_tabs'),
+            tabs: const [
+              Tab(key: Key('pedido_tab_detalle'), text: 'Detalle'),
+              Tab(key: Key('pedido_tab_checklist'), text: 'Checklist'),
+              Tab(key: Key('pedido_tab_mensajes'), text: 'Mensajes'),
+            ],
           ),
-        ],
+        ),
+        body: _cuerpo(context, ref, detalle),
       ),
-      body: _cuerpo(context, ref, detalle),
     );
   }
 
-  Widget _cuerpo(BuildContext context, WidgetRef ref, AsyncValue<Pedido> detalle) {
+  Widget _cuerpo(
+      BuildContext context, WidgetRef ref, AsyncValue<Pedido> detalle) {
     if (detalle.isLoading && !detalle.hasValue) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -43,10 +58,43 @@ class PedidoDetalleScreen extends ConsumerWidget {
     if (pedido == null) {
       final error = detalle.error;
       return _ErrorDetalle(
-        mensaje: error is ApiException ? error.message : 'No se pudo cargar el pedido.',
+        mensaje:
+            error is ApiException ? error.message : 'No se pudo cargar el pedido.',
         onReintentar: () => ref.invalidate(pedidoDetalleProvider(pedidoId)),
       );
     }
+    return TabBarView(
+      children: [
+        // Tab 1: Detalle
+        _DetalleTab(detalle: detalle, pedido: pedido, pedidoId: pedidoId),
+        // Tab 2: Checklist
+        ChecklistPane(
+          key: Key('checklist_pane_$pedidoId'),
+          pedidoId: pedidoId,
+        ),
+        // Tab 3: Mensajes
+        PedidoMensajesPane(
+          key: Key('pedido_mensajes_pane_$pedidoId'),
+          pedidoId: pedidoId,
+        ),
+      ],
+    );
+  }
+}
+
+class _DetalleTab extends ConsumerWidget {
+  const _DetalleTab({
+    required this.detalle,
+    required this.pedido,
+    required this.pedidoId,
+  });
+
+  final AsyncValue<Pedido> detalle;
+  final Pedido pedido;
+  final String pedidoId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
     return Column(
       children: [
         if (detalle.isRefreshing)

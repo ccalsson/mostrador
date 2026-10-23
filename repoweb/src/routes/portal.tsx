@@ -27,7 +27,8 @@ function PortalPage() {
   const ficha = useQuery({ queryKey: ["mi-ficha"], queryFn: () => miFicha(), staleTime: 30_000 });
   return (
     <ClientShell>
-      <div className="mb-3 flex shrink-0 gap-1">
+      <h1 className="mt-1 font-display text-[1.65rem] leading-none font-semibold tracking-tight">Portal</h1>
+      <div className="mb-3 mt-3 flex shrink-0 gap-1">
         {(
           [
             ["catalogo", "Catálogo"],

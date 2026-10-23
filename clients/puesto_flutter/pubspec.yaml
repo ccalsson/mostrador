@@ -19,6 +19,9 @@ dependencies:
   printing: ^5.15.1
   url_launcher: ^6.3.2
   fl_chart: ^1.3.0
+  qr_flutter: ^4.1.0
+  shared_preferences: ^2.3.3
+  connectivity_plus: ^6.1.0
 
 dev_dependencies:
   flutter_test:

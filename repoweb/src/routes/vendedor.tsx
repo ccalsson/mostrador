@@ -135,7 +135,8 @@ function VendedorPage() {
 
   return (
     <AppShell>
-      <div className="mb-3 flex gap-1 rounded-md bg-paper-2 p-1">
+      <h1 className="mt-1 font-display text-[1.65rem] leading-none font-semibold tracking-tight">Vendedor</h1>
+      <div className="mb-3 mt-3 flex gap-1 rounded-md bg-paper-2 p-1">
         <button
           className={cn(
             "h-10 flex-1 rounded-[10px] text-sm font-medium",

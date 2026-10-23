@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/config/app_config.dart';
 import '../../core/errors/api_exceptions.dart';
 import '../../core/format.dart';
 import '../../core/auth/auth_controller.dart';
@@ -83,6 +84,7 @@ class _ProductoTile extends StatelessWidget {
     return ListTile(
       key: Key('producto_${producto.id}'),
       enabled: producto.activo,
+      leading: _CatalogoThumbnail(url: producto.fotoUrl),
       title: Text(producto.nombre),
       subtitle: Text(
         '${moneda(producto.precio)} / ${producto.unidadLabel}'
@@ -120,6 +122,55 @@ class _ProductoTile extends StatelessWidget {
       );
     }
     return null;
+  }
+}
+
+/// Thumbnail pequeño para el catálogo.
+class _CatalogoThumbnail extends StatelessWidget {
+  const _CatalogoThumbnail({this.url});
+  final String? url;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final fullUrl = url != null ? '${AppConfig.apiBaseUrl}$url' : null;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(6),
+      child: SizedBox(
+        width: 44,
+        height: 44,
+        child: fullUrl != null
+            ? Image.network(
+                fullUrl,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => Container(
+                  color: cs.surfaceContainerHighest,
+                  child: Icon(Icons.broken_image, size: 20, color: cs.onSurfaceVariant),
+                ),
+                loadingBuilder: (ctx, child, progress) {
+                  if (progress == null) return child;
+                  return Container(
+                    color: cs.surfaceContainerHighest,
+                    child: const Center(
+                      child: SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    ),
+                  );
+                },
+              )
+            : Container(
+                color: cs.surfaceContainerHighest,
+                child: Icon(
+                  Icons.photo_library_outlined,
+                  size: 20,
+                  color: cs.onSurfaceVariant,
+                ),
+              ),
+      ),
+    );
   }
 }
 

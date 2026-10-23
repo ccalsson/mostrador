@@ -129,7 +129,8 @@ export async function crearRemitoForStaff(staff: Staff, input: CrearRemitoInput)
     stock_minimo: unknown;
     alias: unknown;
     activo: boolean;
-  }>`select id, nombre, unidad, unidad_label, precio, moneda, stock, stock_minimo, alias, activo from productos where tenant_id = ${staff.tenantId} and activo = true`;
+    foto_url?: string | null;
+  }>`select id, nombre, unidad, unidad_label, precio, costo, moneda, stock, stock_minimo, alias, activo, foto_url from productos where tenant_id = ${staff.tenantId} and activo = true`;
   const productos = productosRows.map(mapProducto);
   for (const line of input.lineas) {
     const match = matchProduct(line.descripcion, productos);
@@ -227,6 +228,38 @@ export async function actualizarRemitoItemForStaff(
   `;
   if (!rows[0]) throw new Error("Remito no encontrado.");
   return { ok: true as const };
+}
+
+export async function tomarCostosDeRemitoForStaff(staff: Staff, id: string) {
+  assertRole(staff, ["admin"]);
+  const sql = await getSql();
+  const rem = await sql<{ estado: string }>`
+    select estado from remitos where id = ${id} and tenant_id = ${staff.tenantId} limit 1
+  `;
+  if (!rem[0]) throw new Error("Remito no encontrado.");
+  if (rem[0].estado !== "confirmado") {
+    throw new Error("El remito debe estar confirmado para tomar costos.");
+  }
+  const items = await sql<{ producto_id: string | null; precio: unknown }>`
+    select producto_id, precio from remito_items
+    where remito_id = ${id} and confirmado = true and producto_id is not null
+  `;
+  let actualizados = 0;
+  for (const item of items) {
+    if (!item.producto_id || item.precio == null) continue;
+    const costo = num(item.precio);
+    if (costo <= 0) continue;
+    await sql`
+      update productos set costo = ${costo}
+      where id = ${item.producto_id} and tenant_id = ${staff.tenantId}
+    `;
+    actualizados++;
+  }
+  await audit(staff.tenantId, staff, "tomar_costos_remito", "remito", {
+    id,
+    productosActualizados: actualizados,
+  });
+  return { ok: true as const, actualizados };
 }
 
 export async function confirmarRemitoForStaff(staff: Staff, id: string) {

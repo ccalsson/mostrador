@@ -11,6 +11,10 @@ class Producto {
     required this.alias,
     required this.activo,
     required this.stockBajo,
+    this.publicadoOnline = false,
+    this.costo,
+    this.margen,
+    this.fotoUrl,
   });
 
   final String id;
@@ -23,6 +27,10 @@ class Producto {
   final List<String> alias;
   final bool activo;
   final bool stockBajo;
+  final bool publicadoOnline;
+  final double? costo;
+  final double? margen;
+  final String? fotoUrl;
 
   factory Producto.fromJson(Map<String, dynamic> json) {
     return Producto(
@@ -36,6 +44,10 @@ class Producto {
       alias: (json['alias'] as List?)?.cast<String>() ?? const [],
       activo: json['activo'] as bool? ?? true,
       stockBajo: json['stockBajo'] as bool? ?? false,
+      publicadoOnline: json['publicadoOnline'] as bool? ?? false,
+      costo: (json['costo'] as num?)?.toDouble(),
+      margen: (json['margen'] as num?)?.toDouble(),
+      fotoUrl: json['fotoUrl'] as String?,
     );
   }
 }

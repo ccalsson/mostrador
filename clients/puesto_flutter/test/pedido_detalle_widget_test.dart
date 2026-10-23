@@ -3,9 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:puesto_flutter/core/errors/api_exceptions.dart';
 import 'package:puesto_flutter/features/pedidos/pedido_detalle_screen.dart';
+import 'package:puesto_flutter/models/checklist.dart';
 import 'package:puesto_flutter/models/cobro.dart';
 import 'package:puesto_flutter/models/pedido.dart';
 import 'package:puesto_flutter/models/ticket.dart';
+import 'package:puesto_flutter/services/checklist_service.dart';
 import 'package:puesto_flutter/services/pedidos_service.dart';
 
 class _PedidosFake implements PedidosService {
@@ -62,6 +64,28 @@ class _PedidosFake implements PedidosService {
   Future<Ticket> ticket(String cobroId) async => throw UnimplementedError();
 }
 
+class _ChecklistFake implements ChecklistService {
+  @override
+  Future<List<ChecklistItem>> listarItems(String pedidoId) async => [];
+  @override
+  Future<ChecklistItem> crearItem(String pedidoId, String descripcion) async =>
+      throw UnimplementedError();
+  @override
+  Future<ChecklistItem> toggleItem(
+          String pedidoId, String itemId, bool completado) async =>
+      throw UnimplementedError();
+  @override
+  Future<void> borrarItem(String pedidoId, String itemId) async =>
+      throw UnimplementedError();
+  @override
+  Future<List<ChecklistTemplate>> listarTemplates() async =>
+      throw UnimplementedError();
+  @override
+  Future<ChecklistTemplate> crearTemplate(
+          String nombre, List<String> items) async =>
+      throw UnimplementedError();
+}
+
 Pedido _pedido(String id, {required PedidoEstado estado}) => Pedido(
       id: id,
       clientUuid: 'uuid-$id',
@@ -94,7 +118,10 @@ Future<void> _esperar(
 
 Future<void> _montar(WidgetTester tester, _PedidosFake fake) async {
   await tester.pumpWidget(ProviderScope(
-    overrides: [pedidosServiceProvider.overrideWithValue(fake)],
+    overrides: [
+      pedidosServiceProvider.overrideWithValue(fake),
+      checklistServiceProvider.overrideWithValue(_ChecklistFake()),
+    ],
     child: const MaterialApp(
       home: PedidoDetalleScreen(pedidoId: 'ped_1'),
     ),

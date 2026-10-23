@@ -1,342 +1,82 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/errors/api_exceptions.dart';
-import '../../core/format.dart';
 import '../../models/escritorio.dart';
 import '../../services/escritorio_service.dart';
-import 'mensajes_tab.dart';
 
-class EscritorioPane extends ConsumerWidget {
+/// Formatea un monto en pesos argentinos sin depender de locale intl.
+String _ars(double value) {
+  final n = value.round();
+  final neg = n < 0;
+  final abs = n.abs().toString();
+  final buf = StringBuffer(neg ? '-\$' : '\$');
+  for (var i = 0; i < abs.length; i++) {
+    final pos = abs.length - i;
+    if (i > 0 && pos % 3 == 0) buf.write('.');
+    buf.write(abs[i]);
+  }
+  return buf.toString();
+}
+
+/// Formatea una fecha ISO como "lun 18 oct, 14:00" sin depender de locale intl.
+String _fechaCorta(String iso) {
+  final dt = DateTime.tryParse(iso);
+  if (dt == null) return iso;
+  const meses = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+  const dias = ['lun', 'mar', 'mié', 'jue', 'vie', 'sáb', 'dom'];
+  final dow = dias[dt.weekday - 1];
+  final mes = meses[dt.month - 1];
+  final hh = dt.hour.toString().padLeft(2, '0');
+  final mm = dt.minute.toString().padLeft(2, '0');
+  return '$dow ${dt.day} $mes, $hh:$mm';
+}
+
+/// Pantalla Escritorio del dueño — 3 tabs: Margen, Deudas, Cierres.
+///
+/// Paridad con la web (escritorio.tsx). Solo admin.
+class EscritorioPane extends ConsumerStatefulWidget {
   const EscritorioPane({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final escritorio = ref.watch(escritorioProvider);
+  ConsumerState<EscritorioPane> createState() => _EscritorioPaneState();
+}
+
+class _EscritorioPaneState extends ConsumerState<EscritorioPane>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tabController =
+      TabController(length: 3, vsync: this);
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  void _recargar() {
+    ref.invalidate(escritorioProvider);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final resumenAsync = ref.watch(escritorioProvider);
     return Column(
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-          child: Row(
-            children: [
-              const Expanded(
-                child: Text(
-                  'Escritorio del dueño',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-                ),
-              ),
-              IconButton(
-                key: const Key('escritorio_refresh'),
-                tooltip: 'Actualizar',
-                onPressed: () => ref.invalidate(escritorioProvider),
-                icon: const Icon(Icons.refresh),
-              ),
-            ],
-          ),
-        ),
+        _TabBar(controller: _tabController),
         Expanded(
-          child: escritorio.when(
+          child: resumenAsync.when(
             loading: () => const Center(child: CircularProgressIndicator()),
-            error: (error, _) => Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
+            error: (error, stack) => _ErrorView(error: error, onRetry: _recargar),
+            data: (data) {
+              if (!data.premium) {
+                return const _PremiumRequerido();
+              }
+              return TabBarView(
+                controller: _tabController,
                 children: [
-                  Text(error is ApiException
-                      ? error.message
-                      : 'No se pudo cargar el escritorio.'),
-                  const SizedBox(height: 16),
-                  FilledButton.tonal(
-                    onPressed: () => ref.invalidate(escritorioProvider),
-                    child: const Text('Reintentar'),
-                  ),
+                  _MargenTab(margen: data.margen),
+                  _DeudasTab(deudas: data.deudas),
+                  _CierresTab(cierres: data.cierres),
                 ],
-              ),
-            ),
-            data: (data) => _EscritorioBody(data: data),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _EscritorioBody extends StatelessWidget {
-  const _EscritorioBody({required this.data});
-
-  final EscritorioDueno data;
-
-  @override
-  Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 5,
-      child: Column(
-        children: [
-          TabBar(
-            isScrollable: true,
-            tabAlignment: TabAlignment.start,
-            tabs: const [
-              Tab(text: 'Mensajes'),
-              Tab(text: 'Margen'),
-              Tab(text: 'Deudas'),
-              Tab(text: 'Cierres'),
-              Tab(text: 'Lista publicada'),
-            ],
-          ),
-          Expanded(
-            child: TabBarView(
-              children: [
-                const MensajesTab(),
-                _MargenTab(margen: data.margen),
-                _DeudasTab(deudas: data.deudas),
-                _CierresTab(cierres: data.cierres),
-                _ListaTab(lista: data.lista),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _MargenTab extends StatelessWidget {
-  const _MargenTab({required this.margen});
-
-  final Margen margen;
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final columnas = constraints.maxWidth >= 600 ? 3 : 1;
-            return GridView.count(
-              crossAxisCount: columnas,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-              childAspectRatio: 2.5,
-              children: [
-                _Tarjeta('Cobrado (7d)', moneda(margen.cobrado), Colors.green),
-                _Tarjeta('Costo (7d)', moneda(margen.costo), Colors.orange),
-                _Tarjeta(
-                  'Diferencia',
-                  moneda(margen.diferencia),
-                  margen.diferencia >= 0 ? Colors.green : Colors.red,
-                ),
-              ],
-            );
-          },
-        ),
-        const SizedBox(height: 16),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Últimos remitos confirmados',
-                    style: Theme.of(context).textTheme.titleSmall),
-                const SizedBox(height: 8),
-                for (final entrada in margen.entradas)
-                  ListTile(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    title: Text(entrada.proveedor),
-                    subtitle: Text(
-                      '${entrada.lineas} líneas · ${_fechaCorta(entrada.cuando)}',
-                    ),
-                    trailing: Text(
-                      moneda(entrada.costo),
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        color: colorScheme.primary,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ),
-        if (margen.sinPrecio > 0) ...[
-          const SizedBox(height: 12),
-          Card(
-            color: colorScheme.errorContainer,
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  Icon(Icons.warning_amber_outlined, color: colorScheme.onErrorContainer),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      '${margen.sinPrecio} ítems de remito sin precio asignado',
-                      style: TextStyle(color: colorScheme.onErrorContainer),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-
-  String _fechaCorta(String iso) {
-    try {
-      final dt = DateTime.parse(iso);
-      return '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}';
-    } catch (_) {
-      return iso;
-    }
-  }
-}
-
-class _DeudasTab extends StatelessWidget {
-  const _DeudasTab({required this.deudas});
-
-  final List<Deuda> deudas;
-
-  @override
-  Widget build(BuildContext context) {
-    if (deudas.isEmpty) {
-      return const Center(child: Text('No hay deudas pendientes'));
-    }
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: deudas.length,
-      itemBuilder: (context, index) {
-        final deuda = deudas[index];
-        return Card(
-          child: ListTile(
-            title: Text(deuda.nombre),
-            trailing: Text(
-              moneda(deuda.saldo),
-              style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.red),
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _CierresTab extends StatelessWidget {
-  const _CierresTab({required this.cierres});
-
-  final List<Cierre> cierres;
-
-  @override
-  Widget build(BuildContext context) {
-    if (cierres.isEmpty) {
-      return const Center(child: Text('No hay cierres registrados'));
-    }
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: cierres.length,
-      itemBuilder: (context, index) {
-        final cierre = cierres[index];
-        return Card(
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        cierre.quien,
-                        style: Theme.of(context).textTheme.titleSmall,
-                      ),
-                    ),
-                    Text(
-                      _fechaCorta(cierre.cerradoAt),
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(child: _Valor('Esperado', moneda(cierre.esperado))),
-                    Expanded(child: _Valor('Real', moneda(cierre.real))),
-                    Expanded(
-                      child: _Valor(
-                        'Diferencia',
-                        moneda(cierre.diferencia),
-                        color: cierre.diferencia.abs() < 0.01 ? Colors.green : Colors.red,
-                      ),
-                    ),
-                  ],
-                ),
-                if (cierre.notas.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(cierre.notas,
-                      style: Theme.of(context).textTheme.bodySmall),
-                ],
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  String _fechaCorta(String iso) {
-    try {
-      final dt = DateTime.parse(iso);
-      return '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
-    } catch (_) {
-      return iso;
-    }
-  }
-}
-
-class _ListaTab extends StatelessWidget {
-  const _ListaTab({required this.lista});
-
-  final Lista lista;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text('${lista.productos.length} productos publicados'),
-              ),
-              Text('${lista.ocultos} ocultos',
-                  style: Theme.of(context).textTheme.bodySmall),
-            ],
-          ),
-        ),
-        Expanded(
-          child: ListView.builder(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: lista.productos.length,
-            itemBuilder: (context, index) {
-              final prod = lista.productos[index];
-              return ListTile(
-                dense: true,
-                title: Text(prod.nombre),
-                subtitle: Text(
-                  'Stock: ${_num(prod.stock)} ${prod.unidad}',
-                ),
-                trailing: Text(
-                  moneda(prod.precio),
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
               );
             },
           ),
@@ -344,57 +84,451 @@ class _ListaTab extends StatelessWidget {
       ],
     );
   }
-
-  String _num(double v) => v == v.toInt() ? '${v.toInt()}' : v.toStringAsFixed(2);
 }
 
-class _Tarjeta extends StatelessWidget {
-  const _Tarjeta(this.titulo, this.valor, this.color);
+// ---------------------------------------------------------------------------
+// Tab bar
+// ---------------------------------------------------------------------------
 
-  final String titulo;
-  final String valor;
-  final Color color;
+class _TabBar extends StatelessWidget {
+  const _TabBar({required this.controller});
+  final TabController controller;
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
+    final cs = Theme.of(context).colorScheme;
+    return Container(
+      color: cs.surface,
+      child: TabBar(
+        controller: controller,
+        labelColor: cs.onSurface,
+        unselectedLabelColor: cs.onSurface.withValues(alpha: 0.5),
+        indicatorColor: cs.primary,
+        indicatorSize: TabBarIndicatorSize.label,
+        tabs: const [
+          Tab(text: 'Margen'),
+          Tab(text: 'Deudas'),
+          Tab(text: 'Cierres'),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Margen tab
+// ---------------------------------------------------------------------------
+
+class _MargenTab extends StatelessWidget {
+  const _MargenTab({required this.margen});
+  final MargenDia margen;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return RefreshIndicator(
+      onRefresh: () async {},
+      child: ListView(
         padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(titulo, style: Theme.of(context).textTheme.bodySmall),
-            const SizedBox(height: 8),
-            Text(
-              valor,
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: color,
-                  ),
+        children: [
+          // KPIs
+          _KpiGrid(children: [
+            _KpiCard(label: 'Cobrado, 7 días', value: _ars(margen.cobrado)),
+            _KpiCard(label: 'Mercadería entrada', value: _ars(margen.costo)),
+            _KpiCard(
+              label: 'Diferencia',
+              value: _ars(margen.diferencia),
+              subtitle: 'Cobrado menos el precio de los remitos.',
             ),
+            _KpiCard(
+              label: 'Sin precio de compra',
+              value: '${margen.sinPrecio}',
+              subtitle: 'Esas líneas no entran al costo.',
+            ),
+          ]),
+          const SizedBox(height: 20),
+
+          // Serie diaria
+          _SectionCard(
+            title: 'Día por día',
+            child: Column(
+              children: margen.serie.map((row) {
+                final dia = row.dia.length >= 10
+                    ? '${row.dia.substring(8, 10)}/${row.dia.substring(5, 7)}'
+                    : row.dia;
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: 50,
+                        child: Text(dia,
+                            style: TextStyle(
+                                color: cs.onSurface.withValues(alpha: 0.5))),
+                      ),
+                      Expanded(child: Text(_ars(row.cobrado))),
+                      Expanded(
+                        child: Text(_ars(row.costo),
+                            textAlign: TextAlign.right,
+                            style: TextStyle(
+                                color: cs.onSurface.withValues(alpha: 0.5))),
+                      ),
+                      SizedBox(
+                        width: 100,
+                        child: Text(_ars(row.diferencia),
+                            textAlign: TextAlign.right),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          // Remitos confirmados
+          _SectionCard(
+            title: 'Remitos confirmados',
+            child: Column(
+              children: margen.entradas.isEmpty
+                  ? [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        child: Text('Todavía no hay mercadería confirmada.',
+                            style: TextStyle(
+                                color: cs.onSurface.withValues(alpha: 0.5))),
+                      ),
+                    ]
+                  : margen.entradas.map((e) {
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text.rich(TextSpan(children: [
+                                TextSpan(text: e.proveedor),
+                                TextSpan(
+                                  text:
+                                      ' · ${e.lineas} líneas · ${_fechaCorta(e.cuando)}',
+                                  style: TextStyle(
+                                      color:
+                                          cs.onSurface.withValues(alpha: 0.5),
+                                      fontSize: 12),
+                                ),
+                              ])),
+                            ),
+                            Text(_ars(e.costo)),
+                          ],
+                        ),
+                      );
+                    }).toList(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Deudas tab
+// ---------------------------------------------------------------------------
+
+class _DeudasTab extends StatelessWidget {
+  const _DeudasTab({required this.deudas});
+  final List<DeudaCliente> deudas;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final total = deudas.fold<double>(0, (acc, d) => acc + d.saldo);
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        _SectionCard(
+          title: 'Te deben',
+          trailing: Text(
+            _ars(total),
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+          child: Column(
+            children: deudas.isEmpty
+                ? [
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      child: Text('Nadie tiene saldo a favor del puesto.',
+                          style: TextStyle(
+                              color: cs.onSurface.withValues(alpha: 0.5))),
+                    ),
+                  ]
+                : deudas.map((d) {
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(d.nombre,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w500)),
+                          ),
+                          Text(_ars(d.saldo)),
+                          const SizedBox(width: 12),
+                          TextButton(
+                            onPressed: () {
+                              // Navegar a ficha de cliente — placeholder
+                            },
+                            child: const Text('Ver cuenta'),
+                          ),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Cierres tab
+// ---------------------------------------------------------------------------
+
+class _CierresTab extends StatelessWidget {
+  const _CierresTab({required this.cierres});
+  final List<CierreCaja> cierres;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        _SectionCard(
+          title: 'Cierres de caja',
+          child: cierres.isEmpty
+              ? Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  child: Text('Todavía no hay un turno cerrado.',
+                      style: TextStyle(
+                          color: cs.onSurface.withValues(alpha: 0.5))),
+                )
+              : SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: DataTable(
+                    columns: const [
+                      DataColumn(label: Text('Cierre')),
+                      DataColumn(label: Text('Quién')),
+                      DataColumn(label: Text('Esperado'), numeric: true),
+                      DataColumn(label: Text('Contado'), numeric: true),
+                      DataColumn(label: Text('Diferencia'), numeric: true),
+                    ],
+                    rows: cierres.map((c) {
+                      final diffColor =
+                          c.diferencia == 0 ? null : cs.error;
+                      return DataRow(cells: [
+                        DataCell(Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(_fechaCorta(c.cerradoAt)),
+                            if (c.notas.isNotEmpty)
+                              Text(c.notas,
+                                  style: TextStyle(
+                                      fontSize: 11,
+                                      color: cs.onSurface
+                                          .withValues(alpha: 0.5))),
+                          ],
+                        )),
+                        DataCell(Text(c.quien)),
+                        DataCell(Text(_ars(c.esperado),
+                            textAlign: TextAlign.right)),
+                        DataCell(Text(_ars(c.real),
+                            textAlign: TextAlign.right)),
+                        DataCell(Text(_ars(c.diferencia),
+                            textAlign: TextAlign.right,
+                            style: TextStyle(
+                                color: diffColor,
+                                fontWeight: diffColor != null
+                                    ? FontWeight.w600
+                                    : null))),
+                      ]);
+                    }).toList(),
+                  ),
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Shared widgets
+// ---------------------------------------------------------------------------
+
+class _KpiGrid extends StatelessWidget {
+  const _KpiGrid({required this.children});
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 12,
+      runSpacing: 12,
+      children: children
+          .map((c) => SizedBox(width: _kpiWidth(context), child: c))
+          .toList(),
+    );
+  }
+
+  double _kpiWidth(BuildContext context) {
+    final w = MediaQuery.sizeOf(context).width;
+    if (w > 600) return (w - 48 - 24) / 2;
+    return w - 32;
+  }
+}
+
+class _KpiCard extends StatelessWidget {
+  const _KpiCard({
+    required this.label,
+    required this.value,
+    this.subtitle,
+  });
+
+  final String label;
+  final String value;
+  final String? subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: cs.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: cs.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label.toUpperCase(),
+              style: TextStyle(
+                  fontSize: 11,
+                  letterSpacing: 0.5,
+                  color: cs.onSurface.withValues(alpha: 0.5))),
+          const SizedBox(height: 4),
+          Text(value,
+              style: Theme.of(context)
+                  .textTheme
+                  .headlineSmall
+                  ?.copyWith(fontWeight: FontWeight.w600)),
+          if (subtitle != null) ...[
+            const SizedBox(height: 4),
+            Text(subtitle!,
+                style: TextStyle(
+                    fontSize: 11,
+                    color: cs.onSurface.withValues(alpha: 0.5))),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+class _SectionCard extends StatelessWidget {
+  const _SectionCard({required this.title, required this.child, this.trailing});
+  final String title;
+  final Widget child;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: cs.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: cs.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(title,
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleSmall
+                      ?.copyWith(fontWeight: FontWeight.w500)),
+              const Spacer(),
+              if (trailing != null) trailing!,
+            ],
+          ),
+          const Divider(height: 20),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
+class _PremiumRequerido extends StatelessWidget {
+  const _PremiumRequerido();
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: cs.surface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: cs.outlineVariant),
+          ),
+          child: Text(
+            'Margen, deudas y cierres son del plan Premium.',
+            style: TextStyle(color: cs.onSurface.withValues(alpha: 0.6)),
+            textAlign: TextAlign.center,
+          ),
         ),
       ),
     );
   }
 }
 
-class _Valor extends StatelessWidget {
-  const _Valor(this.label, this.value, {this.color});
-
-  final String label;
-  final String value;
-  final Color? color;
+class _ErrorView extends StatelessWidget {
+  const _ErrorView({required this.error, required this.onRetry});
+  final Object error;
+  final VoidCallback onRetry;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: Theme.of(context).textTheme.bodySmall),
-        const SizedBox(height: 2),
-        Text(value, style: TextStyle(fontWeight: FontWeight.w600, color: color)),
-      ],
+    final cs = Theme.of(context).colorScheme;
+    final msg = error.toString().contains('403')
+        ? 'No tenés permisos para ver el escritorio.'
+        : 'Error al cargar el escritorio.';
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.error_outline, size: 40, color: cs.error),
+            const SizedBox(height: 12),
+            Text(msg, style: TextStyle(color: cs.error)),
+            const SizedBox(height: 16),
+            FilledButton.tonal(
+                onPressed: onRetry, child: const Text('Reintentar')),
+          ],
+        ),
+      ),
     );
   }
 }

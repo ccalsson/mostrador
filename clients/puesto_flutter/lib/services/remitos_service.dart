@@ -83,6 +83,16 @@ class RemitosService {
   Future<void> confirmar(String remitoId) async {
     await _client.post('/api/v1/remitos/$remitoId/confirmar');
   }
+
+  /// Toma los costos de un remito confirmado y actualiza los productos.
+  /// Retorna la cantidad de productos actualizados.
+  Future<int> tomarCostosDeRemito(String remitoId) async {
+    final data = await _client.post(
+      '/api/v1/remitos/$remitoId/costos',
+    ) as Map<String, dynamic>;
+    final cuerpo = data['data'] as Map<String, dynamic>;
+    return cuerpo['actualizados'] as int;
+  }
 }
 
 final remitosServiceProvider = Provider<RemitosService>(

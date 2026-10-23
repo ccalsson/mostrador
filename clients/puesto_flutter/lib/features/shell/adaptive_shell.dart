@@ -6,22 +6,29 @@ import '../../core/tema.dart';
 import '../../core/widgets/public_links.dart';
 import '../../models/staff_session.dart';
 import '../../services/catalogo_service.dart';
+import '../../services/suscripcion_service.dart';
 import '../../services/tenant_service.dart';
 import '../admin/alertas_pane.dart';
 import '../admin/auditoria_pane.dart';
 import '../admin/clientes_pane.dart';
 import '../admin/dashboard_pane.dart';
 import '../admin/escritorio_pane.dart';
+import '../admin/facturacion_pane.dart';
+import '../admin/identidad_pane.dart';
+import '../admin/qr_pane.dart';
 import '../admin/productos_pane.dart';
 import '../admin/proveedores_pane.dart';
 import '../admin/remitos_pane.dart';
 import '../admin/reportes_pane.dart';
+import '../admin/reposicion_pane.dart';
 import '../admin/suscripcion_pane.dart';
+import '../admin/sucursales_pane.dart';
 import '../admin/usuarios_pane.dart';
 import '../caja/caja_pane.dart';
 import '../catalog/catalogo_screen.dart';
 import '../carrito/carrito_pane.dart';
 import '../pedidos/pedidos_pane.dart';
+import 'mesa_turno_widget.dart';
 
 /// Shell del puesto con navegación lateral agrupada (replica la web).
 ///
@@ -42,11 +49,11 @@ enum _Grupo { operacion, catalogo, administracion, informes }
 
 extension _GrupoLabel on _Grupo {
   String get etiqueta => switch (this) {
-        _Grupo.operacion => 'Operación',
-        _Grupo.catalogo => 'Catálogo',
-        _Grupo.administracion => 'Administración',
-        _Grupo.informes => 'Informes',
-      };
+    _Grupo.operacion => 'Operación',
+    _Grupo.catalogo => 'Catálogo',
+    _Grupo.administracion => 'Administración',
+    _Grupo.informes => 'Informes',
+  };
 }
 
 class _Destino {
@@ -56,6 +63,7 @@ class _Destino {
     required this.etiqueta,
     required this.pantalla,
     this.roles,
+    this.premium = false,
   });
 
   final _Grupo grupo;
@@ -63,6 +71,7 @@ class _Destino {
   final String etiqueta;
   final Widget pantalla;
   final Set<Rol>? roles;
+  final bool premium;
 }
 
 final _destinos = <_Destino>[
@@ -126,6 +135,26 @@ final _destinos = <_Destino>[
   // Administración
   _Destino(
     grupo: _Grupo.administracion,
+    icono: Icons.store_outlined,
+    etiqueta: 'Sucursales',
+    pantalla: SucursalesPane(),
+  ),
+  _Destino(
+    grupo: _Grupo.administracion,
+    icono: Icons.palette_outlined,
+    etiqueta: 'Identidad',
+    pantalla: IdentidadPane(),
+    roles: {Rol.admin},
+  ),
+  _Destino(
+    grupo: _Grupo.administracion,
+    icono: Icons.qr_code_2_outlined,
+    etiqueta: 'QR del puesto',
+    pantalla: QrPane(),
+    roles: {Rol.admin},
+  ),
+  _Destino(
+    grupo: _Grupo.administracion,
     icono: Icons.people_outlined,
     etiqueta: 'Usuarios',
     pantalla: UsuariosPane(),
@@ -144,6 +173,14 @@ final _destinos = <_Destino>[
     etiqueta: 'Suscripción',
     pantalla: SuscripcionPane(),
     roles: {Rol.admin},
+  ),
+  _Destino(
+    grupo: _Grupo.administracion,
+    icono: Icons.receipt_long_outlined,
+    etiqueta: 'ARCA',
+    pantalla: FacturacionPane(),
+    roles: {Rol.admin},
+    premium: true,
   ),
   // Informes
   _Destino(
@@ -169,6 +206,13 @@ final _destinos = <_Destino>[
   ),
   _Destino(
     grupo: _Grupo.informes,
+    icono: Icons.add_shopping_cart_outlined,
+    etiqueta: 'Reposición',
+    pantalla: ReposicionPane(),
+    roles: {Rol.admin},
+  ),
+  _Destino(
+    grupo: _Grupo.informes,
     icono: Icons.history_outlined,
     etiqueta: 'Auditoría',
     pantalla: AuditoriaPane(),
@@ -182,10 +226,11 @@ const _quiebreSidebar = 900.0;
 class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
   int _indice = 0;
 
-  List<_Destino> _destinosVisibles() {
+  List<_Destino> _destinosVisibles({bool esPremium = false}) {
     return _destinos.where((d) {
-      if (d.roles == null) return true;
-      return d.roles!.contains(widget.rol);
+      if (d.roles != null && !d.roles!.contains(widget.rol)) return false;
+      if (d.premium && !esPremium) return false;
+      return true;
     }).toList();
   }
 
@@ -206,16 +251,21 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
     final sesion = ref.watch(authControllerProvider).sesion;
     final tokens = context.tokens;
     final theme = Theme.of(context);
-    final tenant = ref.watch(tenantProvider).value ??
+    final tenant =
+        ref.watch(tenantProvider).value ??
         const IdentidadTenant(nombre: 'Mostrador', bajada: '');
     final oscuro = theme.brightness == Brightness.dark;
     final ancho = MediaQuery.sizeOf(context).width;
-    final sidebarVisible = ancho >= _quiebreSidebar &&
-        widget.rol == Rol.admin;
-    final visibles = _destinosVisibles();
+    final sidebarVisible = ancho >= _quiebreSidebar && widget.rol == Rol.admin;
+    final mostrarMesa =
+        widget.rol == Rol.admin || widget.rol == Rol.cajero;
+    final suscripcionAsync = ref.watch(suscripcionProvider);
+    final esPremium = suscripcionAsync.value?.plan.codigo == 'pro';
+    final visibles = _destinosVisibles(esPremium: esPremium);
     final indiceActual = _indice.clamp(0, visibles.length - 1);
-    final destinoActual =
-        indiceActual < visibles.length ? visibles[indiceActual] : null;
+    final destinoActual = indiceActual < visibles.length
+        ? visibles[indiceActual]
+        : null;
 
     return Scaffold(
       body: Row(
@@ -246,6 +296,7 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
                   destinoActual: destinoActual,
                 ),
                 const Divider(height: 1),
+                if (mostrarMesa) const MesaTurnoWidget(),
                 Expanded(
                   child: Center(
                     child: ConstrainedBox(
@@ -263,7 +314,10 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
   }
 
   Future<void> _abrirDrawer(
-      BuildContext context, List<_Destino> visibles, int indice) async {
+    BuildContext context,
+    List<_Destino> visibles,
+    int indice,
+  ) async {
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -276,36 +330,46 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
           final destino = visibles[i];
           if (destino.grupo != grupoPrev) {
             if (grupoPrev != null) items.add(const Divider(height: 24));
-            items.add(Padding(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
-              child: Text(destino.grupo.etiqueta,
-                  style: theme.textTheme.labelMedium),
-            ));
+            items.add(
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
+                child: Text(
+                  destino.grupo.etiqueta,
+                  style: theme.textTheme.labelMedium,
+                ),
+              ),
+            );
             grupoPrev = destino.grupo;
           }
-          items.add(_DrawerItem(
-            destino: destino,
-            activo: i == indice,
-            tokens: tokens,
-            onTap: () => _seleccionar(i),
-          ));
+          items.add(
+            _DrawerItem(
+              destino: destino,
+              activo: i == indice,
+              tokens: tokens,
+              onTap: () => _seleccionar(i),
+            ),
+          );
         }
         items.add(const Divider(height: 24));
-        items.add(Padding(
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
-          child: Text('Sesión', style: theme.textTheme.labelMedium),
-        ));
-        items.add(_DrawerItem(
-          destino: const _Destino(
-            grupo: _Grupo.informes,
-            icono: Icons.badge_outlined,
-            etiqueta: 'Sesión',
-            pantalla: _SesionPane(),
+        items.add(
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
+            child: Text('Sesión', style: theme.textTheme.labelMedium),
           ),
-          activo: indice >= visibles.length,
-          tokens: tokens,
-          onTap: () => _seleccionar(visibles.length),
-        ));
+        );
+        items.add(
+          _DrawerItem(
+            destino: const _Destino(
+              grupo: _Grupo.informes,
+              icono: Icons.badge_outlined,
+              etiqueta: 'Sesión',
+              pantalla: _SesionPane(),
+            ),
+            activo: indice >= visibles.length,
+            tokens: tokens,
+            onTap: () => _seleccionar(visibles.length),
+          ),
+        );
         return ListView(children: items);
       },
     );
@@ -348,8 +412,10 @@ class _Sidebar extends StatelessWidget {
               children: [
                 Text(
                   'Mostrador',
-                  style: theme.textTheme.titleLarge
-                      ?.copyWith(color: tokens.leafFg, fontWeight: FontWeight.w600),
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    color: tokens.leafFg,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
                 if (tenant.bajada.isNotEmpty) ...[
                   const SizedBox(height: 2),
@@ -357,8 +423,9 @@ class _Sidebar extends StatelessWidget {
                     tenant.bajada,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: tokens.ambar),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: tokens.ambar,
+                    ),
                   ),
                 ],
               ],
@@ -376,8 +443,9 @@ class _Sidebar extends StatelessWidget {
                       padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
                       child: Text(
                         destinos[i].grupo.etiqueta,
-                        style: theme.textTheme.labelSmall
-                            ?.copyWith(color: tokens.leafFg.withValues(alpha: 0.55)),
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: tokens.leafFg.withValues(alpha: 0.55),
+                        ),
                       ),
                     ),
                   ],
@@ -415,8 +483,9 @@ class _Sidebar extends StatelessWidget {
                   backgroundColor: tokens.terra,
                   child: Text(
                     _iniciales(sesion?.staff.nombre ?? '?'),
-                    style: theme.textTheme.labelMedium
-                        ?.copyWith(color: tokens.leafFg),
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      color: tokens.leafFg,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -428,13 +497,15 @@ class _Sidebar extends StatelessWidget {
                         sesion?.staff.nombre ?? '—',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodyMedium
-                            ?.copyWith(color: tokens.leafFg),
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: tokens.leafFg,
+                        ),
                       ),
                       Text(
                         rolLabel,
-                        style: theme.textTheme.bodySmall
-                            ?.copyWith(color: tokens.ambar),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: tokens.ambar,
+                        ),
                       ),
                     ],
                   ),
@@ -487,14 +558,18 @@ class _SidebarItem extends StatelessWidget {
                 Icon(
                   destino.icono,
                   size: 18,
-                  color: activo ? tokens.leafFg : tokens.leafFg.withValues(alpha: 0.75),
+                  color: activo
+                      ? tokens.leafFg
+                      : tokens.leafFg.withValues(alpha: 0.75),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
                     destino.etiqueta,
                     style: theme.textTheme.bodyMedium?.copyWith(
-                      color: activo ? tokens.leafFg : tokens.leafFg.withValues(alpha: 0.85),
+                      color: activo
+                          ? tokens.leafFg
+                          : tokens.leafFg.withValues(alpha: 0.85),
                       fontWeight: activo ? FontWeight.w600 : FontWeight.w500,
                     ),
                   ),
@@ -576,13 +651,32 @@ class _TopBar extends ConsumerWidget {
             )
           else
             const SizedBox(width: 4),
-          if (destinoActual != null)
-            Text(
-              destinoActual!.etiqueta,
-              style: theme.textTheme.titleMedium
-                  ?.copyWith(color: tokens.leafFg),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (destinoActual != null)
+                  Text(
+                    destinoActual!.etiqueta,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      color: tokens.leafFg,
+                    ),
+                  ),
+                if (sesion != null)
+                  Text(
+                    sesion!.nombreSucursal,
+                    key: const Key('sucursal_actual'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: tokens.leafFg,
+                    ),
+                  ),
+              ],
             ),
-          const Spacer(),
+          ),
           IconButton(
             key: const Key('refresh_button'),
             tooltip: 'Actualizar catálogo',
@@ -602,8 +696,7 @@ class _TopBar extends ConsumerWidget {
             key: const Key('logout_button'),
             tooltip: 'Cerrar sesión',
             color: tokens.leafFg,
-            onPressed: () =>
-                ref.read(authControllerProvider.notifier).logout(),
+            onPressed: () => ref.read(authControllerProvider.notifier).logout(),
             icon: const Icon(Icons.logout),
           ),
         ],

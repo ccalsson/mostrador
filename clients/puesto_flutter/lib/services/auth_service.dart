@@ -14,7 +14,10 @@ class AuthService {
   final ApiClient _client;
 
   /// Devuelve el token de sesión (`{token, user}`).
-  Future<String> signIn({required String email, required String password}) async {
+  Future<String> signIn({
+    required String email,
+    required String password,
+  }) async {
     final data = await _client.post(
       '/api/auth/sign-in/email',
       body: {'email': email, 'password': password},
@@ -27,11 +30,11 @@ class AuthService {
     return token;
   }
 
-  Future<void> signOut() => _client.post(
-        '/api/auth/sign-out',
-        body: const <String, Object?>{},
-        extraHeaders: {'origin': AppConfig.authOrigin},
-      );
+  Future<void> signOut() => _client.postExclusive(
+    '/api/auth/sign-out',
+    body: const <String, Object?>{},
+    extraHeaders: {'origin': AppConfig.authOrigin},
+  );
 
   Future<StaffSession> session() async {
     final data = await _client.get('/api/v1/session');
@@ -39,5 +42,6 @@ class AuthService {
   }
 }
 
-final authServiceProvider =
-    Provider<AuthService>((ref) => AuthService(ref.watch(apiClientProvider)));
+final authServiceProvider = Provider<AuthService>(
+  (ref) => AuthService(ref.watch(apiClientProvider)),
+);

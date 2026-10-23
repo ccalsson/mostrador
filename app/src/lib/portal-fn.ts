@@ -176,13 +176,14 @@ export const catalogoCliente = createServerFn({ method: "GET" })
       unidad: Producto["unidad"];
       unidad_label: string;
       precio: unknown;
+      costo: unknown;
       stock: unknown;
       stock_minimo: unknown;
       alias: unknown;
       activo: boolean;
       orden: unknown;
     }>`
-      select id, nombre, unidad, unidad_label, precio, stock, stock_minimo, alias, activo, orden
+      select id, nombre, unidad, unidad_label, precio, costo, stock, stock_minimo, alias, activo, orden, foto_url
       from productos
       where tenant_id = ${TENANT_ID} and activo = true
       order by orden nulls last, lower(nombre)
@@ -297,13 +298,14 @@ export const pedirComoCliente = createServerFn({ method: "POST" })
       unidad: Producto["unidad"];
       unidad_label: string;
       precio: unknown;
+      costo: unknown;
       moneda: unknown;
       stock: unknown;
       stock_minimo: unknown;
       alias: unknown;
       activo: boolean;
     }>`
-      select id, nombre, unidad, unidad_label, precio, moneda, stock, stock_minimo, alias, activo
+      select id, nombre, unidad, unidad_label, precio, costo, moneda, stock, stock_minimo, alias, activo, foto_url
       from productos where tenant_id = ${TENANT_ID} and activo = true
     `;
     const byId = new Map(productos.map((p) => [p.id, mapProducto(p)]));

@@ -29,3 +29,6 @@ export const GROK_PROVIDERS: readonly GrokProvider[] = [
   { providerId: "grok-google", idp: "google", label: "Google" },
   { providerId: "grok-x", idp: "twitter", label: "X" },
 ];
+
+/** Google OAuth directo (desarrollo local o producción sin broker). */
+export const GOOGLE_PROVIDER = { providerId: "google", label: "Google" };

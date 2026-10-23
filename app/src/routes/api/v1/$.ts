@@ -5,6 +5,7 @@ import { ensureStaffForUser } from "@/lib/server/bootstrap";
 import { cerrarCajaForStaff, estadoCajaForStaff } from "@/lib/server/caja";
 import { anularEgresoForStaff, createEgresoForStaff, listEgresosForStaff } from "@/lib/server/egresos";
 import {
+  listProductosForStaff,
   crearPedidoForStaff,
   syncCatalogoForStaff,
   type CrearPedidoInput,
@@ -46,6 +47,7 @@ import {
 } from "@/lib/server/mensajes";
 import { getCotizacion } from "@/lib/server/moneda";
 import { dashboardResumenForStaff, listAlertasForStaff, listAuditoriaForStaff, marcarAlertaLeidaForStaff } from "@/lib/server/panel";
+import { mesaTurnoForStaff } from "@/lib/server/mesa-turno";
 import { escritorioDuenoForStaff } from "@/lib/server/escritorio";
 import {
   comprobantePedidoForStaff,
@@ -55,7 +57,16 @@ import {
   updatePedidoEstadoForStaff,
   updatePedidoItemsForStaff,
 } from "@/lib/server/pedidos";
-import { ordenarProductosForStaff, quitarProductoForStaff, saveProductoForStaff, type SaveProductoInput } from "@/lib/server/productos";
+import {
+  createChecklistItemForStaff,
+  createChecklistTemplateForStaff,
+  deleteChecklistItemForStaff,
+  listChecklistItemsForStaff,
+  listChecklistTemplatesForStaff,
+  toggleChecklistItemForStaff,
+} from "@/lib/server/checklist";
+import { ordenarProductosForStaff, quitarProductoForStaff, saveProductoForStaff, validarCosto, type SaveProductoInput } from "@/lib/server/productos";
+import { borrarFotoProductoForStaff, FotoProductoError, subirFotoProductoForStaff } from "@/lib/server/productos-foto";
 import {
   asignarProveedorRemitoForStaff,
   createProveedorForStaff,
@@ -71,9 +82,11 @@ import {
   getRemitoForStaff,
   leerRemitoFotoForStaff,
   listRemitosForStaff,
+  tomarCostosDeRemitoForStaff,
   type CrearRemitoInput,
 } from "@/lib/server/remitos";
 import { historialProductoForStaff, rankingCargadoresForStaff, resumenVentasProductosForStaff } from "@/lib/server/reportes";
+import { reposicionForStaff } from "@/lib/server/reposicion";
 import { ajustarStockForStaff } from "@/lib/server/stock";
 import {
   crearSucursalForStaff,
@@ -108,6 +121,8 @@ import { verificarTurnstile } from "@/lib/seguridad/turnstile";
 
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8" };
 
+import { contextoSucursalCoincide } from "@/lib/server/sucursales-reglas";
+
 const PEDIDO_ESTADOS = ["borrador", "enviado", "en_preparacion", "listo", "cobrado", "anulado", "entregado"] as const;
 const FORMAS_PAGO = ["efectivo", "transferencia", "tarjeta", "cuenta_corriente"] as const;
 const ROLES = ["admin", "cajero", "vendedor"] as const;
@@ -133,6 +148,9 @@ function json(body: unknown, init: ResponseInit = {}) {
 
 function errorResponse(error: unknown) {
   if (error instanceof HttpError) return json({ error: error.code, message: error.message }, { status: error.status });
+  if (error instanceof FotoProductoError) {
+    return json({ error: error.code, message: error.message }, { status: error.status });
+  }
   if (error instanceof LegalError) {
     return json({ error: error.code, message: error.message }, { status: error.status });
   }
@@ -254,12 +272,15 @@ function parsePedidoPortal(value: unknown): PedirComoClienteInput {
 
 function parseProducto(value: unknown): SaveProductoInput {
   const body = asRecord(value);
+  const costoResult = validarCosto(body.costo);
+  if (!costoResult.ok) throw new HttpError(400, "invalid_request", costoResult.error);
   return {
     id: asOptionalString(body.id, 80),
     nombre: asString(body.nombre, "nombre", 120),
     unidad: oneOf(body.unidad, ["bulto", "kg"] as const, "unidad"),
     unidadLabel: asString(body.unidadLabel, "unidadLabel", 20),
     precio: asNumber(body.precio, "precio"),
+    costo: costoResult.costo,
     stockMinimo: asNumber(body.stockMinimo, "stockMinimo"),
     alias: Array.isArray(body.alias)
       ? body.alias.filter((a): a is string => typeof a === "string").map((a) => a.trim()).filter(Boolean)
@@ -314,10 +335,12 @@ type PublicCtx = {
   segments: string[];
 };
 
+type HttpMethod = "GET" | "POST" | "PATCH" | "DELETE";
+
 type Entry =
-  | { method: "GET" | "POST"; path: Segment[]; audience?: "staff"; handler: (ctx: StaffCtx) => Promise<Response> | Response }
-  | { method: "GET" | "POST"; path: Segment[]; audience: "client"; handler: (ctx: ClientCtx) => Promise<Response> | Response }
-  | { method: "GET" | "POST"; path: Segment[]; audience: "public"; handler: (ctx: PublicCtx) => Promise<Response> | Response };
+  | { method: HttpMethod; path: Segment[]; audience?: "staff"; handler: (ctx: StaffCtx) => Promise<Response> | Response }
+  | { method: HttpMethod; path: Segment[]; audience: "client"; handler: (ctx: ClientCtx) => Promise<Response> | Response }
+  | { method: HttpMethod; path: Segment[]; audience: "public"; handler: (ctx: PublicCtx) => Promise<Response> | Response };
 
 function match(method: string, segments: string[]): Entry | null {
   for (const entry of ROUTES) {
@@ -351,6 +374,7 @@ const ROUTES: Entry[] = [
         tenantId: staff.tenantId,
         casaId: staff.casaId,
         sucursal: staff.sucursalId ? { id: staff.sucursalId, nombre: staff.sucursalNombre } : null,
+        contextoProtegido: true,
       }),
   },
   {
@@ -581,9 +605,41 @@ const ROUTES: Entry[] = [
     },
   },
   {
+    method: "GET",
+    path: ["productos"],
+    handler: async ({ staff }) => json({ data: await listProductosForStaff(staff) }),
+  },
+  {
     method: "POST",
     path: ["productos", ":", "baja"],
     handler: async ({ segments, staff }) => json({ data: await quitarProductoForStaff(staff, segments[1]) }),
+  },
+  {
+    method: "POST",
+    path: ["productos", ":", "foto"],
+    handler: async ({ request, segments, staff }) => {
+      let formData: FormData;
+      try {
+        formData = await request.formData();
+      } catch {
+        throw new HttpError(400, "invalid_request", "El cuerpo debe ser multipart/form-data.");
+      }
+      const file = formData.get("foto");
+      if (!file || typeof file === "string") {
+        throw new HttpError(400, "invalid_request", "Campo 'foto' obligatorio (archivo de imagen).");
+      }
+      const blob = file as unknown as { name: string; type: string; size: number; arrayBuffer: () => Promise<ArrayBuffer> };
+      const resultado = await subirFotoProductoForStaff(staff, segments[1], blob);
+      return json({ data: resultado });
+    },
+  },
+  {
+    method: "DELETE",
+    path: ["productos", ":", "foto"],
+    handler: async ({ segments, staff }) => {
+      const resultado = await borrarFotoProductoForStaff(staff, segments[1]);
+      return json({ data: resultado });
+    },
   },
   {
     method: "POST",
@@ -667,6 +723,11 @@ const ROUTES: Entry[] = [
     method: "POST",
     path: ["remitos", ":", "confirmar"],
     handler: async ({ segments, staff }) => json({ data: await confirmarRemitoForStaff(staff, segments[1]) }),
+  },
+  {
+    method: "POST",
+    path: ["remitos", ":", "costos"],
+    handler: async ({ segments, staff }) => json({ data: await tomarCostosDeRemitoForStaff(staff, segments[1]) }),
   },
   {
     method: "GET",
@@ -868,6 +929,11 @@ const ROUTES: Entry[] = [
   },
   {
     method: "GET",
+    path: ["mesa-turno"],
+    handler: async ({ staff }) => json({ data: await mesaTurnoForStaff(staff) }),
+  },
+  {
+    method: "GET",
     path: ["escritorio"],
     handler: async ({ staff }) => json({ data: await escritorioDuenoForStaff(staff) }),
   },
@@ -1013,6 +1079,23 @@ const ROUTES: Entry[] = [
   },
   {
     method: "GET",
+    path: ["reposicion"],
+    handler: async ({ url, staff }) => {
+      const diasRaw = url.searchParams.get("dias");
+      const stockMinimoRaw = url.searchParams.get("stock_minimo");
+      const dias = diasRaw == null || diasRaw === "" ? undefined : Number(diasRaw);
+      const stockMinimo = stockMinimoRaw == null || stockMinimoRaw === "" ? undefined : Number(stockMinimoRaw);
+      if (dias !== undefined && (!Number.isInteger(dias) || dias < 1 || dias > 365)) {
+        throw new HttpError(400, "invalid_request", "dias debe ser un entero entre 1 y 365.");
+      }
+      if (stockMinimo !== undefined && (!Number.isFinite(stockMinimo) || stockMinimo < 0)) {
+        throw new HttpError(400, "invalid_request", "stock_minimo debe ser un número positivo.");
+      }
+      return json({ data: await reposicionForStaff(staff, { dias, stockMinimo }) });
+    },
+  },
+  {
+    method: "GET",
     path: ["cargadores", "ranking"],
     handler: async ({ staff }) => json({ data: await rankingCargadoresForStaff(staff) }),
   },
@@ -1081,6 +1164,73 @@ const ROUTES: Entry[] = [
     method: "GET",
     path: ["afip", "facturas", ":"],
     handler: async ({ segments, staff }) => json({ data: await getFacturaForStaff(staff, segments[2]) }),
+  },
+  // ---- Checklist de entrega
+  {
+    method: "GET",
+    path: ["pedidos", ":", "checklist"],
+    handler: async ({ segments, staff }) =>
+      json({ data: await listChecklistItemsForStaff(staff, segments[1]) }),
+  },
+  {
+    method: "POST",
+    path: ["pedidos", ":", "checklist"],
+    handler: async ({ request, segments, staff }) => {
+      const body = asRecord(await readJson(request));
+      const item = await createChecklistItemForStaff(staff, {
+        pedidoId: segments[1],
+        descripcion: asString(body.descripcion, "descripcion", 300),
+      });
+      return json({ data: item }, { status: 201 });
+    },
+  },
+  {
+    method: "PATCH",
+    path: ["pedidos", ":", "checklist", ":"],
+    handler: async ({ request, segments, staff }) => {
+      const body = asRecord(await readJson(request));
+      if (typeof body.completado !== "boolean") {
+        throw new HttpError(400, "invalid_request", "completado debe ser booleano.");
+      }
+      const item = await toggleChecklistItemForStaff(staff, {
+        pedidoId: segments[1],
+        itemId: segments[3],
+        completado: body.completado,
+      });
+      return json({ data: item });
+    },
+  },
+  {
+    method: "DELETE",
+    path: ["pedidos", ":", "checklist", ":"],
+    handler: async ({ segments, staff }) => {
+      await deleteChecklistItemForStaff(staff, {
+        pedidoId: segments[1],
+        itemId: segments[3],
+      });
+      return json({ data: { ok: true } });
+    },
+  },
+  {
+    method: "GET",
+    path: ["checklist", "templates"],
+    handler: async ({ staff }) => json({ data: await listChecklistTemplatesForStaff(staff) }),
+  },
+  {
+    method: "POST",
+    path: ["checklist", "templates"],
+    handler: async ({ request, staff }) => {
+      const body = asRecord(await readJson(request));
+      const items = body.items;
+      if (!Array.isArray(items) || items.length === 0 || items.length > 50) {
+        throw new HttpError(400, "invalid_request", "items debe ser una lista de 1 a 50 textos.");
+      }
+      const template = await createChecklistTemplateForStaff(staff, {
+        nombre: asString(body.nombre, "nombre", 120),
+        items: items.map((i) => asString(i, "items[]", 200)),
+      });
+      return json({ data: template }, { status: 201 });
+    },
   },
   // ---- Portal de clientes: los tres endpoints públicos no exigen token; el
   // resto exige una ficha de cliente activa (audience "client") y nunca admite
@@ -1244,7 +1394,7 @@ const ROUTES: Entry[] = [
   },
 ];
 
-async function handle(method: "GET" | "POST", request: Request, splat: string | undefined) {
+async function handle(method: HttpMethod, request: Request, splat: string | undefined) {
   try {
     assertSameSiteRequest();
     const segments = splitPath(splat);
@@ -1260,6 +1410,9 @@ async function handle(method: "GET" | "POST", request: Request, splat: string | 
       return await entry.handler({ ...base, client: { userId, ficha } });
     }
     const staff = await ensureStaffForUser(userId);
+    if (!contextoSucursalCoincide(method, segments, request.headers.get("x-mostrador-tenant"), staff.tenantId)) {
+      throw new HttpError(409, "contexto_desactualizado", "La sucursal cambió. Actualizá la sesión antes de continuar.");
+    }
     return await entry.handler({ ...base, staff });
   } catch (error) {
     return errorResponse(error);
@@ -1271,6 +1424,8 @@ export const Route = createFileRoute("/api/v1/$")({
     handlers: {
       GET: ({ request, params }) => handle("GET", request, params._splat),
       POST: ({ request, params }) => handle("POST", request, params._splat),
+      PATCH: ({ request, params }) => handle("PATCH", request, params._splat),
+      DELETE: ({ request, params }) => handle("DELETE", request, params._splat),
     },
   },
 });

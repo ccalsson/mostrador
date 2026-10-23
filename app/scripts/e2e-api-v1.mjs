@@ -252,8 +252,10 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
         await pool.query("delete from cuenta_movimientos where tenant_id = $1 and created_at >= $2::timestamptz", [t, s]);
         await pool.query("delete from tickets where tenant_id = $1 and created_at >= $2::timestamptz", [t, s]);
         await pool.query("delete from cobros where tenant_id = $1 and created_at >= $2::timestamptz", [t, s]);
+        await pool.query("delete from checklist_items where pedido_id in (select id from pedidos where tenant_id = $1 and created_at >= $2::timestamptz)", [t, s]);
         await pool.query("delete from pedidos where tenant_id = $1 and created_at >= $2::timestamptz", [t, s]);
         await pool.query("delete from remitos where tenant_id = $1 and created_at >= $2::timestamptz", [t, s]);
+        await pool.query("delete from checklist_templates where tenant_id = $1 and created_at >= $2::timestamptz", [t, s]);
 
         // (d) producto de prueba.
         if (state.e2eProductoId) {
@@ -3470,5 +3472,369 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
       body: { email: "no-existe-m29@frutasroman.com", perfil: "comprador" },
     });
     assert.equal(reenviarFake.status, 200, JSON.stringify(reenviarFake.data));
+  });
+
+  // ── Checklist de entrega ──────────────────────────────────────────────
+
+  it("checklist: CRUD de items y verificación al entregar", async () => {
+    // Crear un pedido para el checklist
+    const pedido = await api("POST", "/pedidos", {
+      token: state.tokens.vendedor,
+      body: {
+        clientUuid: `e2e-cl-${randomUUID()}`,
+        items: [{ productoId: state.banana.id, cantidad: 1 }],
+      },
+    });
+    assert.equal(pedido.status, 201);
+    const pedidoId = pedido.data.data.id;
+
+    // GET checklist vacío
+    const vacio = await api("GET", `/pedidos/${pedidoId}/checklist`, { token: state.tokens.vendedor });
+    assert.equal(vacio.status, 200);
+    assert.deepEqual(vacio.data.data, []);
+
+    // POST crear item
+    const item1 = await api("POST", `/pedidos/${pedidoId}/checklist`, {
+      token: state.tokens.vendedor,
+      body: { descripcion: "Verificar mercadería" },
+    });
+    assert.equal(item1.status, 201);
+    assert.equal(item1.data.data.descripcion, "Verificar mercadería");
+    assert.equal(item1.data.data.completado, false);
+    const itemId1 = item1.data.data.id;
+
+    // POST crear segundo item
+    const item2 = await api("POST", `/pedidos/${pedidoId}/checklist`, {
+      token: state.tokens.vendedor,
+      body: { descripcion: "Confirmar dirección" },
+    });
+    assert.equal(item2.status, 201);
+    const itemId2 = item2.data.data.id;
+
+    // GET checklist con 2 items
+    const lista = await api("GET", `/pedidos/${pedidoId}/checklist`, { token: state.tokens.vendedor });
+    assert.equal(lista.status, 200);
+    assert.equal(lista.data.data.length, 2);
+
+    // PATCH marcar primer item como completado
+    const toggle1 = await api("PATCH", `/pedidos/${pedidoId}/checklist/${itemId1}`, {
+      token: state.tokens.vendedor,
+      body: { completado: true },
+    });
+    assert.equal(toggle1.status, 200);
+    assert.equal(toggle1.data.data.completado, true);
+
+    // Cobrar el pedido para intentar entregar
+    const cobro = await api("POST", `/pedidos/${pedidoId}/cobrar`, {
+      token: state.tokens.cajero,
+      body: { clientUuid: `e2e-cl-cobro-${randomUUID()}`, formaPago: "efectivo" },
+    });
+    assert.equal(cobro.status, 200);
+
+    // Entregar con item pendiente → debe fallar
+    const entregaFallida = await api("POST", `/pedidos/${pedidoId}/entregar`, { token: state.tokens.vendedor });
+    assert.equal(entregaFallida.status, 400);
+    assert.match(entregaFallida.data.message, /checklist/i);
+
+    // PATCH marcar segundo item como completado
+    const toggle2 = await api("PATCH", `/pedidos/${pedidoId}/checklist/${itemId2}`, {
+      token: state.tokens.vendedor,
+      body: { completado: true },
+    });
+    assert.equal(toggle2.status, 200);
+    assert.equal(toggle2.data.data.completado, true);
+
+    // Entregar con todos completados → debe funcionar
+    const entregaOk = await api("POST", `/pedidos/${pedidoId}/entregar`, { token: state.tokens.vendedor });
+    assert.equal(entregaOk.status, 200);
+    assert.equal(entregaOk.data.data.ok, true);
+
+    // DELETE item (después de entregar, pero el item sigue)
+    const del = await api("DELETE", `/pedidos/${pedidoId}/checklist/${itemId1}`, { token: state.tokens.vendedor });
+    assert.equal(del.status, 200);
+
+    // Verificar que quedó 1 item
+    const final = await api("GET", `/pedidos/${pedidoId}/checklist`, { token: state.tokens.vendedor });
+    assert.equal(final.status, 200);
+    assert.equal(final.data.data.length, 1);
+  });
+
+  it("checklist: entregar sin items permite entregar (sin bloqueo)", async () => {
+    const pedido = await api("POST", "/pedidos", {
+      token: state.tokens.vendedor,
+      body: {
+        clientUuid: `e2e-cl2-${randomUUID()}`,
+        items: [{ productoId: state.banana.id, cantidad: 1 }],
+      },
+    });
+    assert.equal(pedido.status, 201);
+    const pedidoId = pedido.data.data.id;
+
+    const cobro = await api("POST", `/pedidos/${pedidoId}/cobrar`, {
+      token: state.tokens.cajero,
+      body: { clientUuid: `e2e-cl2-cobro-${randomUUID()}`, formaPago: "efectivo" },
+    });
+    assert.equal(cobro.status, 200);
+
+    // Sin items en el checklist, la entrega debe funcionar directamente
+    const entrega = await api("POST", `/pedidos/${pedidoId}/entregar`, { token: state.tokens.vendedor });
+    assert.equal(entrega.status, 200);
+    assert.equal(entrega.data.data.ok, true);
+  });
+
+  it("checklist: templates CRUD", async () => {
+    // GET templates vacío (al principio puede haber templates seed, verificamos que responde)
+    const lista = await api("GET", "/checklist/templates", { token: state.tokens.admin });
+    assert.equal(lista.status, 200);
+    assert.ok(Array.isArray(lista.data.data));
+
+    // POST crear template (solo admin)
+    const template = await api("POST", "/checklist/templates", {
+      token: state.tokens.admin,
+      body: { nombre: "Checklist estándar", items: ["Verificar mercadería", "Confirmar dirección", "Firma"] },
+    });
+    assert.equal(template.status, 201);
+    assert.equal(template.data.data.nombre, "Checklist estándar");
+    assert.equal(template.data.data.items.length, 3);
+    assert.equal(template.data.data.activo, true);
+
+    // GET templates debe incluir el nuevo
+    const lista2 = await api("GET", "/checklist/templates", { token: state.tokens.admin });
+    assert.equal(lista2.status, 200);
+    assert.ok(lista2.data.data.some((t) => t.id === template.data.data.id));
+
+    // Cajero también puede crear template → debe fallar (solo admin)
+    const negado = await api("POST", "/checklist/templates", {
+      token: state.tokens.cajero,
+      body: { nombre: "No autorizado", items: ["x"] },
+    });
+    assert.equal(negado.status, 403);
+  });
+
+  it("checklist: validaciones de entrada", async () => {
+    // POST item sin descripción
+    const sinDesc = await api("POST", "/pedidos/fake-id/checklist", {
+      token: state.tokens.vendedor,
+      body: {},
+    });
+    assert.equal(sinDesc.status, 400);
+
+    // PATCH sin completado booleano
+    const sinBool = await api("PATCH", "/pedidos/fake-id/checklist/fake-item", {
+      token: state.tokens.vendedor,
+      body: { completado: "si" },
+    });
+    assert.equal(sinBool.status, 400);
+
+    // POST template sin items
+    const sinItems = await api("POST", "/checklist/templates", {
+      token: state.tokens.admin,
+      body: { nombre: "Vacio", items: [] },
+    });
+    assert.equal(sinItems.status, 400);
+  });
+
+  it("costo y margen: POST con costo, GET /productos con costo y margen calculado", async () => {
+    // Alta con costo
+    const alta = await api("POST", "/productos", {
+      token: state.tokens.admin,
+      body: {
+        nombre: "Producto con costo",
+        unidad: "bulto",
+        unidadLabel: "bulto",
+        precio: 200,
+        costo: 120,
+        stockMinimo: 0,
+        alias: [],
+      },
+    });
+    assert.equal(alta.status, 201, JSON.stringify(alta.data));
+    const productoId = alta.data.data.id;
+    assert.ok(productoId);
+
+    // Verificar costo en DB
+    const dbRow = await state.pool.query("select costo from productos where id = $1", [productoId]);
+    assert.equal(Number(dbRow.rows[0].costo), 120, "el costo no persistió en DB");
+
+    // GET /productos debe devolver costo y margen
+    const lista = await api("GET", "/productos", { token: state.tokens.admin });
+    assert.equal(lista.status, 200);
+    const prod = lista.data.data.find((p) => p.id === productoId);
+    assert.ok(prod, "el producto con costo no aparece en GET /productos");
+    assert.equal(Number(prod.costo), 120);
+    // margen = ((200 - 120) / 200) * 100 = 40
+    assert.equal(Number(prod.margen), 40);
+
+    // GET /catalogo también debe incluir costo y margen
+    const catalogo = await api("GET", "/catalogo", { token: state.tokens.admin });
+    assert.equal(catalogo.status, 200);
+    const prodCat = catalogo.data.data.find((p) => p.id === productoId);
+    assert.ok(prodCat, "el producto no aparece en el catálogo");
+    assert.equal(Number(prodCat.costo), 120);
+    assert.equal(Number(prodCat.margen), 40);
+
+    // Alta SIN costo → costo=null, margen=null
+    const altaSinCosto = await api("POST", "/productos", {
+      token: state.tokens.admin,
+      body: {
+        nombre: "Producto sin costo",
+        unidad: "kg",
+        unidadLabel: "kg",
+        precio: 100,
+        stockMinimo: 0,
+        alias: [],
+      },
+    });
+    assert.equal(altaSinCosto.status, 201);
+    const sinCostoId = altaSinCosto.data.data.id;
+    const lista2 = await api("GET", "/productos", { token: state.tokens.admin });
+    const sinCosto = lista2.data.data.find((p) => p.id === sinCostoId);
+    assert.ok(sinCosto);
+    assert.equal(sinCosto.costo, null, "sin costo enviado, costo debe ser null");
+    assert.equal(sinCosto.margen, null, "sin costo, margen debe ser null");
+
+    // POST con costo negativo → 400
+    const costoNeg = await api("POST", "/productos", {
+      token: state.tokens.admin,
+      body: {
+        nombre: "Costo negativo",
+        unidad: "bulto",
+        unidadLabel: "bulto",
+        precio: 100,
+        costo: -5,
+        stockMinimo: 0,
+        alias: [],
+      },
+    });
+    assert.equal(costoNeg.status, 400, "costo negativo debe ser rechazado");
+
+    // Actualizar producto existente con costo
+    const update = await api("POST", "/productos", {
+      token: state.tokens.admin,
+      body: {
+        id: sinCostoId,
+        nombre: "Producto sin costo",
+        unidad: "kg",
+        unidadLabel: "kg",
+        precio: 150,
+        costo: 90,
+        stockMinimo: 0,
+        alias: [],
+      },
+    });
+    assert.equal(update.status, 201);
+    const lista3 = await api("GET", "/productos", { token: state.tokens.admin });
+    const actualizado = lista3.data.data.find((p) => p.id === sinCostoId);
+    assert.ok(actualizado);
+    assert.equal(Number(actualizado.costo), 90);
+    // margen = ((150 - 90) / 150) * 100 = 40
+    assert.equal(Number(actualizado.margen), 40);
+
+    // Limpieza
+    await state.pool.query("delete from productos where id = any($1::text[])", [
+      [productoId, sinCostoId],
+    ]);
+  });
+
+  // ---- Foto de producto: upload y delete ----
+  it("foto de producto: upload, consulta y delete", async () => {
+    // Crear un producto de prueba para la foto
+    const productoFotoId = `foto-${randomUUID().slice(0, 8)}`;
+    const alta = await api("POST", "/productos", {
+      token: state.tokens.admin,
+      body: {
+        id: productoFotoId,
+        nombre: "Producto con foto",
+        unidad: "kg",
+        unidadLabel: "kg",
+        precio: 100,
+        stockMinimo: 0,
+        alias: [],
+      },
+    });
+    assert.equal(alta.status, 201);
+
+    // Crear un archivo JPEG de test (1x1 pixel)
+    // Minimal JPEG: SOI + APP0 + minimal data + EOI
+    const jpegBytes = new Uint8Array([
+      0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01,
+      0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0xff, 0xd9,
+    ]);
+
+    // POST /productos/:id/foto con multipart/form-data
+    const formData = new FormData();
+    formData.append("foto", new Blob([jpegBytes], { type: "image/jpeg" }), "test.jpg");
+
+    const uploadRes = await fetch(`${BASE}/api/v1/productos/${productoFotoId}/foto`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${state.tokens.admin}` },
+      body: formData,
+    });
+    assert.equal(uploadRes.status, 200, `upload devolvió ${uploadRes.status}`);
+    const uploadData = await uploadRes.json();
+    assert.ok(uploadData.data.foto_url, "foto_url debe estar presente");
+    assert.ok(uploadData.data.foto_url.includes(productoFotoId), "foto_url debe contener el ID del producto");
+    assert.ok(uploadData.data.foto_url.endsWith(".jpg"), "foto_url debe terminar en .jpg");
+
+    // GET /productos debe devolver foto_url
+    const lista = await api("GET", "/productos", { token: state.tokens.admin });
+    const conFoto = lista.data.data.find((p) => p.id === productoFotoId);
+    assert.ok(conFoto, "producto con foto debe aparecer en la lista");
+    assert.equal(conFoto.fotoUrl, uploadData.data.foto_url, "fotoUrl debe coincidir");
+
+    // POST con archivo inválido (PNG con extensión .gif) → 400
+    const formDataGif = new FormData();
+    formDataGif.append("foto", new Blob([jpegBytes], { type: "image/gif" }), "test.gif");
+    const gifRes = await fetch(`${BASE}/api/v1/productos/${productoFotoId}/foto`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${state.tokens.admin}` },
+      body: formDataGif,
+    });
+    assert.equal(gifRes.status, 400, "archivo gif debe ser rechazado");
+
+    // POST con archivo demasiado grande (>5MB) → 400
+    const bigBytes = new Uint8Array(6 * 1024 * 1024);
+    const formDataBig = new FormData();
+    formDataBig.append("foto", new Blob([bigBytes], { type: "image/jpeg" }), "big.jpg");
+    const bigRes = await fetch(`${BASE}/api/v1/productos/${productoFotoId}/foto`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${state.tokens.admin}` },
+      body: formDataBig,
+    });
+    assert.equal(bigRes.status, 400, "archivo >5MB debe ser rechazado");
+
+    // POST sin campo foto → 400
+    const formDataEmpty = new FormData();
+    const emptyRes = await fetch(`${BASE}/api/v1/productos/${productoFotoId}/foto`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${state.tokens.admin}` },
+      body: formDataEmpty,
+    });
+    assert.equal(emptyRes.status, 400, "sin campo foto debe ser 400");
+
+    // DELETE /productos/:id/foto
+    const deleteRes = await fetch(`${BASE}/api/v1/productos/${productoFotoId}/foto`, {
+      method: "DELETE",
+      headers: { authorization: `Bearer ${state.tokens.admin}` },
+    });
+    assert.equal(deleteRes.status, 200, `delete devolvió ${deleteRes.status}`);
+    const deleteData = await deleteRes.json();
+    assert.equal(deleteData.data.ok, true);
+
+    // Verificar que foto_url es null después del delete
+    const lista2 = await api("GET", "/productos", { token: state.tokens.admin });
+    const sinFoto = lista2.data.data.find((p) => p.id === productoFotoId);
+    assert.ok(sinFoto);
+    assert.equal(sinFoto.fotoUrl, null, "fotoUrl debe ser null tras delete");
+
+    // DELETE en producto inexistente → 404
+    const delete404 = await fetch(`${BASE}/api/v1/productos/no-existe/foto`, {
+      method: "DELETE",
+      headers: { authorization: `Bearer ${state.tokens.admin}` },
+    });
+    assert.equal(delete404.status, 404, "producto inexistente debe dar 404");
+
+    // Limpieza
+    await state.pool.query("delete from productos where id = $1", [productoFotoId]);
   });
 });

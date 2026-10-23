@@ -15,6 +15,7 @@ import { Route as CajaRouteImport } from './routes/caja'
 import { Route as CierreRouteImport } from './routes/cierre'
 import { Route as ClientesRouteImport } from './routes/clientes'
 import { Route as ConfirmarRouteImport } from './routes/confirmar'
+import { Route as ConfirmarMercadoRouteImport } from './routes/confirmar-mercado'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as PortalRouteImport } from './routes/portal'
@@ -62,6 +63,11 @@ const ClientesRoute = ClientesRouteImport.update({
 const ConfirmarRoute = ConfirmarRouteImport.update({
   id: '/confirmar',
   path: '/confirmar',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ConfirmarMercadoRoute = ConfirmarMercadoRouteImport.update({
+  id: '/confirmar-mercado',
+  path: '/confirmar-mercado',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DashboardRoute = DashboardRouteImport.update({
@@ -162,6 +168,7 @@ export interface FileRoutesByFullPath {
   '/cierre': typeof CierreRoute
   '/clientes': typeof ClientesRoute
   '/confirmar': typeof ConfirmarRoute
+  '/confirmar-mercado': typeof ConfirmarMercadoRoute
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
   '/portal': typeof PortalRoute
@@ -188,6 +195,7 @@ export interface FileRoutesByTo {
   '/cierre': typeof CierreRoute
   '/clientes': typeof ClientesRoute
   '/confirmar': typeof ConfirmarRoute
+  '/confirmar-mercado': typeof ConfirmarMercadoRoute
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
   '/portal': typeof PortalRoute
@@ -215,6 +223,7 @@ export interface FileRoutesById {
   '/cierre': typeof CierreRoute
   '/clientes': typeof ClientesRoute
   '/confirmar': typeof ConfirmarRoute
+  '/confirmar-mercado': typeof ConfirmarMercadoRoute
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
   '/portal': typeof PortalRoute
@@ -243,6 +252,7 @@ export interface FileRouteTypes {
     | '/cierre'
     | '/clientes'
     | '/confirmar'
+    | '/confirmar-mercado'
     | '/dashboard'
     | '/login'
     | '/portal'
@@ -269,6 +279,7 @@ export interface FileRouteTypes {
     | '/cierre'
     | '/clientes'
     | '/confirmar'
+    | '/confirmar-mercado'
     | '/dashboard'
     | '/login'
     | '/portal'
@@ -295,6 +306,7 @@ export interface FileRouteTypes {
     | '/cierre'
     | '/clientes'
     | '/confirmar'
+    | '/confirmar-mercado'
     | '/dashboard'
     | '/login'
     | '/portal'
@@ -322,6 +334,7 @@ export interface RootRouteChildren {
   CierreRoute: typeof CierreRoute
   ClientesRoute: typeof ClientesRoute
   ConfirmarRoute: typeof ConfirmarRoute
+  ConfirmarMercadoRoute: typeof ConfirmarMercadoRoute
   DashboardRoute: typeof DashboardRoute
   LoginRoute: typeof LoginRoute
   PortalRoute: typeof PortalRoute
@@ -383,6 +396,13 @@ declare module '@tanstack/react-router' {
       path: '/confirmar'
       fullPath: '/confirmar'
       preLoaderRoute: typeof ConfirmarRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/confirmar-mercado': {
+      id: '/confirmar-mercado'
+      path: '/confirmar-mercado'
+      fullPath: '/confirmar-mercado'
+      preLoaderRoute: typeof ConfirmarMercadoRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/dashboard': {
@@ -532,6 +552,7 @@ const rootRouteChildren: RootRouteChildren = {
   CierreRoute: CierreRoute,
   ClientesRoute: ClientesRoute,
   ConfirmarRoute: ConfirmarRoute,
+  ConfirmarMercadoRoute: ConfirmarMercadoRoute,
   DashboardRoute: DashboardRoute,
   LoginRoute: LoginRoute,
   PortalRoute: PortalRoute,

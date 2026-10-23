@@ -179,7 +179,7 @@ type ProductoRow = Parameters<typeof mapProducto>[0];
 export async function catalogoClienteForClient(ficha: Ficha): Promise<Producto[]> {
   const sql = await getSql();
   const rows = await sql<ProductoRow & { orden: unknown }>`
-    select id, nombre, unidad, unidad_label, precio, moneda, stock, stock_minimo, alias, activo, orden
+    select id, nombre, unidad, unidad_label, precio, costo, moneda, stock, stock_minimo, alias, activo, orden, foto_url
     from productos
     where tenant_id = ${ficha.tenantId} and activo = true
     order by orden nulls last, lower(nombre)
@@ -280,7 +280,7 @@ export async function pedirComoClienteForClient(ficha: Ficha, input: PedirComoCl
     )
   `;
   const productos = await sql<ProductoRow>`
-    select id, nombre, unidad, unidad_label, precio, moneda, stock, stock_minimo, alias, activo
+    select id, nombre, unidad, unidad_label, precio, costo, moneda, stock, stock_minimo, alias, activo, foto_url
     from productos where tenant_id = ${tenantId} and activo = true
   `;
   const byId = new Map(productos.map((p) => [p.id, mapProducto(p)]));

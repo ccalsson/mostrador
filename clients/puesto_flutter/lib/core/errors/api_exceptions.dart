@@ -12,35 +12,49 @@ class ApiException implements Exception {
 
 final class UnauthorizedException extends ApiException {
   UnauthorizedException([String? message])
-      : super(message ?? 'Sesión expirada o inválida.', statusCode: 401);
+    : super(message ?? 'Sesión expirada o inválida.', statusCode: 401);
 }
 
 final class ForbiddenException extends ApiException {
   ForbiddenException([String? message])
-      : super(message ?? 'No tenés permiso para esta operación.', statusCode: 403);
+    : super(
+        message ?? 'No tenés permiso para esta operación.',
+        statusCode: 403,
+      );
 }
 
 final class NotFoundException extends ApiException {
   NotFoundException([String? message])
-      : super(message ?? 'No se encontró el recurso.', statusCode: 404);
+    : super(message ?? 'No se encontró el recurso.', statusCode: 404);
 }
 
 final class ConflictException extends ApiException {
   ConflictException([String? message])
-      : super(message ?? 'La operación entra en conflicto con el estado actual.', statusCode: 409);
+    : super(
+        message ?? 'La operación entra en conflicto con el estado actual.',
+        statusCode: 409,
+      );
+}
+
+final class ContextChangedException extends ApiException {
+  ContextChangedException()
+    : super(
+        'La sucursal cambió. Volvé a intentar desde la sesión actual.',
+        statusCode: 409,
+      );
 }
 
 final class ValidationException extends ApiException {
   ValidationException([String? message])
-      : super(message ?? 'Los datos enviados no son válidos.', statusCode: 422);
+    : super(message ?? 'Los datos enviados no son válidos.', statusCode: 422);
 }
 
 final class ServerException extends ApiException {
   ServerException([String? message])
-      : super(message ?? 'Error interno del servidor.', statusCode: 500);
+    : super(message ?? 'Error interno del servidor.', statusCode: 500);
 }
 
 final class NetworkException extends ApiException {
   NetworkException([String? message])
-      : super(message ?? 'No se pudo conectar con el servidor.');
+    : super(message ?? 'No se pudo conectar con el servidor.');
 }

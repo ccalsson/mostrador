@@ -90,7 +90,8 @@ class _UsuariosPaneState extends ConsumerState<UsuariosPane> {
   }
 
   Future<void> _cambiarClave(Usuario usuario) async {
-    final controller = TextEditingController();
+    final nuevaController = TextEditingController();
+    final confirmarController = TextEditingController();
     final formKey = GlobalKey<FormState>();
     final result = await showDialog<bool>(
       context: context,
@@ -109,7 +110,7 @@ class _UsuariosPaneState extends ConsumerState<UsuariosPane> {
                     const SizedBox(height: 12),
                     TextFormField(
                       key: const Key('cambiar_clave_input'),
-                      controller: controller,
+                      controller: nuevaController,
                       obscureText: true,
                       decoration: const InputDecoration(
                         labelText: 'Nueva contraseña',
@@ -118,6 +119,21 @@ class _UsuariosPaneState extends ConsumerState<UsuariosPane> {
                       validator: (value) {
                         if (value == null || value.length < 8) {
                           return 'La contraseña debe tener al menos 8 caracteres';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      key: const Key('cambiar_clave_confirmar'),
+                      controller: confirmarController,
+                      obscureText: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Confirmar contraseña',
+                      ),
+                      validator: (value) {
+                        if (value != nuevaController.text) {
+                          return 'Las contraseñas no coinciden';
                         }
                         return null;
                       },
@@ -145,10 +161,15 @@ class _UsuariosPaneState extends ConsumerState<UsuariosPane> {
         );
       },
     );
-    controller.dispose();
+    final nuevaClave = nuevaController.text;
+    // Dispose after the dialog's exit animation completes.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      nuevaController.dispose();
+      confirmarController.dispose();
+    });
     if (result != true || !mounted) return;
     try {
-      await ref.read(usuariosServiceProvider).cambiarClave(usuario.id, password: controller.text);
+      await ref.read(usuariosServiceProvider).cambiarClave(usuario.id, password: nuevaClave);
       if (!mounted) return;
       ScaffoldMessenger.of(context)
         ..removeCurrentSnackBar()

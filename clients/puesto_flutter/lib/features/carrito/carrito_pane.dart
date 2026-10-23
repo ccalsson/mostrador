@@ -9,6 +9,7 @@ import 'carrito_controller.dart';
 
 /// Carrito del vendedor: líneas con cantidades, total y confirmación
 /// explícita. Tras crear el pedido muestra la pantalla de resultado.
+/// Incluye badge de pedidos pendientes offline y replay automático.
 class CarritoPane extends ConsumerWidget {
   const CarritoPane({super.key});
 
@@ -18,17 +19,23 @@ class CarritoPane extends ConsumerWidget {
     final pedido = carrito.pedido;
     if (pedido != null) return _PedidoCreado(pedido: pedido);
     if (carrito.vacio && carrito.envio != EnvioEstado.enviando) {
-      return const _CarritoVacio();
+      return _CarritoConBadge(ref: ref);
     }
     return _ListaCarrito(carrito: carrito);
   }
 }
 
-class _CarritoVacio extends StatelessWidget {
-  const _CarritoVacio();
+/// Badge con la cantidad de pedidos pendientes offline, visible cuando el
+/// carrito está vacío.
+class _CarritoConBadge extends ConsumerWidget {
+  const _CarritoConBadge({required this.ref});
+
+  final WidgetRef ref;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final pendientes = ref.watch(carritoControllerProvider.notifier).pendientesOffline;
+    final conectado = ref.watch(conectadoProvider);
     return Center(
       key: const Key('carrito_vacio'),
       child: Column(
@@ -42,6 +49,62 @@ class _CarritoVacio extends StatelessWidget {
           Text(
             'Agregá productos desde el catálogo.',
             style: Theme.of(context).textTheme.bodySmall,
+          ),
+          if (!conectado) ...[
+            const SizedBox(height: 8),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.cloud_off, size: 16,
+                    color: Theme.of(context).colorScheme.error),
+                const SizedBox(width: 4),
+                Text(
+                  'Sin conexión',
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ],
+            ),
+          ],
+          if (pendientes > 0) ...[
+            const SizedBox(height: 12),
+            _BadgePendientes(cantidad: pendientes),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Badge con la cantidad de pedidos pendientes offline.
+class _BadgePendientes extends StatelessWidget {
+  const _BadgePendientes({required this.cantidad});
+
+  final int cantidad;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      key: const Key('badge_pendientes'),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.tertiaryContainer,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.cloud_upload_outlined,
+            size: 16,
+            color: Theme.of(context).colorScheme.onTertiaryContainer,
+          ),
+          const SizedBox(width: 6),
+          Text(
+            '$cantidad ${cantidad == 1 ? 'pedido pendiente' : 'pedidos pendientes'}',
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onTertiaryContainer,
+              fontWeight: FontWeight.w500,
+            ),
           ),
         ],
       ),
@@ -58,11 +121,20 @@ class _ListaCarrito extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final controlador = ref.read(carritoControllerProvider.notifier);
     final enviando = carrito.envio == EnvioEstado.enviando;
+    final guardadoOffline = carrito.envio == EnvioEstado.guardadoOffline;
     return Column(
       children: [
         if (enviando) const LinearProgressIndicator(key: Key('carrito_enviando')),
         if (carrito.envio == EnvioEstado.error)
           _ErrorEnvio(mensaje: carrito.errorMensaje, onReintentar: controlador.confirmar),
+        if (guardadoOffline)
+          _AvisoOffline(
+            onReintentar: () async {
+              final resultados = await controlador.replayPendientes();
+              if (!context.mounted) return;
+              _mostrarSnackBarResultados(context, resultados);
+            },
+          ),
         Expanded(
           child: ListView.separated(
             key: const Key('carrito_lineas'),
@@ -173,6 +245,81 @@ class _ListaCarrito extends ConsumerWidget {
     );
     if (aceptado != true) return;
     await ref.read(carritoControllerProvider.notifier).confirmar();
+    if (!context.mounted) return;
+    // Si quedó guardado offline, mostrar snackbar.
+    final estado = ref.read(carritoControllerProvider).envio;
+    if (estado == EnvioEstado.guardadoOffline) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          key: Key('snackbar_guardado_offline'),
+          content: Text('Pedido guardado localmente. Se enviará al recuperar conexión.'),
+          duration: Duration(seconds: 3),
+        ),
+      );
+    }
+  }
+
+  void _mostrarSnackBarResultados(
+    BuildContext context,
+    List<ReplayResultado> resultados,
+  ) {
+    final exitosos = resultados.where((r) => r.exito).length;
+    final fallidos = resultados.where((r) => !r.exito).length;
+    final agotados = resultados.where((r) => r.agotado).length;
+
+    final mensajes = <String>[];
+    if (exitosos > 0) mensajes.add('$exitosos enviado(s)');
+    if (agotados > 0) mensajes.add('$agotados descartado(s) tras 3 reintentos');
+    if (fallidos > 0 && agotados == 0) mensajes.add('$fallidos se reintentará(n) después');
+
+    if (mensajes.isEmpty) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(mensajes.join(' · ')),
+        duration: const Duration(seconds: 4),
+      ),
+    );
+  }
+}
+
+/// Aviso visual cuando el pedido actual se guardó offline.
+class _AvisoOffline extends StatelessWidget {
+  const _AvisoOffline({required this.onReintentar});
+
+  final VoidCallback onReintentar;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      key: const Key('carrito_aviso_offline'),
+      color: Theme.of(context).colorScheme.tertiaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Row(
+          children: [
+            Icon(
+              Icons.cloud_upload_outlined,
+              color: Theme.of(context).colorScheme.onTertiaryContainer,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Pedido guardado localmente. Se enviará automáticamente al recuperar conexión.',
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onTertiaryContainer,
+                ),
+              ),
+            ),
+            TextButton(
+              key: const Key('carrito_replay_manual'),
+              onPressed: onReintentar,
+              child: const Text('Enviar ahora'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

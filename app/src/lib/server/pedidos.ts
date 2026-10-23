@@ -2,6 +2,7 @@ import { getSql } from "@/lib/db";
 import { newId } from "@/lib/ids";
 import type { PedidoLineaInput } from "@/lib/server/catalog-pedidos";
 import { assertRole, audit, loadPedido, loadPedidos, mapProducto } from "@/lib/server/context";
+import { verificarChecklistCompleto } from "@/lib/server/checklist";
 import { getCotizacion, precioEnArs } from "@/lib/server/moneda";
 import { hayReserva, reservarLineas, soltarReserva } from "@/lib/server/stock";
 import type { Pedido, PedidoEstado, Producto, Staff } from "@/lib/types";
@@ -145,6 +146,15 @@ export async function marcarEntregadoForStaff(staff: Staff, id: string) {
   const pedido = await loadPedido(id, staff.tenantId);
   if (!pedido) throw new Error("Pedido no encontrado.");
   if (pedido.estado !== "cobrado") throw new Error("Solo se entrega un pedido ya cobrado.");
+  // Verificar checklist de entrega: si hay items, todos deben estar completados.
+  const checklist = await verificarChecklistCompleto(id, staff.tenantId);
+  if (!checklist.ok) {
+    const error = new Error(
+      `Faltan ${checklist.pendientes} item(s) del checklist de entrega por completar.`,
+    );
+    Object.assign(error, { status: 400 });
+    throw error;
+  }
   await sql`
     update pedidos set estado = 'entregado', updated_at = now()
     where id = ${id} and tenant_id = ${staff.tenantId}
@@ -178,7 +188,7 @@ export async function updatePedidoItemsForStaff(
     stock_minimo: unknown;
     alias: unknown;
     activo: boolean;
-  }>`select id, nombre, unidad, unidad_label, precio, moneda, stock, stock_minimo, alias, activo from productos where tenant_id = ${staff.tenantId}`;
+  }>`select id, nombre, unidad, unidad_label, precio, costo, moneda, stock, stock_minimo, alias, activo, foto_url from productos where tenant_id = ${staff.tenantId}`;
   const byId = new Map(productos.map((p) => [p.id, mapProducto(p)]));
   const cotizacion = await getCotizacion();
   for (const line of input.items) {

@@ -1,8 +1,11 @@
+import 'dart:typed_data';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/errors/api_exceptions.dart';
 import '../../services/alertas_service.dart';
 import '../../services/catalogo_service.dart';
+import '../../services/escritorio_service.dart';
 import '../../services/productos_service.dart';
 
 enum ProductoFormFase { inactiva, enviando, error }
@@ -37,6 +40,7 @@ class ProductoFormController extends Notifier<ProductoFormEstado> {
       await ref.read(productosAdminServiceProvider).guardar(input);
       if (!ref.mounted) return false;
       ref.invalidate(catalogoProvider);
+      ref.invalidate(escritorioProvider);
       ref.invalidate(alertasProvider);
       state = const ProductoFormEstado();
       return true;
@@ -64,6 +68,7 @@ class ProductoFormController extends Notifier<ProductoFormEstado> {
       await ref.read(productosAdminServiceProvider).bajar(id);
       if (!ref.mounted) return false;
       ref.invalidate(catalogoProvider);
+      ref.invalidate(escritorioProvider);
       state = const ProductoFormEstado();
       return true;
     } on ApiException catch (error) {
@@ -82,9 +87,51 @@ class ProductoFormController extends Notifier<ProductoFormEstado> {
       return false;
     }
   }
+
+  /// Sube foto del producto. Devuelve la URL pública o null en error.
+  /// Invalida catálogo para refrescar el thumbnail.
+  Future<String?> subirFoto({
+    required String productoId,
+    required Uint8List bytes,
+    required String nombreArchivo,
+    required String mimeType,
+  }) async {
+    try {
+      final url = await ref.read(productosAdminServiceProvider).subirFoto(
+            productoId: productoId,
+            bytes: bytes,
+            nombreArchivo: nombreArchivo,
+            mimeType: mimeType,
+          );
+      if (ref.mounted) {
+        ref.invalidate(catalogoProvider);
+        ref.invalidate(escritorioProvider);
+      }
+      return url;
+    } on ApiException {
+      rethrow;
+    } catch (_) {
+      throw ApiException('No se pudo subir la foto.');
+    }
+  }
+
+  /// Borra la foto del producto. Invalida catálogo.
+  Future<void> borrarFoto(String productoId) async {
+    try {
+      await ref.read(productosAdminServiceProvider).borrarFoto(productoId);
+      if (ref.mounted) {
+        ref.invalidate(catalogoProvider);
+        ref.invalidate(escritorioProvider);
+      }
+    } on ApiException {
+      rethrow;
+    } catch (_) {
+      throw ApiException('No se pudo eliminar la foto.');
+    }
+  }
 }
 
 final productoFormProvider =
     NotifierProvider<ProductoFormController, ProductoFormEstado>(
-  ProductoFormController.new,
-);
+      ProductoFormController.new,
+    );

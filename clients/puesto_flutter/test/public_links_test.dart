@@ -169,13 +169,9 @@ void main() {
       await tester.pump(const Duration(milliseconds: 400));
 
       final sesionFinder = find.text('Sesión');
-      if (sesionFinder.evaluate().isEmpty) {
-        // El bottom sheet tiene el ListView con más de 15 items; scrollear
-        // manualmente hasta que aparezca 'Sesión'.
-        for (var i = 0; i < 10 && sesionFinder.evaluate().isEmpty; i++) {
-          await tester.drag(find.byType(ListView).last, const Offset(0, -200));
-          await tester.pump(const Duration(milliseconds: 200));
-        }
+      for (var i = 0; i < 5; i++) {
+        await tester.drag(find.byType(ListView).last, const Offset(0, -200));
+        await tester.pump(const Duration(milliseconds: 100));
       }
       expect(sesionFinder, findsWidgets, reason: 'Sesión no apareció tras scrollear');
       await tester.tap(sesionFinder.last);

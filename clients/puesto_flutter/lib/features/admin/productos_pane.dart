@@ -1,16 +1,20 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/config/app_config.dart';
 import '../../core/errors/api_exceptions.dart';
 import '../../core/format.dart';
 import '../../models/producto.dart';
 import '../../services/catalogo_service.dart';
 import '../../services/productos_service.dart';
 import 'ajuste_stock_dialog.dart';
+import 'foto_producto_widget.dart';
 import 'producto_form_controller.dart';
+import 'producto_form_dialog.dart';
 
 /// Gestión de catálogo del Dueño: alta, edición, baja y ajustes de stock.
-/// Layout de 2 columnas: lista a la izquierda, formulario inline a la derecha.
 class ProductosPane extends ConsumerStatefulWidget {
   const ProductosPane({super.key});
 
@@ -31,6 +35,7 @@ class _ProductosPaneState extends ConsumerState<ProductosPane> {
   final _inicial = TextEditingController();
   String _unidad = 'kg';
   bool _activo = true;
+  bool _publicadoOnline = false;
   String? _validacion;
 
   @override
@@ -48,13 +53,16 @@ class _ProductosPaneState extends ConsumerState<ProductosPane> {
     final texto = _busqueda.trim().toLowerCase();
     if (texto.isEmpty) return productos;
     return productos
-        .where((p) =>
-            p.nombre.toLowerCase().contains(texto) ||
-            p.alias.any((a) => a.toLowerCase().contains(texto)))
+        .where(
+          (p) =>
+              p.nombre.toLowerCase().contains(texto) ||
+              p.alias.any((a) => a.toLowerCase().contains(texto)),
+        )
         .toList();
   }
 
   void _seleccionar(Producto producto) {
+    ref.read(productoFormProvider.notifier).reiniciar();
     setState(() {
       _seleccionado = producto;
       _modoNuevo = false;
@@ -63,9 +71,19 @@ class _ProductosPaneState extends ConsumerState<ProductosPane> {
   }
 
   void _nuevo() {
+    ref.read(productoFormProvider.notifier).reiniciar();
     setState(() {
       _seleccionado = null;
       _modoNuevo = true;
+      _limpiarForm();
+    });
+  }
+
+  void _cancelar() {
+    ref.read(productoFormProvider.notifier).reiniciar();
+    setState(() {
+      _seleccionado = null;
+      _modoNuevo = false;
       _limpiarForm();
     });
   }
@@ -79,6 +97,7 @@ class _ProductosPaneState extends ConsumerState<ProductosPane> {
     _inicial.clear();
     _unidad = producto.unidad;
     _activo = producto.activo;
+    _publicadoOnline = producto.publicadoOnline;
     _validacion = null;
   }
 
@@ -91,6 +110,7 @@ class _ProductosPaneState extends ConsumerState<ProductosPane> {
     _inicial.clear();
     _unidad = 'kg';
     _activo = true;
+    _publicadoOnline = false;
     _validacion = null;
   }
 
@@ -99,12 +119,14 @@ class _ProductosPaneState extends ConsumerState<ProductosPane> {
     final unidadLabel = _unidadLabel.text.trim();
     final precio = parseDecimal(_precio.text);
     final minimo = parseDecimal(_minimo.text);
-    
+
     if (nombre.isEmpty) {
       return setState(() => _validacion = 'Ingresá el nombre.');
     }
     if (unidadLabel.isEmpty || unidadLabel.length > 20) {
-      return setState(() => _validacion = 'Etiqueta de unidad requerida (máx. 20).');
+      return setState(
+        () => _validacion = 'Etiqueta de unidad requerida (máx. 20).',
+      );
     }
     if (precio == null || precio <= 0) {
       return setState(() => _validacion = 'Precio inválido.');
@@ -112,7 +134,7 @@ class _ProductosPaneState extends ConsumerState<ProductosPane> {
     if (minimo == null || minimo < 0) {
       return setState(() => _validacion = 'Stock mínimo inválido.');
     }
-    
+
     double? inicial;
     final textoInicial = _inicial.text.trim();
     if (_seleccionado == null && textoInicial.isNotEmpty) {
@@ -121,34 +143,39 @@ class _ProductosPaneState extends ConsumerState<ProductosPane> {
         return setState(() => _validacion = 'Stock inicial inválido.');
       }
     }
-    
+
     setState(() => _validacion = null);
-    final ok = await ref.read(productoFormProvider.notifier).guardar(
-      ProductoInput(
-        id: _seleccionado?.id,
-        nombre: nombre,
-        unidad: _unidad,
-        unidadLabel: unidadLabel,
-        precio: precio,
-        stockMinimo: minimo,
-        alias: _alias.text
-            .split(',')
-            .map((a) => a.trim())
-            .where((a) => a.isNotEmpty)
-            .toList(),
-        activo: _activo,
-        stockInicial: inicial,
-      ),
-    );
-    
+    final ok = await ref
+        .read(productoFormProvider.notifier)
+        .guardar(
+          ProductoInput(
+            id: _seleccionado?.id,
+            nombre: nombre,
+            unidad: _unidad,
+            unidadLabel: unidadLabel,
+            precio: precio,
+            stockMinimo: minimo,
+            alias: _alias.text
+                .split(',')
+                .map((a) => a.trim())
+                .where((a) => a.isNotEmpty)
+                .toList(),
+            activo: _activo,
+            publicadoOnline: _publicadoOnline,
+            stockInicial: inicial,
+          ),
+        );
+
     if (!ok || !mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(_seleccionado == null ? 'Producto creado.' : 'Producto actualizado.'),
+        content: Text(
+          _seleccionado == null ? 'Producto creado.' : 'Producto actualizado.',
+        ),
       ),
     );
     if (_seleccionado == null) {
-      _limpiarForm();
+      setState(_limpiarForm);
     }
   }
 
@@ -175,7 +202,9 @@ class _ProductosPaneState extends ConsumerState<ProductosPane> {
       ),
     );
     if (confirmar != true || !mounted) return;
-    final ok = await ref.read(productoFormProvider.notifier).bajar(_seleccionado!.id);
+    final ok = await ref
+        .read(productoFormProvider.notifier)
+        .bajar(_seleccionado!.id);
     if (ok && mounted) {
       setState(() {
         _seleccionado = null;
@@ -190,123 +219,178 @@ class _ProductosPaneState extends ConsumerState<ProductosPane> {
     final catalogo = ref.watch(catalogoProvider);
     final estado = ref.watch(productoFormProvider);
 
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-          child: Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  key: const Key('admin_buscar_producto'),
-                  decoration: const InputDecoration(
-                    prefixIcon: Icon(Icons.search),
-                    hintText: 'Buscar por nombre o alias',
-                    isDense: true,
-                    border: OutlineInputBorder(),
-                  ),
-                  onChanged: (value) => setState(() => _busqueda = value),
-                ),
-              ),
-              const SizedBox(width: 12),
-              FilledButton.icon(
-                key: const Key('admin_nuevo_producto'),
-                onPressed: _nuevo,
-                icon: const Icon(Icons.add),
-                label: const Text('Nuevo producto'),
-              ),
-            ],
-          ),
-        ),
-        Expanded(
-          child: catalogo.when(
-            loading: () => const Center(child: CircularProgressIndicator()),
-            error: (error, _) => Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final inline = constraints.maxWidth >= 800;
+        return Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Row(
                 children: [
-                  Text(error is ApiException
-                      ? error.message
-                      : 'No se pudo cargar el catálogo.'),
-                  const SizedBox(height: 16),
-                  FilledButton.tonal(
-                    key: const Key('admin_productos_reintentar'),
-                    onPressed: () => ref.invalidate(catalogoProvider),
-                    child: const Text('Reintentar'),
+                  Expanded(
+                    child: TextField(
+                      key: const Key('admin_buscar_producto'),
+                      decoration: const InputDecoration(
+                        prefixIcon: Icon(Icons.search),
+                        hintText: 'Buscar por nombre o alias',
+                        isDense: true,
+                        border: OutlineInputBorder(),
+                      ),
+                      onChanged: (value) => setState(() => _busqueda = value),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  FilledButton.icon(
+                    key: const Key('admin_nuevo_producto'),
+                    onPressed: estado.enviando
+                        ? null
+                        : () {
+                            if (inline) {
+                              _nuevo();
+                            } else {
+                              mostrarFormProducto(context);
+                            }
+                          },
+                    icon: const Icon(Icons.add),
+                    label: Text(inline ? 'Nuevo producto' : 'Nuevo'),
                   ),
                 ],
               ),
             ),
-            data: (data) {
-              final productos = _filtrar(data.productos);
-              return Row(
-                children: [
-                  Expanded(
-                    flex: 2,
-                    child: productos.isEmpty
-                        ? const Center(
-                            child: Text(
-                              'No hay productos.',
-                              key: Key('admin_productos_vacia'),
-                            ),
-                          )
-                        : ListView.separated(
-                            key: const Key('admin_productos_lista'),
-                            itemCount: productos.length,
-                            separatorBuilder: (_, _) => const Divider(height: 1),
-                            itemBuilder: (context, index) {
-                              final producto = productos[index];
-                              final seleccionado = _seleccionado?.id == producto.id;
-                              return _ProductoTile(
-                                producto: producto,
-                                seleccionado: seleccionado,
-                                onTap: () => _seleccionar(producto),
-                                onAjustar: () => mostrarAjusteStock(context, producto),
-                              );
-                            },
-                          ),
+            Expanded(
+              child: catalogo.when(
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (error, _) => Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        error is ApiException
+                            ? error.message
+                            : 'No se pudo cargar el catálogo.',
+                      ),
+                      const SizedBox(height: 16),
+                      FilledButton.tonal(
+                        key: const Key('admin_productos_reintentar'),
+                        onPressed: () => ref.invalidate(catalogoProvider),
+                        child: const Text('Reintentar'),
+                      ),
+                    ],
                   ),
-                  if (_seleccionado != null || _modoNuevo)
-                    Expanded(
-                      flex: 3,
-                      child: Material(
-                        color: Theme.of(context).colorScheme.surfaceContainerLowest,
-                        child: Container(
-                          decoration: BoxDecoration(
-                            border: Border(
-                              left: BorderSide(
-                                color: Theme.of(context).dividerColor,
+                ),
+                data: (data) {
+                  final productos = _filtrar(data.productos);
+                  return Row(
+                    children: [
+                      Expanded(
+                        flex: 2,
+                        child: productos.isEmpty
+                            ? const Center(
+                                child: Text(
+                                  'No hay productos.',
+                                  key: Key('admin_productos_vacia'),
+                                ),
+                              )
+                            : ListView.separated(
+                                key: const Key('admin_productos_lista'),
+                                itemCount: productos.length,
+                                separatorBuilder: (_, _) =>
+                                    const Divider(height: 1),
+                                itemBuilder: (context, index) {
+                                  final producto = productos[index];
+                                  final seleccionado =
+                                      _seleccionado?.id == producto.id;
+                                  return _ProductoTile(
+                                    producto: producto,
+                                    seleccionado: inline && seleccionado,
+                                    onTap: estado.enviando
+                                        ? null
+                                        : () {
+                                            if (inline) {
+                                              _seleccionar(producto);
+                                            } else {
+                                              mostrarFormProducto(
+                                                context,
+                                                existente: producto,
+                                              );
+                                            }
+                                          },
+                                    onAjustar: () =>
+                                        mostrarAjusteStock(context, producto),
+                                  );
+                                },
+                              ),
+                      ),
+                      if (inline && (_seleccionado != null || _modoNuevo))
+                        Expanded(
+                          flex: 3,
+                          child: Material(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .surfaceContainerLowest,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                border: Border(
+                                  left: BorderSide(
+                                    color: Theme.of(context).dividerColor,
+                                  ),
+                                ),
+                              ),
+                              child: _FormPanel(
+                                key: ValueKey(_seleccionado?.id),
+                                nombreController: _nombre,
+                                unidadLabelController: _unidadLabel,
+                                precioController: _precio,
+                                minimoController: _minimo,
+                                aliasController: _alias,
+                                inicialController: _inicial,
+                                unidad: _unidad,
+                                onUnidadChanged: (v) =>
+                                    setState(() => _unidad = v ?? 'kg'),
+                                activo: _activo,
+                                onActivoChanged: (v) =>
+                                    setState(() => _activo = v),
+                                publicadoOnline: _publicadoOnline,
+                                onPublicadoChanged: (v) =>
+                                    setState(() => _publicadoOnline = v),
+                                modoNuevo: _modoNuevo,
+                                validacion: _validacion,
+                                enviando: estado.enviando,
+                                errorMensaje:
+                                    _validacion ?? estado.errorMensaje,
+                                onGuardar: _guardar,
+                                onBajar: _seleccionado != null ? _bajar : null,
+                                onCancelar: _cancelar,
+                                productoId: _seleccionado?.id,
+                                fotoUrl: _seleccionado?.fotoUrl,
+                                onFotoUpload: (bytes, nombre, mime) async {
+                                  if (_seleccionado == null) return;
+                                  await ref.read(productoFormProvider.notifier).subirFoto(
+                                        productoId: _seleccionado!.id,
+                                        bytes: bytes,
+                                        nombreArchivo: nombre,
+                                        mimeType: mime,
+                                      );
+                                  if (mounted) setState(() {});
+                                },
+                                onFotoDelete: () async {
+                                  if (_seleccionado == null) return;
+                                  await ref.read(productoFormProvider.notifier).borrarFoto(_seleccionado!.id);
+                                  if (mounted) setState(() {});
+                                },
                               ),
                             ),
                           ),
-                          child: _FormPanel(
-                            nombreController: _nombre,
-                            unidadLabelController: _unidadLabel,
-                            precioController: _precio,
-                            minimoController: _minimo,
-                            aliasController: _alias,
-                            inicialController: _inicial,
-                            unidad: _unidad,
-                            onUnidadChanged: (v) => setState(() => _unidad = v ?? 'kg'),
-                            activo: _activo,
-                            onActivoChanged: (v) => setState(() => _activo = v),
-                            modoNuevo: _modoNuevo,
-                            validacion: _validacion,
-                            enviando: estado.enviando,
-                            errorMensaje: _validacion ?? estado.errorMensaje,
-                            onGuardar: _guardar,
-                            onBajar: _seleccionado != null ? _bajar : null,
-                            productoId: _seleccionado?.id,
-                          ),
                         ),
-                      ),
-                    ),
-                ],
-              );
-            },
-          ),
-        ),
-      ],
+                    ],
+                  );
+                },
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -321,7 +405,7 @@ class _ProductoTile extends StatelessWidget {
 
   final Producto producto;
   final bool seleccionado;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
   final VoidCallback onAjustar;
 
   @override
@@ -329,8 +413,10 @@ class _ProductoTile extends StatelessWidget {
     return ListTile(
       key: Key('admin_producto_${producto.id}'),
       tileColor: seleccionado
-          ? Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3)
+          ? Theme.of(context).colorScheme.primaryContainer
+                .withValues(alpha: 0.3)
           : null,
+      leading: _Thumbnail(url: producto.fotoUrl),
       title: Text(
         producto.nombre,
         style: TextStyle(fontWeight: seleccionado ? FontWeight.w600 : null),
@@ -338,7 +424,8 @@ class _ProductoTile extends StatelessWidget {
       subtitle: Text(
         '${moneda(producto.precio)} / ${producto.unidadLabel}'
         ' · Stock: ${cantidadNum(producto.stock)}'
-        ' · Mín.: ${cantidadNum(producto.stockMinimo)}',
+        ' · Mín.: ${cantidadNum(producto.stockMinimo)}'
+        '\nMercado: ${producto.publicadoOnline ? 'publicación activada' : 'sin publicar'}',
       ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
@@ -368,8 +455,58 @@ class _ProductoTile extends StatelessWidget {
   }
 }
 
+/// Thumbnail cuadrado con bordes redondeados para la foto del producto.
+class _Thumbnail extends StatelessWidget {
+  const _Thumbnail({this.url});
+  final String? url;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final fullUrl = url != null ? '${AppConfig.apiBaseUrl}$url' : null;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(6),
+      child: SizedBox(
+        width: 44,
+        height: 44,
+        child: fullUrl != null
+            ? Image.network(
+                fullUrl,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => Container(
+                  color: cs.surfaceContainerHighest,
+                  child: Icon(Icons.broken_image, size: 20, color: cs.onSurfaceVariant),
+                ),
+                loadingBuilder: (ctx, child, progress) {
+                  if (progress == null) return child;
+                  return Container(
+                    color: cs.surfaceContainerHighest,
+                    child: const Center(
+                      child: SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    ),
+                  );
+                },
+              )
+            : Container(
+                color: cs.surfaceContainerHighest,
+                child: Icon(
+                  Icons.photo_library_outlined,
+                  size: 20,
+                  color: cs.onSurfaceVariant,
+                ),
+              ),
+      ),
+    );
+  }
+}
+
 class _FormPanel extends StatelessWidget {
   const _FormPanel({
+    super.key,
     required this.nombreController,
     required this.unidadLabelController,
     required this.precioController,
@@ -380,13 +517,19 @@ class _FormPanel extends StatelessWidget {
     required this.onUnidadChanged,
     required this.activo,
     required this.onActivoChanged,
+    required this.publicadoOnline,
+    required this.onPublicadoChanged,
     required this.modoNuevo,
     required this.validacion,
     required this.enviando,
     required this.errorMensaje,
     required this.onGuardar,
     required this.onBajar,
-    required this.productoId,
+    required this.onCancelar,
+    this.productoId,
+    this.fotoUrl,
+    required this.onFotoUpload,
+    required this.onFotoDelete,
   });
 
   final TextEditingController nombreController;
@@ -399,13 +542,19 @@ class _FormPanel extends StatelessWidget {
   final ValueChanged<String?> onUnidadChanged;
   final bool activo;
   final ValueChanged<bool> onActivoChanged;
+  final bool publicadoOnline;
+  final ValueChanged<bool> onPublicadoChanged;
   final bool modoNuevo;
   final String? validacion;
   final bool enviando;
   final String? errorMensaje;
   final VoidCallback onGuardar;
   final VoidCallback? onBajar;
+  final VoidCallback onCancelar;
   final String? productoId;
+  final String? fotoUrl;
+  final Future<void> Function(Uint8List bytes, String nombre, String mime) onFotoUpload;
+  final Future<void> Function() onFotoDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -456,9 +605,10 @@ class _FormPanel extends StatelessWidget {
                       labelText: 'Unidad',
                       border: OutlineInputBorder(),
                     ),
+                    isExpanded: true,
                     items: const [
                       DropdownMenuItem(value: 'kg', child: Text('kg')),
-                      DropdownMenuItem(value: 'un', child: Text('un')),
+                      DropdownMenuItem(value: 'bulto', child: Text('bulto')),
                     ],
                     onChanged: onUnidadChanged,
                   ),
@@ -469,7 +619,9 @@ class _FormPanel extends StatelessWidget {
             TextField(
               key: const Key('admin_producto_precio'),
               controller: precioController,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
               decoration: const InputDecoration(
                 labelText: 'Precio',
                 border: OutlineInputBorder(),
@@ -479,7 +631,9 @@ class _FormPanel extends StatelessWidget {
             TextField(
               key: const Key('admin_producto_minimo'),
               controller: minimoController,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
               decoration: const InputDecoration(
                 labelText: 'Stock mínimo',
                 border: OutlineInputBorder(),
@@ -500,7 +654,9 @@ class _FormPanel extends StatelessWidget {
               TextField(
                 key: const Key('admin_producto_inicial'),
                 controller: inicialController,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
                 decoration: const InputDecoration(
                   labelText: 'Stock inicial',
                   border: OutlineInputBorder(),
@@ -514,6 +670,26 @@ class _FormPanel extends StatelessWidget {
               value: activo,
               onChanged: onActivoChanged,
             ),
+            SwitchListTile(
+              key: const Key('admin_producto_publicado'),
+              title: const Text('Publicar en Mercado'),
+              subtitle: const Text(
+                'Requiere Presencia o Pro y el canal Mercado habilitado.',
+              ),
+              value: publicadoOnline,
+              onChanged: enviando ? null : onPublicadoChanged,
+            ),
+            if (!modoNuevo && productoId != null) ...[
+              const SizedBox(height: 12),
+              FotoProductoWidget(
+                key: const Key('admin_producto_foto'),
+                productoId: productoId,
+                fotoUrl: fotoUrl,
+                enabled: !enviando,
+                onUpload: onFotoUpload,
+                onDelete: onFotoDelete,
+              ),
+            ],
             if (error != null) ...[
               const SizedBox(height: 8),
               Text(
@@ -533,11 +709,8 @@ class _FormPanel extends StatelessWidget {
                   ),
                 const Spacer(),
                 TextButton(
-                  onPressed: enviando ? null : () {
-                    if (productoId != null) {
-                      onBajar?.call();
-                    }
-                  },
+                  key: const Key('admin_producto_cancelar'),
+                  onPressed: enviando ? null : onCancelar,
                   child: const Text('Cancelar'),
                 ),
                 const SizedBox(width: 8),

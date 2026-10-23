@@ -283,6 +283,7 @@ class TemaController extends Notifier<ThemeMode> {
 
   Future<void> cargar() async {
     final guardado = await TemaStore().leer();
+    if (!ref.mounted) return;
     if (guardado != null) state = guardado;
   }
 

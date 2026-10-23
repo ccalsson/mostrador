@@ -161,4 +161,61 @@ void main() {
       expect(u.activo, isTrue);
     });
   });
+
+  group('cambiarClave', () {
+    test('POST /usuarios/{id}/clave con password en el body', () async {
+      late http.Request visto;
+      final servicio = _servicio(MockClient((request) async {
+        visto = request;
+        return http.Response(
+          jsonEncode({'data': {'ok': true}}),
+          200,
+          headers: {'content-type': 'application/json; charset=utf-8'},
+        );
+      }));
+
+      await servicio.cambiarClave('u_42', password: 'nuevaClave123');
+
+      expect(visto.method, 'POST');
+      expect(visto.url.path, '/api/v1/usuarios/u_42/clave');
+      expect(visto.headers['authorization'], 'Bearer tok-1');
+      expect(jsonDecode(visto.body), {'password': 'nuevaClave123'});
+    });
+
+    test('400 → ValidationException (contraseña corta)', () async {
+      final servicio = _servicio(MockClient((_) async => http.Response(
+            jsonEncode({
+              'error': 'invalid_request',
+              'message': 'La contraseña necesita al menos 8 caracteres.',
+            }),
+            400,
+            headers: {'content-type': 'application/json; charset=utf-8'},
+          )));
+
+      await expectLater(
+        servicio.cambiarClave('u_1', password: 'corta'),
+        throwsA(isA<ValidationException>().having(
+          (e) => e.message,
+          'message',
+          contains('8 caracteres'),
+        )),
+      );
+    });
+
+    test('403 → ForbiddenException (no es admin)', () async {
+      final servicio = _servicio(MockClient((_) async => http.Response(
+            jsonEncode({
+              'error': 'forbidden',
+              'message': 'No tenés permiso para esta acción.',
+            }),
+            403,
+            headers: {'content-type': 'application/json; charset=utf-8'},
+          )));
+
+      await expectLater(
+        servicio.cambiarClave('u_1', password: 'nuevaClave123'),
+        throwsA(isA<ForbiddenException>()),
+      );
+    });
+  });
 }

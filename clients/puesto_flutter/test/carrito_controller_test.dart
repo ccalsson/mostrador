@@ -8,7 +8,10 @@ import 'package:puesto_flutter/models/cobro.dart';
 import 'package:puesto_flutter/models/pedido.dart';
 import 'package:puesto_flutter/models/producto.dart';
 import 'package:puesto_flutter/models/ticket.dart';
+import 'package:puesto_flutter/services/conectividad_service.dart';
+import 'package:puesto_flutter/services/offline_queue_service.dart';
 import 'package:puesto_flutter/services/pedidos_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class _PedidosFake implements PedidosService {
   final List<String> uuids = [];
@@ -64,6 +67,26 @@ class _PedidosFake implements PedidosService {
   Future<Ticket> ticket(String cobroId) async => throw UnimplementedError();
 }
 
+/// Fake de ConectividadService que siempre reporta conexión.
+class _ConectividadFake implements ConectividadService {
+  bool conectado = true;
+
+  @override
+  Future<bool> hayConexion() async => conectado;
+
+  @override
+  void iniciar() {}
+
+  @override
+  void dispose() {}
+
+  @override
+  void addListener(void Function(bool) listener) {}
+
+  @override
+  void removeListener(void Function(bool) listener) {}
+}
+
 Pedido _pedido({required String id, required String clientUuid}) => Pedido(
       id: id,
       clientUuid: clientUuid,
@@ -97,12 +120,21 @@ Producto _producto(String id, {double precio = 100, String nombre = 'Producto'})
 
 void main() {
   late _PedidosFake pedidos;
+  late _ConectividadFake conectividad;
   late ProviderContainer container;
 
-  setUp(() {
+  setUp(() async {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
     pedidos = _PedidosFake();
+    conectividad = _ConectividadFake();
     container = ProviderContainer(
-      overrides: [pedidosServiceProvider.overrideWithValue(pedidos)],
+      overrides: [
+        pedidosServiceProvider.overrideWithValue(pedidos),
+        conectividadServiceProvider.overrideWithValue(conectividad),
+        sharedPreferencesProvider.overrideWithValue(prefs),
+      ],
     );
   });
 
@@ -174,8 +206,8 @@ void main() {
     expect(pedidos.enviados.single.single.productoId, 'p1');
   });
 
-  test('un error deja el carrito intacto y conserva el clientUuid', () async {
-    pedidos.error = NetworkException();
+  test('un error de servidor deja el carrito intacto y conserva el clientUuid', () async {
+    pedidos.error = ServerException('Error del servidor');
     controlador().agregar(_producto('p1'));
     await controlador().confirmar();
     expect(carrito().envio, EnvioEstado.error);
@@ -184,14 +216,27 @@ void main() {
     expect(carrito().clientUuid, isNotNull);
   });
 
-  test('el reintento reenvía exactamente el mismo clientUuid', () async {
+  test('un error de red guarda offline y conserva el clientUuid', () async {
+    pedidos.error = NetworkException();
+    controlador().agregar(_producto('p1'));
+    await controlador().confirmar();
+    expect(carrito().envio, EnvioEstado.guardadoOffline);
+    expect(carrito().lineas.length, 1);
+    expect(carrito().clientUuid, isNotNull);
+  });
+
+  test('el reintento tras error de red reenvía el mismo clientUuid', () async {
     pedidos.error = NetworkException('sin red');
     controlador().agregar(_producto('p1'));
     await controlador().confirmar();
     final uuid = carrito().clientUuid;
+    expect(carrito().envio, EnvioEstado.guardadoOffline);
+    // La primera llamada intentó enviar y falló con NetworkException.
+    expect(pedidos.uuids.length, 1);
 
     pedidos.error = null;
     await controlador().confirmar();
+    // El segundo intento también envió a la API.
     expect(pedidos.uuids.length, 2);
     expect(pedidos.uuids[0], uuid);
     expect(pedidos.uuids[1], uuid);

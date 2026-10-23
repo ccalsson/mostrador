@@ -14,7 +14,7 @@ import '../auth/auth_controller.dart';
 final routerProvider = Provider<GoRouter>((ref) {
   final refresh = _RefrescoPorSesion(ref);
   ref.onDispose(refresh.dispose);
-  return GoRouter(
+  final router = GoRouter(
     initialLocation: '/session',
     refreshListenable: refresh,
     redirect: (context, state) {
@@ -31,8 +31,14 @@ final routerProvider = Provider<GoRouter>((ref) {
     },
     routes: [
       GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),
-      GoRoute(path: '/session', builder: (context, state) => const SessionScreen()),
-      GoRoute(path: '/vendedor', builder: (context, state) => const VendedorScreen()),
+      GoRoute(
+        path: '/session',
+        builder: (context, state) => const SessionScreen(),
+      ),
+      GoRoute(
+        path: '/vendedor',
+        builder: (context, state) => const VendedorScreen(),
+      ),
       GoRoute(
         path: '/vendedor/pedido/:id',
         builder: (context, state) =>
@@ -42,13 +48,15 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/admin', builder: (context, state) => const AdminScreen()),
     ],
   );
+  ref.onDispose(router.dispose);
+  return router;
 });
 
 String _rutaInicial(Rol rol) => switch (rol) {
-      Rol.vendedor => '/vendedor',
-      Rol.cajero => '/caja',
-      Rol.admin => '/admin',
-    };
+  Rol.vendedor => '/vendedor',
+  Rol.cajero => '/caja',
+  Rol.admin => '/admin',
+};
 
 /// Puente Riverpod → `refreshListenable` de go_router: re-evalúa el redirect
 /// cada vez que cambia el estado de sesión.

@@ -111,4 +111,22 @@ void main() {
     expect(visto.method, 'POST');
     expect(visto.url.path, '/api/v1/remitos/rem_99/confirmar');
   });
+
+  test('tomarCostosDeRemito: POST /remitos/:id/costos y retorna actualizados',
+      () async {
+    late http.Request visto;
+    final servicio = _servicio(MockClient((request) async {
+      visto = request;
+      return http.Response(
+        jsonEncode({'data': {'ok': true, 'actualizados': 3}}),
+        200,
+      );
+    }));
+
+    final cantidad = await servicio.tomarCostosDeRemito('rem_42');
+
+    expect(visto.method, 'POST');
+    expect(visto.url.path, '/api/v1/remitos/rem_42/costos');
+    expect(cantidad, 3);
+  });
 }

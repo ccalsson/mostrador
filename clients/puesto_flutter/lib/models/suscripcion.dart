@@ -98,6 +98,33 @@ class ContratoReferencia {
       );
 }
 
+/// Documento pendiente de aceptación individual (uso_app, addons_servicios,
+/// etc.). El backend anuncia cada uno con documentoId + version + hash para
+/// que el aceptar (A.4) envíe exactamente esos valores.
+class DocumentoPendiente {
+  const DocumentoPendiente({
+    required this.documentoId,
+    required this.version,
+    required this.hash,
+    this.titulo,
+  });
+
+  final String documentoId;
+  final int version;
+  final String hash;
+  final String? titulo;
+
+  bool get aceptable => documentoId.isNotEmpty && hash.isNotEmpty;
+
+  factory DocumentoPendiente.fromJson(Map<String, dynamic> json) =>
+      DocumentoPendiente(
+        documentoId: json['documentoId'] as String,
+        version: json['version'] as int,
+        hash: json['hash'] as String,
+        titulo: json['titulo'] as String?,
+      );
+}
+
 /// Versión pendiente de aceptación que anuncia A.1. El aceptar (A.4) envía
 /// exactamente documentoId + version + hash que el backend entregó.
 class PendienteAceptacion {
@@ -139,6 +166,7 @@ class SuscripcionResumen {
     this.condicionesComerciales,
     this.contratoVigente,
     required this.pendiente,
+    required this.pendientes,
   });
 
   final PlanSuscripcion plan;
@@ -152,6 +180,11 @@ class SuscripcionResumen {
   final CondicionesComerciales? condicionesComerciales;
   final ContratoReferencia? contratoVigente;
   final PendienteAceptacion pendiente;
+
+  /// Documentos pendientes de aceptación (uso_app, addons_servicios, etc.).
+  /// Cuando la lista no está vacía, la puerta legal bloquea el acceso hasta
+  /// que el usuario acepte todos.
+  final List<DocumentoPendiente> pendientes;
 
   /// A.1 anida plan/estado/fechas bajo `suscripcion`; el resto va al tope
   /// de `data`.
@@ -183,6 +216,8 @@ class SuscripcionResumen {
           ? const PendienteAceptacion(hayPendiente: false)
           : PendienteAceptacion.fromJson(
               (json['pendiente'] as Map).cast<String, dynamic>()),
+      pendientes: _lista(
+          json['pendientes'], DocumentoPendiente.fromJson),
     );
   }
 }

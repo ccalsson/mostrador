@@ -25,6 +25,7 @@ type ProductoRow = {
   unidad: Producto["unidad"];
   unidad_label: string;
   precio: unknown;
+  costo: unknown;
   moneda: unknown;
   stock: unknown;
   stock_minimo: unknown;
@@ -32,13 +33,14 @@ type ProductoRow = {
   activo: boolean;
   publicado_online?: unknown;
   orden?: unknown;
+  foto_url?: string | null;
 };
 
 /** Shared read model for the web client and the mobile API. */
 export async function listProductosForStaff(staff: Staff): Promise<Producto[]> {
   const sql = await getSql();
   const rows = await sql<ProductoRow>`
-    select id, nombre, unidad, unidad_label, precio, moneda, stock, stock_minimo, alias, activo, publicado_online, orden
+    select id, nombre, unidad, unidad_label, precio, costo, moneda, stock, stock_minimo, alias, activo, publicado_online, orden, foto_url
     from productos
     where tenant_id = ${staff.tenantId}
     order by orden nulls last, lower(nombre)
@@ -65,13 +67,13 @@ export async function syncCatalogoForStaff(
   if (since && version && version <= since) return { version, productos: [] };
   const rows = since
     ? await sql<ProductoRow>`
-        select id, nombre, unidad, unidad_label, precio, moneda, stock, stock_minimo, alias, activo, publicado_online, orden
+        select id, nombre, unidad, unidad_label, precio, costo, moneda, stock, stock_minimo, alias, activo, publicado_online, orden, foto_url
         from productos
         where tenant_id = ${staff.tenantId} and updated_at >= ${since}::timestamptz
         order by orden nulls last, lower(nombre)
       `
     : await sql<ProductoRow>`
-        select id, nombre, unidad, unidad_label, precio, moneda, stock, stock_minimo, alias, activo, publicado_online, orden
+        select id, nombre, unidad, unidad_label, precio, costo, moneda, stock, stock_minimo, alias, activo, publicado_online, orden, foto_url
         from productos
         where tenant_id = ${staff.tenantId}
         order by orden nulls last, lower(nombre)
@@ -89,7 +91,7 @@ export async function crearPedidoForStaff(staff: Staff, input: CrearPedidoInput)
   if (input.items.length === 0) throw new Error("El pedido no tiene productos.");
   const sql = await getSql();
   const rows = await sql<ProductoRow>`
-    select id, nombre, unidad, unidad_label, precio, moneda, stock, stock_minimo, alias, activo, publicado_online, orden
+    select id, nombre, unidad, unidad_label, precio, costo, moneda, stock, stock_minimo, alias, activo, publicado_online, orden, foto_url
     from productos
     where tenant_id = ${staff.tenantId}
   `;

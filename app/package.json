@@ -16,7 +16,7 @@
     "preview:stop": "node scripts/preview.mjs stop",
     "typecheck": "tsc --noEmit",
     "check:auth": "node scripts/check-auth-invariant.mjs",
-    "test": "node --test \"scripts/**/*.test.mjs\" && node --experimental-strip-types --test src/lib/app-data/app-data.test.ts src/lib/app-data/readiness-schedule.test.ts src/lib/auth/sign-in-gate.test.ts src/lib/seguridad/seguridad.test.ts src/lib/server/sucursales-reglas.test.ts src/lib/server/creativos-reglas.test.ts",
+    "test": "node --test \"scripts/**/*.test.mjs\" && node --experimental-strip-types --test src/lib/app-data/app-data.test.ts src/lib/app-data/readiness-schedule.test.ts src/lib/auth/sign-in-gate.test.ts src/lib/seguridad/seguridad.test.ts src/lib/server/sucursales-reglas.test.ts src/lib/server/creativos-reglas.test.ts src/lib/server/checklist.test.ts src/lib/server/productos.test.ts src/lib/server/file-validation.test.ts src/lib/server/reposicion.test.ts",
     "test:e2e": "node --test scripts/e2e-api-v1.mjs",
     "lint": "eslint .",
     "format": "prettier --write ."

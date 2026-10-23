@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { GROK_PROVIDERS, authClient, authEnabled, signIn } from "@/lib/auth/client";
+import { GROK_PROVIDERS, GOOGLE_PROVIDER, authClient, authEnabled, googleDirectEnabled, signIn } from "@/lib/auth/client";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { prepareDemo } from "@/lib/fn";
 import { Button } from "@/components/ui/button";
@@ -123,6 +123,15 @@ function Login() {
           </p>
           {authEnabled ? (
             <div className="mt-5 space-y-2 border-t border-line pt-5">
+              {googleDirectEnabled ? (
+                <Button
+                  variant="secondary"
+                  className="w-full"
+                  onClick={() => void signIn(GOOGLE_PROVIDER.providerId, { callbackURL: "/" })}
+                >
+                  Continuar con {GOOGLE_PROVIDER.label}
+                </Button>
+              ) : null}
               {GROK_PROVIDERS.map((p) => (
                 <Button
                   key={p.providerId}

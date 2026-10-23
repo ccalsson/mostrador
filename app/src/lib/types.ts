@@ -55,6 +55,8 @@ export type Producto = {
   unidad: Unidad;
   unidadLabel: string;
   precio: number;
+  costo: number | null;
+  margen: number | null;
   moneda: Moneda;
   stock: number;
   stockMinimo: number;
@@ -63,6 +65,7 @@ export type Producto = {
   publicadoOnline?: boolean;
   stockBajo: boolean;
   orden: number | null;
+  fotoUrl: string | null;
 };
 
 export type Cliente = {

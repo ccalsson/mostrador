@@ -329,6 +329,13 @@ async function handle(method: "GET" | "POST", request: Request, splat?: string) 
       confirmarReenviar ? 15 * 60 * 1000 : registro ? 60 * 60 * 1000 : ingreso ? 15 * 60 * 1000 : 60 * 1000,
     );
     if (!golpe.ok) return rechazarCupo(golpe.reintento);
+    if (method === "GET" && ruta === "auth/config") {
+      const siteKey = process.env.VITE_TURNSTILE_SITE_KEY?.trim() || process.env.TURNSTILE_SITE_KEY?.trim() || "";
+      return json({
+        siteKey,
+        registroDisponible: Boolean(siteKey && process.env.TURNSTILE_SECRET_KEY?.trim() && process.env.RESEND_API_KEY?.trim()),
+      });
+    }
     if (registro) {
       const data = await bodyOf(request);
       // Campo oculto: si viene con texto es un robot. Se finge el alta y no se crea nada.

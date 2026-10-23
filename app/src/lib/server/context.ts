@@ -86,6 +86,7 @@ export function mapProducto(r: {
   unidad: Producto["unidad"];
   unidad_label: string;
   precio: unknown;
+  costo?: unknown;
   moneda?: unknown;
   stock: unknown;
   stock_minimo: unknown;
@@ -93,17 +94,23 @@ export function mapProducto(r: {
   activo: boolean;
   publicado_online?: unknown;
   orden?: unknown;
+  foto_url?: string | null;
 }): Producto {
   const alias = parseAlias(r.alias);
   const stock = num(r.stock);
   const stockMinimo = num(r.stock_minimo);
   const moneda = (r.moneda === "ARS" ? "ARS" : "USD") as import("@/lib/server/moneda").Moneda;
+  const precio = num(r.precio);
+  const costo = r.costo == null ? null : num(r.costo);
+  const margen = calcularMargen(precio, costo);
   return {
     id: r.id,
     nombre: r.nombre,
     unidad: r.unidad,
     unidadLabel: r.unidad_label,
-    precio: num(r.precio),
+    precio,
+    costo,
+    margen,
     moneda,
     stock,
     stockMinimo,
@@ -112,7 +119,20 @@ export function mapProducto(r: {
     publicadoOnline: Boolean(r.publicado_online),
     stockBajo: stock <= stockMinimo,
     orden: r.orden == null ? null : num(r.orden),
+    fotoUrl: r.foto_url ?? null,
   };
+}
+
+/**
+ * Calcula el margen de ganancia en porcentaje.
+ * Si precio > 0 y costo > 0: margen = ((precio - costo) / precio) * 100
+ * Si no: margen = null
+ */
+export function calcularMargen(precio: number, costo: number | null): number | null {
+  if (precio > 0 && costo != null && costo > 0) {
+    return ((precio - costo) / precio) * 100;
+  }
+  return null;
 }
 
 function parseAlias(value: unknown): string[] {

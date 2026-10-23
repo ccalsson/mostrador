@@ -30,6 +30,26 @@ class RemitoDetallePane extends ConsumerWidget {
     }
   }
 
+  Future<void> _tomarCostos(BuildContext context, WidgetRef ref) async {
+    try {
+      final actualizados = await ref
+          .read(remitosServiceProvider)
+          .tomarCostosDeRemito(remitoId);
+      if (!context.mounted) return;
+      ref.invalidate(catalogoProvider); // Refresca costos en el catálogo
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Costos actualizados en $actualizados producto(s).'),
+        ),
+      );
+    } on ApiException catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message)),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final remitoAsync = ref.watch(remitoProvider(remitoId));
@@ -77,6 +97,12 @@ class RemitoDetallePane extends ConsumerWidget {
                             : null,
                         icon: const Icon(Icons.check),
                         label: const Text('Confirmar Ingreso'),
+                      ),
+                    if (remito.estado == 'confirmado')
+                      FilledButton.icon(
+                        onPressed: () => _tomarCostos(context, ref),
+                        icon: const Icon(Icons.attach_money),
+                        label: const Text('Tomar Costos'),
                       ),
                   ],
                 ),

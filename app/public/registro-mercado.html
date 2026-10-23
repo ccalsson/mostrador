@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><meta name="robots" content="noindex">
+<title>Crear cuenta · Mercado al Toque</title>
+<link rel="stylesheet" href="registro-mercado.css"><script src="registro-mercado.js" defer></script>
+</head>
+<body><main><a class="marca" href="https://mostrador-xi.vercel.app/apps/index.html">M / Mercado al Toque</a><p class="eyebrow">TU CUENTA, PASO A PASO</p><h1>Empezá por acá.</h1><p>Creá tu cuenta, confirmá el correo y volvé a la app para ingresar. La verificación se realiza en este navegador.</p>
+<p id="estado" role="status" aria-live="polite">Comprobando disponibilidad del registro…</p>
+<form id="registro" hidden>
+<label>Perfil<select name="perfil"><option value="comprador">Comprador</option><option value="cargador">Cargador</option></select></label>
+<label>Nombre<input name="nombre" autocomplete="name" maxlength="120" required></label>
+<label>Correo electrónico<input type="email" name="email" autocomplete="email" maxlength="254" required></label>
+<label>Contraseña<input type="password" name="password" autocomplete="new-password" minlength="8" maxlength="128" required></label>
+<label>Teléfono<input name="telefono" type="tel" autocomplete="tel" maxlength="40" required></label>
+<fieldset id="comprador"><legend>Identificación del comprador</legend><label>País<select name="pais"><option value="AR">Argentina</option><option value="PY">Paraguay</option></select></label><label><span id="documento-label">Número de DNI</span><input name="numeroDocumento" maxlength="40" required></label></fieldset>
+<div id="captcha"></div><button type="submit" disabled>Crear cuenta</button>
+</form>
+<form id="reenvio" hidden><p>¿No recibiste el correo? Revisá spam o pedí un nuevo enlace.</p><button type="submit" class="secundario">Reenviar confirmación</button></form>
+<p class="nota">No envíes fotos de documentos, contraseñas ni comprobantes por correo de soporte.</p>
+<nav aria-label="Información legal"><a href="https://mostrador-xi.vercel.app/apps/privacidad.html?app=mercado">Privacidad</a><a href="https://mostrador-xi.vercel.app/apps/condiciones.html?app=mercado">Condiciones</a><a href="https://mostrador-xi.vercel.app/apps/eliminar-cuenta.html?app=mercado">Eliminar cuenta</a></nav>
+</main></body></html>
