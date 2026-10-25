@@ -206,13 +206,13 @@ async function asegurarCuentaDePrueba() {
   if (!userId) {
     userId = await insertCredentialUser(email, PRUEBA_PASSWORD, "Claudio Calsson");
   } else {
-    const hash = await hashPassword(PRUEBA_PASSWORD);
     const account = await sql<{ id: string }>`
       select id from account where "userId" = ${userId} and "providerId" = ${"credential"} limit 1
     `;
-    if (account[0]) {
-      await sql`update account set password = ${hash}, "updatedAt" = now() where id = ${account[0].id}`;
-    } else {
+    // Reescribir la clave acá revierte cualquier recuperación del usuario en cada
+    // arranque en frío; sólo se crea la cuenta cuando falta.
+    if (!account[0]) {
+      const hash = await hashPassword(PRUEBA_PASSWORD);
       const accId = newId("acc").replace("acc_", "");
       const now = new Date().toISOString();
       await sql`
