@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { listApps, listClients, listExpenses, listPayments, listSubscriptions, saveExpense, savePayment } from "@/lib/torre-fn";
 import { listLineas } from "@/lib/torre/control-fn";
 import { numerosDeNegocios } from "@/lib/torre/numeros-fn";
+import { usoMaterialesYa, type LecturaMaterialesYa } from "@/lib/torre/materiales-ya-fn";
 import { money } from "@/lib/money";
 
 export const Route = createFileRoute("/torre/finanzas")({ component: Page });
@@ -52,6 +53,10 @@ function Page() {
   const numeros = useQuery({
     queryKey: ["torre-numeros", mes, anio],
     queryFn: () => numerosDeNegocios({ data: { mes, anio } }),
+  });
+  const materialesYa = useQuery({
+    queryKey: ["torre-materiales-ya"],
+    queryFn: () => usoMaterialesYa(),
   });
   const [pago, setPago] = useState(false);
   const [gasto, setGasto] = useState(false);
@@ -158,6 +163,18 @@ function Page() {
           filas={numeros.data ?? []}
           loading={numeros.isLoading}
         />
+      </section>
+      <section className="mt-6">
+        <h2 className="mb-2 font-medium">Materiales Ya</h2>
+        <p className="mb-3 text-sm text-muted">
+          Uso del corralón, leído por HTTP de servidor a servidor. No sigue el mes elegido arriba: la
+          app siempre devuelve su mes en curso.
+        </p>
+        {materialesYa.isPending ? (
+          <p className="text-sm text-muted">Cargando…</p>
+        ) : (
+          <MaterialesYaPanel lectura={materialesYa.data} />
+        )}
       </section>
     </TorreShell>
   );
@@ -362,6 +379,38 @@ function NumerosTabla({ filas, loading }: { filas: NumeroFila[]; loading: boolea
           </tr>
         </tfoot>
       </table>
+    </div>
+  );
+}
+
+function MaterialesYaPanel({ lectura }: { lectura: LecturaMaterialesYa | undefined }) {
+  if (!lectura) return <p className="text-sm text-muted">Cargando…</p>;
+  if (!lectura.disponible) return <p className="text-sm text-muted">{lectura.motivo}</p>;
+  const { uso } = lectura;
+  return (
+    <>
+      <p className="mb-2 text-xs text-muted">Mes del corralón: {uso.mes}</p>
+      <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+        <Kpi label="Ventas del mes" value={money(uso.ventas)} hint="pesos" />
+        <Kpi label="Tickets del mes" value={String(uso.tickets)} />
+        <Kpi label="Operadores" value={String(uso.operadores)} hint="cajeros que vendieron" />
+        <Kpi label="Clientes con venta" value={String(uso.clientes_con_venta)} />
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-2 lg:grid-cols-3">
+        <Kpi label="Cajas abiertas" value={String(uso.cajas_abiertas)} hint="turnos sin cerrar" />
+        <Kpi label="Sucursales" value={String(uso.sucursales)} />
+        <Kpi label="Moneda" value={uso.moneda} hint="enteros de pesos" />
+      </div>
+    </>
+  );
+}
+
+function Kpi({ label, value, hint }: { label: string; value: string; hint?: string }) {
+  return (
+    <div className="rounded-lg border border-line bg-surface p-3">
+      <p className="text-xs text-muted">{label}</p>
+      <p className="mt-1 font-display text-xl font-semibold tabular-nums">{value}</p>
+      {hint ? <p className="mt-1 text-xs text-muted">{hint}</p> : null}
     </div>
   );
 }

@@ -3,6 +3,18 @@ import { getSql } from "@/lib/db";
 import { num } from "@/lib/money";
 import { requireTorre, torreGuard } from "@/lib/torre-fn";
 
+// Una fila por negocio/sucursal de la tabla "Numeros por negocio" de Finanzas.
+export type NumeroFila = {
+  negocio: string;
+  sucursal: string;
+  esMatriz: boolean;
+  ventas: number;
+  tickets: number;
+  egresos: number;
+  mercaderia: number;
+  resultado: number;
+};
+
 export const numerosDeNegocios = createServerFn({ method: "GET" })
   .middleware([torreGuard])
   .validator((input: { mes?: number; anio?: number } | undefined) => {
@@ -63,7 +75,7 @@ export const numerosDeNegocios = createServerFn({ method: "GET" })
       where st.status = 'active' and st.operational_tenant_ref is not null
       order by st.name, s.es_matriz desc nulls first, sucursal
     `;
-    return rows.map((row) => {
+    const filas: NumeroFila[] = rows.map((row) => {
       const ventas = num(row.ventas);
       const egresos = num(row.egresos);
       return {
@@ -77,4 +89,6 @@ export const numerosDeNegocios = createServerFn({ method: "GET" })
         resultado: Math.round((ventas - egresos) * 100) / 100,
       };
     });
+
+    return filas;
   });

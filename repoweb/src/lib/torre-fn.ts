@@ -259,6 +259,10 @@ export const saveApp = createServerFn({ method: "POST" })
         )
       `;
     }
+    await auditar(email, data.id ? "editar_app" : "crear_app", "app", id, {
+      slug: data.slug.trim(),
+      productionUrl: data.productionUrl.trim() || null,
+    });
     return { id };
   });
 
