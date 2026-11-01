@@ -21,10 +21,12 @@ function frase(item: PendienteCentral) {
 export function PuertaLegal({
   modo,
   token,
+  onSalir,
   children,
 }: {
   modo: "mostrador" | "mercado";
   token?: string;
+  onSalir?: () => void;
   children: ReactNode;
 }) {
   const [online, setOnline] = useState(true);
@@ -66,7 +68,12 @@ export function PuertaLegal({
     setError(null);
     try {
       for (const item of pendientes) {
-        await aceptarContrato(modo, item.id, token);
+        try {
+          await aceptarContrato(modo, item.id, token);
+        } catch (err) {
+          if (err instanceof CentralClientError && err.code === "already_accepted") continue;
+          throw err;
+        }
       }
       setMarcas({});
       await cargar();
@@ -85,6 +92,11 @@ export function PuertaLegal({
         {children}
         <p className="text-sm text-terra">{error}</p>
         <Button onClick={() => void cargar()}>Reintentar</Button>
+        {onSalir ? (
+          <Button variant="ghost" className="w-full" onClick={onSalir}>
+            Salir
+          </Button>
+        ) : null}
       </div>
     );
   }
@@ -123,6 +135,11 @@ export function PuertaLegal({
       <Button className="w-full" disabled={!online || !listos || ocupado || pendientes.some((item) => !item.body)} onClick={() => void empezar()}>
         {ocupado ? "Guardando…" : "Empezar"}
       </Button>
+      {onSalir ? (
+        <Button variant="ghost" className="w-full" onClick={onSalir}>
+          Salir
+        </Button>
+      ) : null}
     </div>
   );
 }

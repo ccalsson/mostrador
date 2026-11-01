@@ -25,7 +25,15 @@ export function apareceEnMercado(publicado: boolean, tier: "presencia" | "pro" |
   return publicado && tier != null;
 }
 
-/** El catálogo dice que la cuenta corriente viene con Pro, no con Presencia. */
+/** Cada Presencia, Pro o Premium habilita una localidad en Mercado, no todas las sucursales. */
+export function cupoMercado(lineas: LineaMercado[]) {
+  return lineas.filter(
+    (linea) =>
+      linea.family === "mercado" &&
+      linea.lineStatus === "active" &&
+      SUSCRIPCION_VIGENTE.has(linea.subscriptionStatus),
+  ).length;
+}
 export function permiteCuentaCorriente(tier: "presencia" | "pro" | null) {
   return tier === "pro";
 }

@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { AppShell } from "@/components/app-shell";
 import { listAuditoria } from "@/lib/fn";
+import { planDelPuesto } from "@/lib/plan-puesto";
 import { cn } from "@/lib/cn";
 import { clock, dayLabel, money } from "@/lib/money";
 import { PAGO_LABEL, type FormaPago } from "@/lib/types";
@@ -45,12 +46,21 @@ function mostrar(clave: string, value: unknown) {
 }
 
 function AuditoriaPage() {
-  const rows = useQuery({ queryKey: ["auditoria"], queryFn: () => listAuditoria() });
+  const plan = useQuery({ queryKey: ["plan-puesto"], queryFn: () => planDelPuesto() });
+  const rows = useQuery({
+    queryKey: ["auditoria"],
+    queryFn: () => listAuditoria(),
+    enabled: plan.data?.premium === true,
+  });
   const [abierto, setAbierto] = useState<string | null>(null);
   return (
     <AppShell title="Auditoría">
       <div className="max-w-2xl">
-        {rows.isPending ? (
+        {plan.data && !plan.data.premium ? (
+          <p className="rounded-lg border border-line bg-surface px-4 py-6 text-sm text-muted">
+            La auditoría es del plan Premium.
+          </p>
+        ) : rows.isPending ? (
           <p className="text-sm text-muted">Cargando…</p>
         ) : (rows.data ?? []).length === 0 ? (
           <p className="rounded-lg border border-line bg-surface px-4 py-6 text-sm text-muted">

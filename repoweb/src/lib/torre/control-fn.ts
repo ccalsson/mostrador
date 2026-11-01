@@ -18,7 +18,8 @@ import {
 import { exigirAccion } from "@/lib/torre/roles";
 import { cobroDeAddon, seOfrece } from "@/lib/torre/addon-reglas";
 import { invalidarLineas } from "@/lib/torre/presencia";
-import { getSql } from "@/lib/db";
+import { getSql, withTransaction } from "@/lib/db";
+import { planParaProducto, sincronizarPlan } from "@/lib/torre/alta-negocio";
 import { newId } from "@/lib/ids";
 import { num } from "@/lib/money";
 import { requireTorre, torreGuard } from "@/lib/torre-fn";
@@ -177,7 +178,8 @@ async function resincronizarSucursales(sql: Awaited<ReturnType<typeof getSql>>, 
     from torre.saas_subscription_lines l
     join torre.saas_subscriptions s on s.id = l.subscription_id
     join torre.saas_products p on p.id = l.product_id
-    where s.tenant_id = ${tenantId}
+    where s.tenant_id = ${tenantId} and s.status in ('active','past_due') and l.charge='recurring'
+      and s.start_date<=current_date and l.starts_on<=current_date and (l.ends_on is null or l.ends_on>=current_date)
   `;
   const allowance = incluidasPorBase(
     bases.map((row) => ({
@@ -247,10 +249,7 @@ async function resincronizarSucursales(sql: Awaited<ReturnType<typeof getSql>>, 
   return { extras, allowance };
 }
 
-export const listProducts = createServerFn({ method: "GET" })
-  .middleware([torreGuard])
-  .handler(async ({ context }) => {
-    await requireTorre(context.userId);
+export async function listProductsCore(_email: string) {
     const sql = await getSql();
     const rows = await sql<ProductRow>`
       select id, name, slug, description, kind, app_id, billing, frequency,
@@ -264,31 +263,36 @@ export const listProducts = createServerFn({ method: "GET" })
       const { config: _config, ...rest } = product;
       return rest;
     });
+}
+
+export const listProducts = createServerFn({ method: "GET" })
+  .middleware([torreGuard])
+  .handler(async ({ context }) => {
+    const email = await requireTorre(context.userId);
+    return listProductsCore(email);
   });
 
-export const saveProduct = createServerFn({ method: "POST" })
-  .middleware([torreGuard])
-  .validator((input: {
-    id?: string;
-    name: string;
-    slug: string;
-    description: string;
-    kind: string;
-    appId: string;
-    billing: string;
-    frequency: string;
-    setupUsd: string;
-    setupArs: string;
-    recurringUsd: string;
-    recurringArs: string;
-    onceUsd: string;
-    onceArs: string;
-    unitLabel: string;
-    config: string;
-    status: string;
-  }) => input)
-  .handler(async ({ context, data }) => {
-    const email = await requireTorre(context.userId);
+type SaveProductInput = {
+  id?: string;
+  name: string;
+  slug: string;
+  description: string;
+  kind: string;
+  appId: string;
+  billing: string;
+  frequency: string;
+  setupUsd: string;
+  setupArs: string;
+  recurringUsd: string;
+  recurringArs: string;
+  onceUsd: string;
+  onceArs: string;
+  unitLabel: string;
+  config: string;
+  status: string;
+};
+
+export async function saveProductCore(email: string, data: SaveProductInput) {
     await exigirAccion(email, "comercial");
     if (!data.name.trim() || !data.slug.trim()) throw new Error("Nombre y slug son obligatorios.");
     if (!KINDS.includes(data.kind as (typeof KINDS)[number])) throw new Error("Tipo inválido.");
@@ -345,24 +349,34 @@ export const saveProduct = createServerFn({ method: "POST" })
     }
     await auditar(email, data.id ? "editar_producto" : "crear_producto", "product", id, { slug: data.slug, kind: data.kind });
     return { id };
+}
+
+export const saveProduct = createServerFn({ method: "POST" })
+  .middleware([torreGuard])
+  .validator((input: SaveProductInput) => input)
+  .handler(async ({ context, data }) => {
+    const email = await requireTorre(context.userId);
+    return saveProductCore(email, data);
   });
 
-export const listFx = createServerFn({ method: "GET" })
-  .middleware([torreGuard])
-  .handler(async ({ context }) => {
-    await requireTorre(context.userId);
+export async function listFxCore(_email: string) {
     const sql = await getSql();
     const rows = await sql<{ id: string; source: string; as_of: unknown; usd_ars: unknown }>`
       select id, source, as_of, usd_ars from torre.saas_fx_rates order by as_of desc, created_at desc
     `;
     return rows.map((row) => ({ id: row.id, source: row.source, asOf: day(row.as_of), usdArs: num(row.usd_ars) }));
+}
+
+export const listFx = createServerFn({ method: "GET" })
+  .middleware([torreGuard])
+  .handler(async ({ context }) => {
+    const email = await requireTorre(context.userId);
+    return listFxCore(email);
   });
 
-export const saveFx = createServerFn({ method: "POST" })
-  .middleware([torreGuard])
-  .validator((input: { source: string; asOf: string; usdArs: number }) => input)
-  .handler(async ({ context, data }) => {
-    const email = await requireTorre(context.userId);
+type SaveFxInput = { source: string; asOf: string; usdArs: number };
+
+export async function saveFxCore(email: string, data: SaveFxInput) {
     await exigirAccion(email, "comercial");
     if (!data.source.trim() || !data.asOf || !(data.usdArs > 0)) throw new Error("Completá fuente, fecha y valor.");
     const sql = await getSql();
@@ -373,20 +387,30 @@ export const saveFx = createServerFn({ method: "POST" })
     `;
     await auditar(email, "actualizar_tipo_cambio", "fx_rate", id, { source: data.source, usdArs: data.usdArs, asOf: data.asOf });
     return { id };
+}
+
+export const saveFx = createServerFn({ method: "POST" })
+  .middleware([torreGuard])
+  .validator((input: SaveFxInput) => input)
+  .handler(async ({ context, data }) => {
+    const email = await requireTorre(context.userId);
+    return saveFxCore(email, data);
   });
+
+export async function leerMedioPagoCore(_email: string) {
+    return contextoCobro();
+}
 
 export const leerMedioPago = createServerFn({ method: "GET" })
   .middleware([torreGuard])
   .handler(async ({ context }) => {
-    await requireTorre(context.userId);
-    return contextoCobro();
+    const email = await requireTorre(context.userId);
+    return leerMedioPagoCore(email);
   });
 
-export const guardarMedioPago = createServerFn({ method: "POST" })
-  .middleware([torreGuard])
-  .validator((input: { alias: string; cbu: string }) => input)
-  .handler(async ({ context, data }) => {
-    const email = await requireTorre(context.userId);
+type GuardarMedioPagoInput = { alias: string; cbu: string };
+
+export async function guardarMedioPagoCore(email: string, data: GuardarMedioPagoInput) {
     await exigirAccion(email, "comercial");
     const alias = data.alias.trim().slice(0, 50);
     const cbu = data.cbu.replace(/\s/g, "");
@@ -399,12 +423,17 @@ export const guardarMedioPago = createServerFn({ method: "POST" })
     `;
     await auditar(email, "actualizar_medio_pago", "medio_pago", "transferencia", { alias, cbu: cbu ? "cargado" : "vacio" });
     return { alias, cbu };
+}
+
+export const guardarMedioPago = createServerFn({ method: "POST" })
+  .middleware([torreGuard])
+  .validator((input: GuardarMedioPagoInput) => input)
+  .handler(async ({ context, data }) => {
+    const email = await requireTorre(context.userId);
+    return guardarMedioPagoCore(email, data);
   });
 
-export const listBranches = createServerFn({ method: "GET" })
-  .middleware([torreGuard])
-  .handler(async ({ context }) => {
-    await requireTorre(context.userId);
+export async function listBranchesCore(_email: string) {
     const sql = await getSql();
     const rows = await sql<{
       id: string;
@@ -436,13 +465,18 @@ export const listBranches = createServerFn({ method: "GET" })
       openedOn: day(row.opened_on),
       closedOn: row.closed_on ? day(row.closed_on) : "",
     }));
+}
+
+export const listBranches = createServerFn({ method: "GET" })
+  .middleware([torreGuard])
+  .handler(async ({ context }) => {
+    const email = await requireTorre(context.userId);
+    return listBranchesCore(email);
   });
 
-export const saveBranch = createServerFn({ method: "POST" })
-  .middleware([torreGuard])
-  .validator((input: { id?: string; tenantId: string; name: string; slug: string; address: string }) => input)
-  .handler(async ({ context, data }) => {
-    const email = await requireTorre(context.userId);
+type SaveBranchInput = { id?: string; tenantId: string; name: string; slug: string; address: string };
+
+export async function saveBranchCore(email: string, data: SaveBranchInput) {
     await exigirAccion(email, "comercial");
     if (!data.tenantId || !data.name.trim() || !data.slug.trim()) throw new Error("Completá tenant, nombre y slug.");
     const sql = await getSql();
@@ -462,13 +496,19 @@ export const saveBranch = createServerFn({ method: "POST" })
     const sync = await resincronizarSucursales(sql, data.tenantId, email);
     await auditar(email, data.id ? "editar_sucursal" : "alta_sucursal", "branch", id, { tenantId: data.tenantId, ...sync });
     return { id, ...sync };
-  });
+}
 
-export const setBranchStatus = createServerFn({ method: "POST" })
+export const saveBranch = createServerFn({ method: "POST" })
   .middleware([torreGuard])
-  .validator((input: { id: string; status: "active" | "inactive" }) => input)
+  .validator((input: SaveBranchInput) => input)
   .handler(async ({ context, data }) => {
     const email = await requireTorre(context.userId);
+    return saveBranchCore(email, data);
+  });
+
+type SetBranchStatusInput = { id: string; status: "active" | "inactive" };
+
+export async function setBranchStatusCore(email: string, data: SetBranchStatusInput) {
     await exigirAccion(email, "comercial");
     const sql = await getSql();
     const rows = await sql<{ tenant_id: string }>`select tenant_id from torre.saas_branches where id = ${data.id} limit 1`;
@@ -483,13 +523,17 @@ export const setBranchStatus = createServerFn({ method: "POST" })
     const sync = await resincronizarSucursales(sql, rows[0].tenant_id, email);
     await auditar(email, data.status === "active" ? "activar_sucursal" : "desactivar_sucursal", "branch", data.id, sync);
     return { ok: true, ...sync };
+}
+
+export const setBranchStatus = createServerFn({ method: "POST" })
+  .middleware([torreGuard])
+  .validator((input: SetBranchStatusInput) => input)
+  .handler(async ({ context, data }) => {
+    const email = await requireTorre(context.userId);
+    return setBranchStatusCore(email, data);
   });
 
-export const serviciosDeTenant = createServerFn({ method: "GET" })
-  .middleware([torreGuard])
-  .validator((tenantId: string) => tenantId)
-  .handler(async ({ context, data: tenantId }) => {
-    await requireTorre(context.userId);
+export async function serviciosDeTenantCore(email: string, tenantId: string) {
     const sql = await getSql();
     const lines = await sql<{
       id: string;
@@ -581,6 +625,14 @@ export const serviciosDeTenant = createServerFn({ method: "GET" })
       monthly: totalMensual(mapped),
       monthlyDue,
     };
+}
+
+export const serviciosDeTenant = createServerFn({ method: "GET" })
+  .middleware([torreGuard])
+  .validator((tenantId: string) => tenantId)
+  .handler(async ({ context, data: tenantId }) => {
+    const email = await requireTorre(context.userId);
+    return serviciosDeTenantCore(email, tenantId);
   });
 
 type ContratarInput = {
@@ -598,6 +650,23 @@ export async function contratarEn(email: string, data: ContratarInput) {
     const sql = await getSql();
     const product = await leerProducto(sql, data.productId);
     if (!product || product.status !== "active") throw new Error("Ese producto no está activo.");
+    const planId=await planParaProducto(sql,product);
+    if (planId) {
+      const today=new Date().toISOString().slice(0,10);
+      if (data.start && data.start!==today) throw new Error("El cambio de plan se aplica hoy. Los servicios adicionales pueden tener otra fecha.");
+      if (data.quantity!==1) throw new Error("Cada negocio contrata una unidad de su plan.");
+      const result=await withTransaction(async(tx)=>{
+        const tenant=(await tx<{app_id:string;client_id:string}>`select app_id,client_id from torre.saas_tenants where id=${data.tenantId} for update`)[0];
+        if (!tenant) throw new Error("No está ese negocio.");
+        const contract=await sincronizarPlan(tx,data.tenantId,planId,tenant.app_id,tenant.client_id,email,data.currency);
+        const line=(await tx<{id:string}>`select id from torre.saas_subscription_lines where subscription_id=${contract.subscriptionId} and product_id=${product.id} and status='active' and charge='recurring' limit 1`)[0];
+        return {id:line.id};
+      });
+      invalidarLineas();
+      const adjustments=await materializarAjustes(data.tenantId);
+      const services=await sql<{currency:string;subtotal:unknown;frequency:string;charge:string;status:string}>`select l.currency,l.subtotal,l.frequency,l.charge,l.status from torre.saas_subscription_lines l join torre.saas_subscriptions s on s.id=l.subscription_id where s.tenant_id=${data.tenantId}`;
+      return {...result,monthly:totalMensual(services.map(line=>({...line,subtotal:num(line.subtotal)}))),adjustments:adjustments.inserted};
+    }
     if (product.kind === "branch") {
       throw new Error("La sucursal extra se suma al crear una sucursal. La primera no se factura.");
     }
@@ -850,10 +919,7 @@ export async function contratarDesdePuesto(
   };
 }
 
-export const pedidosAddon = createServerFn({ method: "GET" })
-  .middleware([torreGuard])
-  .handler(async ({ context }) => {
-    await requireTorre(context.userId);
+export async function pedidosAddonCore(_email: string) {
     const sql = await getSql();
     const rows = await sql<{
       id: string;
@@ -889,23 +955,34 @@ export const pedidosAddon = createServerFn({ method: "GET" })
       tieneComprobante: row.tiene_comprobante,
       at: row.created_at,
     }));
+}
+
+export const pedidosAddon = createServerFn({ method: "GET" })
+  .middleware([torreGuard])
+  .handler(async ({ context }) => {
+    const email = await requireTorre(context.userId);
+    return pedidosAddonCore(email);
   });
 
-export const comprobantePago = createServerFn({ method: "POST" })
-  .middleware([torreGuard])
-  .validator((id: string) => id)
-  .handler(async ({ context, data }) => {
-    await requireTorre(context.userId);
+export async function comprobantePagoCore(email: string, id: string) {
     const sql = await getSql();
     const rows = await sql<{ comprobante_nombre: string | null; comprobante_data: string | null }>`
       select comprobante_nombre, comprobante_data
       from torre.saas_payments
-      where id = ${data} and status = 'pending'
+      where id = ${id} and status = 'pending'
       limit 1
     `;
     const row = rows[0];
     if (!row?.comprobante_data?.startsWith("data:")) throw new Error("Ese pedido no tiene comprobante.");
     return { nombre: row.comprobante_nombre ?? "comprobante", data: row.comprobante_data };
+}
+
+export const comprobantePago = createServerFn({ method: "POST" })
+  .middleware([torreGuard])
+  .validator((id: string) => id)
+  .handler(async ({ context, data }) => {
+    const email = await requireTorre(context.userId);
+    return comprobantePagoCore(email, data);
   });
 
 export async function habilitarPedido(email: string, paymentId: string) {
@@ -940,7 +1017,10 @@ export async function habilitarPedido(email: string, paymentId: string) {
   `;
   await sql`
     update torre.saas_payments
-    set line_id = ${creado.id}, subscription_id = ${line[0]?.subscription_id ?? null}
+    set line_id = ${creado.id},
+        subscription_id = ${line[0]?.subscription_id ?? null},
+        status = 'paid',
+        payment_date = current_date
     where id = ${pago.id} and line_id is null
   `;
   await auditar(email, "habilitar_addon", "payment", pago.id, { lineId: creado.id, kind: pago.kind });
@@ -965,15 +1045,13 @@ export const contratarProducto = createServerFn({ method: "POST" })
     return contratarEn(email, data);
   });
 
-export const reemplazarProducto = createServerFn({ method: "POST" })
-  .middleware([torreGuard])
-  .validator((input: { lineId: string; productId: string; currency: "USD" | "ARS" }) => input)
-  .handler(async ({ context, data }) => {
-    const email = await requireTorre(context.userId);
+type ReemplazarProductoInput = { lineId: string; productId: string; currency: "USD" | "ARS" };
+
+export async function reemplazarProductoCore(email: string, data: ReemplazarProductoInput) {
     await exigirAccion(email, "comercial");
     const sql = await getSql();
-    const current = await sql<{ tenant_id: string; slug: string }>`
-      select s.tenant_id, p.slug
+    const current = await sql<{ tenant_id: string; slug: string; notes:string }>`
+      select s.tenant_id, p.slug,l.notes
       from torre.saas_subscription_lines l
       join torre.saas_subscriptions s on s.id = l.subscription_id
       join torre.saas_products p on p.id = l.product_id
@@ -981,6 +1059,11 @@ export const reemplazarProducto = createServerFn({ method: "POST" })
       limit 1
     `;
     if (!current[0]) throw new Error("Esa línea no está activa.");
+    if (current[0].notes.startsWith('alta-plan:')) {
+      const product=await leerProducto(sql,data.productId);
+      if (!product || !(await planParaProducto(sql,product))) throw new Error("La línea principal debe reemplazarse por otro plan.");
+      return contratarEn(email,{tenantId:current[0].tenant_id,productId:data.productId,currency:data.currency,quantity:1,start:new Date().toISOString().slice(0,10),notes:'Cambio de plan',contentRef:''});
+    }
     const hoy = new Date().toISOString().slice(0, 10);
     const freezes = await sql<{ status: string; starts_on: unknown; ends_on: unknown }>`
       select status, starts_on, ends_on
@@ -1014,12 +1097,17 @@ export const reemplazarProducto = createServerFn({ method: "POST" })
       productId: data.productId,
     });
     return created;
+}
+
+export const reemplazarProducto = createServerFn({ method: "POST" })
+  .middleware([torreGuard])
+  .validator((input: ReemplazarProductoInput) => input)
+  .handler(async ({ context, data }) => {
+    const email = await requireTorre(context.userId);
+    return reemplazarProductoCore(email, data);
   });
 
-export const listAds = createServerFn({ method: "GET" })
-  .middleware([torreGuard])
-  .handler(async ({ context }) => {
-    await requireTorre(context.userId);
+export async function listAdsCore(_email: string) {
     const sql = await getSql();
     const rows = await sql<{
       id: string;
@@ -1054,13 +1142,18 @@ export const listAds = createServerFn({ method: "GET" })
       contentRef: row.content_ref,
       notes: row.notes,
     }));
+}
+
+export const listAds = createServerFn({ method: "GET" })
+  .middleware([torreGuard])
+  .handler(async ({ context }) => {
+    const email = await requireTorre(context.userId);
+    return listAdsCore(email);
   });
 
-export const setAdStatus = createServerFn({ method: "POST" })
-  .middleware([torreGuard])
-  .validator((input: { id: string; status: string }) => input)
-  .handler(async ({ context, data }) => {
-    const email = await requireTorre(context.userId);
+type SetAdStatusInput = { id: string; status: string };
+
+export async function setAdStatusCore(email: string, data: SetAdStatusInput) {
     await exigirAccion(email, "comercial");
     const allowed = ["draft", "pending_payment", "scheduled", "active", "expired", "cancelled"];
     if (!allowed.includes(data.status)) throw new Error("Estado inválido.");
@@ -1068,12 +1161,17 @@ export const setAdStatus = createServerFn({ method: "POST" })
     await sql`update torre.saas_ads set status = ${data.status}, updated_at = now() where id = ${data.id}`;
     await auditar(email, "estado_publicidad", "ad", data.id, { status: data.status });
     return { ok: true };
+}
+
+export const setAdStatus = createServerFn({ method: "POST" })
+  .middleware([torreGuard])
+  .validator((input: SetAdStatusInput) => input)
+  .handler(async ({ context, data }) => {
+    const email = await requireTorre(context.userId);
+    return setAdStatusCore(email, data);
   });
 
-export const listPacks = createServerFn({ method: "GET" })
-  .middleware([torreGuard])
-  .handler(async ({ context }) => {
-    await requireTorre(context.userId);
+export async function listPacksCore(_email: string) {
     const sql = await getSql();
     const rows = await sql<{
       id: string;
@@ -1102,13 +1200,18 @@ export const listPacks = createServerFn({ method: "GET" })
       expiresOn: row.expires_on ? day(row.expires_on) : "",
       status: row.status,
     }));
+}
+
+export const listPacks = createServerFn({ method: "GET" })
+  .middleware([torreGuard])
+  .handler(async ({ context }) => {
+    const email = await requireTorre(context.userId);
+    return listPacksCore(email);
   });
 
-export const registrarConsumo = createServerFn({ method: "POST" })
-  .middleware([torreGuard])
-  .validator((input: { id: string; amount: number }) => input)
-  .handler(async ({ context, data }) => {
-    const email = await requireTorre(context.userId);
+type RegistrarConsumoInput = { id: string; amount: number };
+
+export async function registrarConsumoCore(email: string, data: RegistrarConsumoInput) {
     await exigirAccion(email, "comercial");
     if (!(data.amount > 0)) throw new Error("El consumo tiene que ser mayor a cero.");
     const sql = await getSql();
@@ -1126,18 +1229,24 @@ export const registrarConsumo = createServerFn({ method: "POST" })
     `;
     await auditar(email, "consumo_mensajeria", "message_pack", data.id, { amount: data.amount, consumed });
     return { consumed, remaining: pack.quantity - consumed };
-  });
+}
 
-export const publicarRelease = createServerFn({ method: "POST" })
+export const registrarConsumo = createServerFn({ method: "POST" })
   .middleware([torreGuard])
-  .validator((input: {
-    versionId: string;
-    scope: "all" | "tenant" | "branch" | "beta";
-    tenantId: string;
-    branchId: string;
-  }) => input)
+  .validator((input: RegistrarConsumoInput) => input)
   .handler(async ({ context, data }) => {
     const email = await requireTorre(context.userId);
+    return registrarConsumoCore(email, data);
+  });
+
+type PublicarReleaseInput = {
+  versionId: string;
+  scope: "all" | "tenant" | "branch" | "beta";
+  tenantId: string;
+  branchId: string;
+};
+
+export async function publicarReleaseCore(email: string, data: PublicarReleaseInput) {
     await exigirAccion(email, "comercial");
     if (data.scope === "tenant" || data.scope === "beta") {
       if (!data.tenantId) throw new Error("Elegí el tenant.");
@@ -1194,13 +1303,17 @@ export const publicarRelease = createServerFn({ method: "POST" })
         ? "El hook de deploy respondió. La versión quedó publicada en Torre."
         : `Publicado en Torre. ${note}`,
     };
+}
+
+export const publicarRelease = createServerFn({ method: "POST" })
+  .middleware([torreGuard])
+  .validator((input: PublicarReleaseInput) => input)
+  .handler(async ({ context, data }) => {
+    const email = await requireTorre(context.userId);
+    return publicarReleaseCore(email, data);
   });
 
-export const recomendarAnterior = createServerFn({ method: "POST" })
-  .middleware([torreGuard])
-  .validator((versionId: string) => versionId)
-  .handler(async ({ context, data: versionId }) => {
-    const email = await requireTorre(context.userId);
+export async function recomendarAnteriorCore(email: string, versionId: string) {
     await exigirAccion(email, "comercial");
     const sql = await getSql();
     const rows = await sql<{ app_id: string; platform: string; version: string }>`
@@ -1227,12 +1340,17 @@ export const recomendarAnterior = createServerFn({ method: "POST" })
       infrastructureConfirmed: false,
       message: "El manifest vuelve a recomendar la versión anterior. La infraestructura no hizo rollback.",
     };
+}
+
+export const recomendarAnterior = createServerFn({ method: "POST" })
+  .middleware([torreGuard])
+  .validator((versionId: string) => versionId)
+  .handler(async ({ context, data: versionId }) => {
+    const email = await requireTorre(context.userId);
+    return recomendarAnteriorCore(email, versionId);
   });
 
-export const listTargets = createServerFn({ method: "GET" })
-  .middleware([torreGuard])
-  .handler(async ({ context }) => {
-    await requireTorre(context.userId);
+export async function listTargetsCore(_email: string) {
     const sql = await getSql();
     const rows = await sql<{
       id: string;
@@ -1265,12 +1383,16 @@ export const listTargets = createServerFn({ method: "GET" })
       branchName: row.branch_name ?? "",
       status: row.status,
     }));
-  });
+}
 
-export const resumenComercial = createServerFn({ method: "GET" })
+export const listTargets = createServerFn({ method: "GET" })
   .middleware([torreGuard])
   .handler(async ({ context }) => {
-    await requireTorre(context.userId);
+    const email = await requireTorre(context.userId);
+    return listTargetsCore(email);
+  });
+
+export async function resumenComercialCore(_email: string) {
     const sql = await getSql();
     const lines = await sql<{ currency: string; subtotal: unknown; frequency: string; charge: string; status: string }>`
       select currency, subtotal, frequency, charge, status from torre.saas_subscription_lines
@@ -1363,12 +1485,16 @@ export const resumenComercial = createServerFn({ method: "GET" })
       packs: counts[0]?.packs ?? 0,
       alertas,
     };
-  });
+}
 
-export const listAudit = createServerFn({ method: "GET" })
+export const resumenComercial = createServerFn({ method: "GET" })
   .middleware([torreGuard])
   .handler(async ({ context }) => {
-    await requireTorre(context.userId);
+    const email = await requireTorre(context.userId);
+    return resumenComercialCore(email);
+  });
+
+export async function listAuditCore(_email: string) {
     const sql = await getSql();
     const rows = await sql<{ actor_email: string; action: string; entity: string; entity_id: string; created_at: string; metadata: unknown }>`
       select actor_email, action, entity, entity_id, created_at::text as created_at, metadata
@@ -1384,12 +1510,16 @@ export const listAudit = createServerFn({ method: "GET" })
       at: row.created_at.slice(0, 16).replace("T", " "),
       metadata: JSON.stringify(configOf(row.metadata)),
     }));
-  });
+}
 
-export const listLineas = createServerFn({ method: "GET" })
+export const listAudit = createServerFn({ method: "GET" })
   .middleware([torreGuard])
   .handler(async ({ context }) => {
-    await requireTorre(context.userId);
+    const email = await requireTorre(context.userId);
+    return listAuditCore(email);
+  });
+
+export async function listLineasCore(_email: string) {
     const sql = await getSql();
     const rows = await sql<{
       id: string;
@@ -1422,6 +1552,13 @@ export const listLineas = createServerFn({ method: "GET" })
       status: row.status,
       subscriptionId: row.subscription_id,
     }));
+}
+
+export const listLineas = createServerFn({ method: "GET" })
+  .middleware([torreGuard])
+  .handler(async ({ context }) => {
+    const email = await requireTorre(context.userId);
+    return listLineasCore(email);
   });
 
 export async function manifestPara(appSlug: string, platform: string, audience: { tenantId?: string; branchId?: string; current?: string }) {

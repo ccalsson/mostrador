@@ -137,7 +137,7 @@ function Forma({
       <SelectField label="Cliente" value={form.clientId} onChange={(clientId) => setForm({ ...form, clientId })} options={clientes} />
       <SelectField label="Tenant" value={form.tenantId} onChange={(tenantId) => setForm({ ...form, tenantId })} options={tenants} />
       <SelectField label="Plan" value={form.planId} onChange={(planId) => setForm({ ...form, planId })} options={planes} />
-      <Field label="Precio mensual" value={form.monthlyPrice} onChange={(monthlyPrice) => setForm({ ...form, monthlyPrice })} type="number" />
+      <p className="mt-2 text-xs text-muted">El abono se toma del catálogo al contratar el plan. Guardar sin cambiar el plan conserva el precio contratado; los descuentos y ajustes se administran en Servicios.</p>
       <Field label="Inicio" value={form.startDate} onChange={(startDate) => setForm({ ...form, startDate })} type="date" />
       <Field label="Próximo pago" value={form.nextPaymentDate} onChange={(nextPaymentDate) => setForm({ ...form, nextPaymentDate })} type="date" />
       <SelectField label="Estado" value={form.status} onChange={(status) => setForm({ ...form, status })} options={[{ value: "pending", label: "Pendiente" }, { value: "active", label: "Activa" }, { value: "past_due", label: "Vencida" }, { value: "paused", label: "Pausada" }, { value: "suspended", label: "Suspendida" }, { value: "cancelled", label: "Cancelada" }]} />

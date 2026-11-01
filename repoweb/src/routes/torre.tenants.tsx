@@ -13,6 +13,7 @@ export const Route = createFileRoute("/torre/tenants")({ component: Page });
 const VACIO = {
   appId: "",
   clientId: "",
+  clientName: "",
   name: "",
   slug: "",
   status: "active",
@@ -21,6 +22,7 @@ const VACIO = {
   operationalTenantRef: "",
   ownerEmail: "",
   ownerPassword: "",
+  direccion: "",
 };
 
 function Page() {
@@ -40,6 +42,7 @@ function Page() {
     ? {
         appId: actual.appId,
         clientId: actual.clientId,
+        clientName: "",
         name: actual.name,
         slug: actual.slug,
         status: actual.status,
@@ -48,16 +51,17 @@ function Page() {
         operationalTenantRef: actual.operationalTenantRef,
         ownerEmail: "",
         ownerPassword: "",
+        direccion: "",
       }
-    : { ...VACIO, appId: apps.data?.[0]?.id ?? "", clientId: clientes.data?.[0]?.id ?? "" };
+    : { ...VACIO, appId: apps.data?.find((a) => a.slug === "mostrador")?.id ?? "" };
 
   return (
     <TorreShell title="Tenants">
-      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
-        <div>
+      <div className="grid min-w-0 grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
+        <div className="min-w-0">
           <div className="flex gap-2">
-            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filtrar" />
-            <Button size="sm" onClick={() => setSel("nuevo")}>Nuevo</Button>
+            <Input className="min-w-0 flex-1" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filtrar" />
+            <Button className="shrink-0" size="sm" onClick={() => setSel("nuevo")}>Nuevo</Button>
           </div>
           <div className="mt-3 overflow-x-auto rounded-lg border border-line bg-surface">
             <table className="w-full min-w-[720px] text-left text-sm">
@@ -92,18 +96,22 @@ function Page() {
             key={actual?.id ?? "nuevo"}
             inicial={base}
             apps={(apps.data ?? []).map((a) => ({ value: a.id, label: a.name }))}
-            clientes={(clientes.data ?? []).map((c) => ({ value: c.id, label: c.name }))}
-            planes={[{ value: "", label: "Sin plan" }, ...(planes.data ?? []).map((p) => ({ value: p.id, label: p.name }))]}
+            clientes={[{value:"",label:"Crear cliente nuevo"},...(clientes.data ?? []).filter(c=>c.status==='active' || c.id===actual?.clientId).map((c) => ({ value: c.id, label: c.name }))]}
+            planes={[{ value: "", label: "Elegí un plan" }, ...(planes.data ?? []).filter(p=>p.status==='active' || p.id===actual?.planId).map((p) => ({ value: p.id, label: p.name }))]}
             onClose={() => setSel(null)}
             onOff={actual ? async () => {
               await desactivarTenant({ data: actual.id });
               toast.success("Tenant desactivado");
               await qc.invalidateQueries({ queryKey: ["torre-tenants"] });
+              await qc.invalidateQueries({ queryKey: ["torre-clientes"] });
+              await qc.invalidateQueries({ queryKey: ["torre-subs"] });
             } : undefined}
             onSave={async (data) => {
               await saveTenant({ data: actual ? { ...data, id: actual.id } : data });
               toast.success("Tenant guardado");
               await qc.invalidateQueries({ queryKey: ["torre-tenants"] });
+              await qc.invalidateQueries({ queryKey: ["torre-clientes"] });
+              await qc.invalidateQueries({ queryKey: ["torre-subs"] });
               setSel(null);
             }}
           />
@@ -137,14 +145,16 @@ function Forma({
       <div className="flex justify-between"><h2 className="font-medium">Ficha</h2><button type="button" className="text-xs text-muted" onClick={onClose}>Cerrar</button></div>
       <SelectField label="Aplicación" value={form.appId} onChange={(appId) => setForm({ ...form, appId })} options={apps} />
       <SelectField label="Cliente" value={form.clientId} onChange={(clientId) => setForm({ ...form, clientId })} options={clientes} />
+      {!onOff && !form.clientId ? <Field label="Nombre del cliente (si es distinto del negocio)" value={form.clientName} onChange={(clientName)=>setForm({...form,clientName})}/> : null}
       <Field label="Nombre" value={form.name} onChange={(name) => setForm({ ...form, name })} />
       <Field label="Slug" value={form.slug} onChange={(slug) => setForm({ ...form, slug })} />
       <SelectField label="Plan" value={form.planId} onChange={(planId) => setForm({ ...form, planId })} options={planes} />
       <SelectField label="Estado" value={form.status} onChange={(status) => setForm({ ...form, status })} options={[{ value: "active", label: "Activo" }, { value: "inactive", label: "Inactivo" }]} />
-      <Field label="Versión instalada" value={form.installedVersion} onChange={(installedVersion) => setForm({ ...form, installedVersion })} />
-      <Field label="Referencia operativa" value={form.operationalTenantRef} onChange={(operationalTenantRef) => setForm({ ...form, operationalTenantRef })} />
+      <p className="mt-2 text-xs text-muted">Al guardar se vinculan el cliente, el negocio, su suscripción y el plan elegido. Las herramientas y los cupos se aplican en web, Windows y Android. El precio de un abono ya contratado se conserva hasta cambiar de plan.</p>
       {!onOff ? (
         <>
+          <Field label="Dirección o mercado del puesto" value={form.direccion} onChange={(direccion) => setForm({ ...form, direccion })} />
+          <p className="mt-1 text-xs text-muted">La escribís vos. No sale de una lista. Con eso el puesto arma el QR y el comprador queda vinculado a ese mostrador.</p>
           <Field label="Mail del dueño" value={form.ownerEmail} onChange={(ownerEmail) => setForm({ ...form, ownerEmail })} />
           <label className="mt-2 block text-xs text-muted">
             Contraseña del dueño
@@ -155,7 +165,7 @@ function Forma({
       ) : (
         <p className="mt-1 text-xs text-muted">La contraseña del puesto la cambia el dueño, no Torre.</p>
       )}
-      <Button type="submit" className="mt-3 w-full" disabled={busy}>Guardar</Button>
+      <Button type="submit" className="mt-3 w-full" disabled={busy || !form.planId}>{busy ? "Guardando…" : onOff ? "Guardar negocio y plan" : "Crear negocio y acceso"}</Button>
       {onOff ? (
         <Button type="button" variant="secondary" className="mt-2 w-full" onClick={() => void onOff().catch((err: Error) => toast.error(err.message))}>
           Desactivar

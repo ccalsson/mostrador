@@ -39,6 +39,7 @@ export type Tenant = {
   bajada: string;
   membrete: string;
   pieTicket: string;
+  direccion: string;
 };
 
 export type Marca = Tenant & { fondo: string | null };
@@ -49,8 +50,8 @@ export type Producto = {
   unidad: Unidad;
   unidadLabel: string;
   precio: number;
-  /** La columna `productos.moneda`. Undefined cuando la consulta no la trajo. */
-  moneda?: Moneda;
+  costo: number | null;
+  margenPct: number | null;
   stock: number;
   stockMinimo: number;
   alias: string[];
@@ -58,11 +59,7 @@ export type Producto = {
   publicadoOnline?: boolean;
   stockBajo: boolean;
   orden: number | null;
-  fotoUrl?: string | null;
-  /** Costo unitario del producto (de remitos o carga manual). Null si no se cargó. */
-  costo?: number | null;
-  /** Margen porcentual: ((precio - costo) / precio) * 100. Null si no hay costo. */
-  margen?: number | null;
+  tieneFoto?: boolean;
 };
 
 export type Cliente = {
@@ -87,8 +84,6 @@ export type PedidoItem = {
   unidad: Unidad;
   unidadLabel: string;
   subtotal: number;
-  cantidadEntregada: number;
-  notaEntrega: string | null;
 };
 
 export type Pedido = {

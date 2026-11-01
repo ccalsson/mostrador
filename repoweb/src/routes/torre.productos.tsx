@@ -67,8 +67,16 @@ function catalogo(
 
 function pista(configJson: string) {
   try {
-    const cfg = JSON.parse(configJson) as { family?: string; placement?: string; percentMin?: number; percentMax?: number; sends?: number };
-    return [cfg.family, cfg.placement, cfg.sends ? `${cfg.sends} envíos` : "", cfg.percentMin != null ? `${cfg.percentMin}–${cfg.percentMax ?? cfg.percentMin}%` : ""].filter(Boolean).join(" · ");
+    const cfg = JSON.parse(configJson) as Record<string, unknown>;
+    return [
+      cfg.family,
+      cfg.tier,
+      cfg.placement,
+      cfg.sends ? `${cfg.sends} envíos` : "",
+      cfg.credits ? `${cfg.credits} créditos` : "",
+      cfg.days ? `${cfg.days} días` : "",
+      cfg.percentMin != null ? `${cfg.percentMin}–${cfg.percentMax ?? cfg.percentMin}%` : "",
+    ].filter(Boolean).join(" · ");
   } catch {
     return "";
   }
@@ -179,9 +187,128 @@ function Forma({
       <Field label="Único USD" value={form.onceUsd} onChange={set("onceUsd")} />
       <Field label="Único ARS" value={form.onceArs} onChange={set("onceArs")} />
       <Field label="Unidad" value={form.unitLabel} onChange={set("unitLabel")} />
-      <Field label="Configuración JSON" value={form.config} onChange={set("config")} />
+      <ConfigClicks kind={form.kind} value={form.config} onChange={set("config")} />
       <SelectField label="Estado" value={form.status} onChange={set("status")} options={[{ value: "active", label: "Activo" }, { value: "archived", label: "Archivado" }]} />
       <Button type="submit" className="mt-3 w-full" disabled={busy}>Guardar</Button>
     </form>
+  );
+}
+
+const CLAVES = ["family", "tier", "plan", "placement", "replaces", "billedAs", "sends", "credits", "days", "includedBranches", "extraBranches", "percentMin", "percentMax"] as const;
+const TEXTO = new Set(["family", "tier", "plan", "placement", "replaces", "billedAs"]);
+
+function partirConfig(raw: string) {
+  let obj: Record<string, unknown> = {};
+  try {
+    const parsed = JSON.parse(raw || "{}") as unknown;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) obj = parsed as Record<string, unknown>;
+  } catch {
+    obj = {};
+  }
+  const campos: Record<string, string> = {};
+  for (const clave of CLAVES) campos[clave] = obj[clave] == null ? "" : String(obj[clave]);
+  const extras: Record<string, unknown> = {};
+  for (const [clave, valor] of Object.entries(obj)) {
+    if (!(CLAVES as readonly string[]).includes(clave)) extras[clave] = valor;
+  }
+  return { campos, extras };
+}
+
+function juntarConfig(campos: Record<string, string>, extras: Record<string, unknown>) {
+  const out: Record<string, unknown> = { ...extras };
+  for (const clave of CLAVES) {
+    const valor = campos[clave]?.trim() ?? "";
+    if (!valor) continue;
+    if (TEXTO.has(clave)) out[clave] = valor;
+    else if (Number.isFinite(Number(valor))) out[clave] = Number(valor);
+  }
+  return JSON.stringify(out);
+}
+
+function conActual(opciones: { value: string; label: string }[], actual: string) {
+  if (!actual || opciones.some((item) => item.value === actual)) return opciones;
+  return [...opciones, { value: actual, label: actual }];
+}
+
+function ConfigClicks({ kind, value, onChange }: { kind: string; value: string; onChange: (value: string) => void }) {
+  const { campos, extras } = partirConfig(value);
+  const set = (clave: string, valor: string) => onChange(juntarConfig({ ...campos, [clave]: valor }, extras));
+  const ver = (claves: string[], kinds: string[]) => kinds.includes(kind) || claves.some((clave) => campos[clave]);
+  const familias = conActual(
+    [
+      { value: "", label: "Sin familia" },
+      { value: "mostrador", label: "Mostrador" },
+      { value: "mercado", label: "Mercado" },
+      { value: "ads", label: "Publicidad" },
+      { value: "messaging", label: "Mensajería" },
+      { value: "creativos", label: "Créditos" },
+      { value: "commission", label: "Comisión" },
+      { value: "servicio", label: "Servicio" },
+      { value: "free", label: "Sin cargo" },
+    ],
+    campos.family,
+  );
+  return (
+    <div className="mt-3 space-y-1 border-t border-line pt-2">
+      <p className="text-sm font-medium">Qué hace este producto</p>
+      <SelectField label="Familia" value={campos.family} onChange={(valor) => set("family", valor)} options={familias} />
+      {campos.family === "mercado" || campos.tier || campos.plan || campos.replaces ? (
+        <>
+          <SelectField
+            label="Nivel"
+            value={campos.tier}
+            onChange={(valor) => set("tier", valor)}
+            options={conActual(
+              [
+                { value: "", label: "Sin nivel" },
+                { value: "presencia", label: "Presencia" },
+                { value: "pro", label: "Pro" },
+              ],
+              campos.tier,
+            )}
+          />
+          <Field label="Plan interno" value={campos.plan} onChange={(valor) => set("plan", valor)} />
+          <Field label="Reemplaza al slug" value={campos.replaces} onChange={(valor) => set("replaces", valor)} />
+        </>
+      ) : null}
+      {ver(["placement", "days"], ["advertising"]) || campos.family === "ads" ? (
+        <>
+          <SelectField
+            label="Dónde se muestra"
+            value={campos.placement}
+            onChange={(valor) => set("placement", valor)}
+            options={conActual(
+              [
+                { value: "", label: "Elegir" },
+                { value: "home", label: "Portada" },
+                { value: "category", label: "Categoría" },
+                { value: "search", label: "Búsqueda" },
+              ],
+              campos.placement,
+            )}
+          />
+          <Field label="Días" value={campos.days} onChange={(valor) => set("days", valor)} type="number" />
+        </>
+      ) : null}
+      {ver(["sends"], ["messaging"]) || campos.family === "messaging" ? (
+        <Field label="Envíos del pack" value={campos.sends} onChange={(valor) => set("sends", valor)} type="number" />
+      ) : null}
+      {campos.family === "creativos" || campos.credits ? (
+        <Field label="Créditos que suma al habilitar" value={campos.credits} onChange={(valor) => set("credits", valor)} type="number" />
+      ) : null}
+      {ver(["percentMin", "percentMax"], ["commission"]) ? (
+        <>
+          <Field label="Comisión mínima %" value={campos.percentMin} onChange={(valor) => set("percentMin", valor)} type="number" />
+          <Field label="Comisión máxima %" value={campos.percentMax} onChange={(valor) => set("percentMax", valor)} type="number" />
+        </>
+      ) : null}
+      {ver(["includedBranches", "extraBranches", "billedAs"], ["base_product", "branch"]) ? (
+        <>
+          <Field label="Sucursales incluidas" value={campos.includedBranches} onChange={(valor) => set("includedBranches", valor)} type="number" />
+          <Field label="Sucursales extra" value={campos.extraBranches} onChange={(valor) => set("extraBranches", valor)} type="number" />
+          <Field label="Se factura como" value={campos.billedAs} onChange={(valor) => set("billedAs", valor)} />
+        </>
+      ) : null}
+    </div>
   );
 }

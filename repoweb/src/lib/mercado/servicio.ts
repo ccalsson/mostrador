@@ -4,15 +4,14 @@ import { auth } from "@/lib/auth/server";
 import { getSql, withTransaction, type Sql } from "@/lib/db";
 import { newId } from "@/lib/ids";
 import { num } from "@/lib/money";
-import { getCotizacion, monedaDeFila, precioEnArs } from "@/lib/moneda";
 import { reservarLineas, soltarReserva } from "@/lib/server/stock";
 import { createCredentialUser, ensureBootstrapped, PRUEBA_EMAIL } from "@/lib/server/bootstrap";
 import { pedirConfirmacion } from "@/lib/seguridad/confirmar";
 import { claveAceptable, correoAceptable } from "@/lib/seguridad/correo";
 import { cupoFirme } from "@/lib/seguridad/cupo-db";
-import { permiteCuentaCorriente, tierContratado } from "@/lib/torre/condiciones";
+import { permiteCuentaCorriente } from "@/lib/torre/condiciones";
 import { estrellasValidas, perfilCargador, puedeCruzar } from "@/lib/mercado/cruces";
-import { bannersPublicados, lineasPorPuesto, puedeAparecer, sincronizarPresenciaPublicada } from "@/lib/torre/presencia";
+import { bannersPublicados, localidadesPublicadas, sincronizarPresenciaPublicada } from "@/lib/torre/presencia";
 import {
   calcularScore,
   claveDePedido,
@@ -87,8 +86,9 @@ async function compradorDe(userId: string) {
     documento_ref: string | null;
     selfie_ref: string | null;
     foto_id: string | null;
+    puesto_id: string | null;
   }>`
-    select id, nombre, telefono, pais, tipo_documento, numero_documento, identidad_estado, documento_ref, selfie_ref, foto_id
+    select id, nombre, telefono, pais, tipo_documento, numero_documento, identidad_estado, documento_ref, selfie_ref, foto_id, puesto_id
     from mercado_compradores where user_id = ${userId} limit 1
   `;
   return rows[0] ?? null;
@@ -147,7 +147,8 @@ async function publicoComprador(
     documentoRef: row.documento_ref,
     selfieRef: row.selfie_ref,
     tieneFoto: Boolean(row.foto_id),
-    foto: null,
+    foto: await fotoDataUrl(row.foto_id),
+    puestoId: row.puesto_id,
   };
 }
 
@@ -155,6 +156,29 @@ async function emailDe(userId: string) {
   const db = await sql();
   const rows = await db<{ email: string }>`select email from "user" where id = ${userId} limit 1`;
   return rows[0]?.email ?? "";
+}
+
+async function puestoReal(puestoId: string | undefined) {
+  const id = puestoId?.trim() ?? "";
+  if (!id) return null;
+  const db = await sql();
+  const rows = await db<{ id: string }>`select id from tenants where id = ${id} limit 1`;
+  return rows[0]?.id ?? null;
+}
+
+export async function vincularPuesto(userId: string, puestoId: string) {
+  const puesto = await puestoReal(puestoId);
+  if (!puesto) throw new MercadoError("Ese puesto no existe.");
+  const db = await sql();
+  await db`
+    update mercado_compradores
+    set puesto_id = ${puesto}
+    where user_id = ${userId} and puesto_id is null
+  `;
+  const rows = await db<{ puesto_id: string | null }>`
+    select puesto_id from mercado_compradores where user_id = ${userId} limit 1
+  `;
+  return { puestoId: rows[0]?.puesto_id ?? null };
 }
 
 export async function registrarComprador(input: {
@@ -165,6 +189,7 @@ export async function registrarComprador(input: {
   pais: string;
   tipoDocumento: string;
   numeroDocumento: string;
+  puestoId?: string;
 }) {
   const correo = correoAceptable(input.email);
   if (!correo.ok) throw new MercadoError(correo.motivo);
@@ -183,13 +208,14 @@ export async function registrarComprador(input: {
   if (staff[0]) throw new MercadoError("Ese correo es del puesto. Usá otro.");
   const userId = await createCredentialUser(email, input.password, nombre, false);
   const id = newId("mc");
+  const puesto = await puestoReal(input.puestoId);
   await db`
     insert into mercado_compradores (
-      id, user_id, pais, tipo_documento, numero_documento, nombre, telefono, identidad_estado
+      id, user_id, pais, tipo_documento, numero_documento, nombre, telefono, identidad_estado, puesto_id
     ) values (
       ${id}, ${userId}, ${conDocumento ? input.pais : null}, ${conDocumento ? input.tipoDocumento : null},
       ${conDocumento ? numero : null},
-      ${nombre}, ${input.telefono.trim() || null}, ${"pendiente"}
+      ${nombre}, ${input.telefono.trim() || null}, ${"pendiente"}, ${puesto}
     )
   `;
   const confirmacion = await pedirConfirmacion(email);
@@ -320,7 +346,7 @@ async function resumenCargador(userId: string) {
     nivel: row.nivel,
     score: num(row.score),
     tieneFoto: Boolean(row.foto_id),
-    foto: null,
+    foto: await fotoDataUrl(row.foto_id),
     recorridosAceptados: metricas?.recorridos_aceptados ?? 0,
     recorridosCompletados: metricas?.recorridos_completados ?? 0,
     cancelaciones: metricas?.cancelaciones ?? 0,
@@ -396,6 +422,7 @@ export async function volverDeGoogle(request: Request) {
       values (${newId("cg")}, ${user.id}, ${user.name || "Cargador"})
     `;
   }
+  await tomarDatosGoogle(user, perfil).catch(() => undefined);
   const token = await emitirSesion(user.id, perfil);
   if (url.searchParams.get("destino") === "web") {
     return Response.redirect(`${url.origin}/mercado?token=${encodeURIComponent(token)}`, 302);
@@ -406,13 +433,97 @@ export async function volverDeGoogle(request: Request) {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Mercado al Toque</title>
-<body style="font-family:sans-serif;background:#F5F6F8;color:#1F2937;padding:32px">
+<body style="font-family:sans-serif;background:#F3EDE1;color:#1C1917;padding:32px">
 <p>Listo. Volvé a la app.</p>
-<p><a href="${destino}" style="display:inline-block;background:#263449;color:#F2F5F9;padding:12px 16px;text-decoration:none">Abrir Mercado al Toque</a></p>
+<p><a href="${destino}" style="display:inline-block;background:#1B5E3B;color:#F3EDE1;padding:12px 16px;text-decoration:none">Abrir Mercado al Toque</a></p>
 <script>location.replace(${JSON.stringify(destino)})</script>
 </body>`;
   return new Response(html, {
     headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
+  });
+}
+
+function hostDeGoogle(valor: string) {
+  try {
+    const url = new URL(valor);
+    return url.protocol === "https:" && (url.hostname.endsWith("googleusercontent.com") || url.hostname.endsWith("ggpht.com"));
+  } catch {
+    return false;
+  }
+}
+
+async function tomarDatosGoogle(user: { id: string; name?: string | null; image?: string | null }, perfil: Perfil) {
+  const db = await sql();
+  const nombre = (user.name || "").trim().slice(0, 80);
+  let fotoId: string | null = null;
+  if (user.image && hostDeGoogle(user.image)) {
+    const respuesta = await fetch(user.image, { signal: AbortSignal.timeout(8000) });
+    const tipo = respuesta.headers.get("content-type") ?? "";
+    if (respuesta.ok && tipo.startsWith("image/")) {
+      const bytes = Buffer.from(await respuesta.arrayBuffer());
+      if (bytes.length > 0 && bytes.length < 800_000) {
+        fotoId = newId("foto");
+        const mime = tipo.includes("png") ? "image/png" : tipo.includes("webp") ? "image/webp" : "image/jpeg";
+        await db.query(
+          `insert into mercado_fotos (id, mime, contenido) values ($1, $2, decode($3, 'base64'))`,
+          [fotoId, mime, bytes.toString("base64")],
+        );
+      }
+    }
+  }
+  if (perfil === "comprador") {
+    await db`
+      update mercado_compradores
+      set nombre = case when ${nombre} <> '' then ${nombre} else nombre end,
+          foto_id = coalesce(${fotoId}, foto_id)
+      where user_id = ${user.id}
+    `;
+  } else {
+    await db`
+      update mercado_cargadores
+      set nombre = case when ${nombre} <> '' then ${nombre} else nombre end,
+          foto_id = coalesce(${fotoId}, foto_id)
+      where user_id = ${user.id}
+    `;
+  }
+}
+
+export async function fotoDeProducto(request: Request, id: string) {
+  const db = await sql();
+  const rows = await db<{
+    tenant_id: string;
+    publicado: boolean;
+    mime: string;
+    contenido: Buffer | Uint8Array | string;
+  }>`
+    select p.tenant_id, p.publicado_online as publicado, f.mime, f.contenido
+    from productos p
+    join producto_fotos f on f.id = p.foto_id
+    where p.id = ${id} and p.activo = true
+    limit 1
+  `;
+  const row = rows[0];
+  if (!row) return new Response(null, { status: 404 });
+  if (!row.publicado) {
+    const session = await auth.api.getSession({ headers: request.headers });
+    const userId = session?.user?.id;
+    if (!userId) return new Response(null, { status: 404 });
+    const staff = await db<{ tenant_id: string }>`
+      select tenant_id from staff where user_id = ${userId} and activo = true limit 1
+    `;
+    if (staff[0]?.tenant_id !== row.tenant_id) return new Response(null, { status: 404 });
+  }
+  const crudo = row.contenido;
+  const buf = Buffer.isBuffer(crudo)
+    ? crudo
+    : typeof crudo === "string"
+      ? Buffer.from(crudo.replace(/^\\x/, ""), "hex")
+      : Buffer.from(crudo);
+  return new Response(new Uint8Array(buf), {
+    headers: {
+      "content-type": row.mime || "image/jpeg",
+      "cache-control": "private, max-age=300",
+    },
   });
 }
 
@@ -465,12 +576,12 @@ export async function avisos() {
 export async function puestos(userId: string) {
   await sincronizarPresenciaPublicada();
   const db = await sql();
-  const mapa = await lineasPorPuesto();
   const cuentas = await db<{ tenant_id: string }>`
     select tenant_id from clientes
     where user_id = ${userId} and activo = true and cuenta_corriente = true
   `;
   const conCuenta = new Set(cuentas.map((row) => row.tenant_id));
+  const publicadas = await localidadesPublicadas();
   const rows = await db<{ id: string; nombre: string; config: unknown }>`
     select id, nombre, config from tenants
     where coalesce(config, '{}'::jsonb)->>'mercadoAlToque' = 'true'
@@ -478,7 +589,7 @@ export async function puestos(userId: string) {
   `;
   return {
     puestos: rows.flatMap((row) => {
-      const tier = tierContratado(mapa.get(row.id) ?? []);
+      const tier = publicadas.get(row.id);
       if (!tier) return [];
       const config = (typeof row.config === "string" ? JSON.parse(row.config) : row.config ?? {}) as {
         bajada?: string;
@@ -502,8 +613,8 @@ export async function productosDe(tenantId: string) {
     limit 1
   `;
   if (!habilitado[0]) throw new MercadoError("Ese puesto no está en Mercado al Toque.", 404);
-  const presencia = await puedeAparecer(tenantId, { mercadoAlToque: true });
-  if (!presencia.visible) throw new MercadoError("Ese puesto no está publicado en Mercado al Toque.", 404);
+  const publicadas = await localidadesPublicadas();
+  if (!publicadas.has(tenantId)) throw new MercadoError("Ese puesto no está publicado en Mercado al Toque.", 404);
   const rows = await db<{
     id: string;
     nombre: string;
@@ -511,8 +622,9 @@ export async function productosDe(tenantId: string) {
     stock: unknown;
     unidad: string;
     unidad_label: string;
+    foto_id: string | null;
   }>`
-    select id, nombre, precio, stock, unidad, unidad_label
+    select id, nombre, precio, stock, unidad, unidad_label, foto_id
     from productos
     where tenant_id = ${tenantId} and activo = true and publicado_online = true
     order by lower(nombre)
@@ -525,6 +637,7 @@ export async function productosDe(tenantId: string) {
       disponible: num(row.stock),
       unidad: row.unidad,
       unidadLabel: row.unidad_label,
+      tieneFoto: Boolean(row.foto_id),
     })),
   };
 }
@@ -562,6 +675,7 @@ export async function crearPedidos(ses: Sesion, clave: string, lineas: LineaCana
   if (grupos.size === 0) throw new MercadoError("El pedido no tiene productos.");
 
   try {
+    const publicadas = await localidadesPublicadas();
     return await withTransaction(async (tx) => {
       const creados: string[] = [];
       for (const [tenantId, items] of grupos) {
@@ -570,9 +684,7 @@ export async function crearPedidos(ses: Sesion, clave: string, lineas: LineaCana
           where id = ${tenantId} and coalesce(config, '{}'::jsonb)->>'mercadoAlToque' = 'true'
           limit 1
         `;
-        if (!puesto[0]) throw new MercadoError("Hay un puesto que no está habilitado.");
-        const presencia = await puedeAparecer(tenantId, { mercadoAlToque: true });
-        if (!presencia.visible) throw new MercadoError("Hay un puesto que no está publicado en Mercado al Toque.");
+        if (!puesto[0] || !publicadas.has(tenantId)) throw new MercadoError("Hay un puesto que no está publicado en Mercado al Toque.");
         const clientUuid = claveDePedido(clave, tenantId);
         const ya = await tx<{ id: string }>`
           select id from pedidos where tenant_id = ${tenantId} and client_uuid = ${clientUuid} limit 1
@@ -587,31 +699,24 @@ export async function crearPedidos(ses: Sesion, clave: string, lineas: LineaCana
           unidad: string;
           unidad_label: string;
           precio: unknown;
-          moneda: unknown;
           stock: unknown;
         }>`
-          select id, nombre, unidad, unidad_label, precio, moneda, stock
+          select id, nombre, unidad, unidad_label, precio, stock
           from productos
           where tenant_id = ${tenantId} and activo = true and publicado_online = true
         `;
-        const cotizacion = await getCotizacion();
-        const porId = new Map(
-          productos.map((p) => [
-            p.id,
-            { p, ars: precioEnArs(num(p.precio), monedaDeFila(p.moneda), cotizacion) },
-          ]),
-        );
+        const porId = new Map(productos.map((p) => [p.id, p]));
         for (const item of items) {
-          const ficha = porId.get(item.productoId);
-          if (!ficha) throw new MercadoError("Hay un producto que no está publicado.");
-          if (num(ficha.p.stock) < item.cantidad) {
-            throw new MercadoError(`No alcanza el stock de ${ficha.p.nombre}.`, 409);
+          const producto = porId.get(item.productoId);
+          if (!producto) throw new MercadoError("Hay un producto que no está publicado.");
+          if (num(producto.stock) < item.cantidad) {
+            throw new MercadoError(`No alcanza el stock de ${producto.nombre}.`, 409);
           }
         }
         const pedidoId = newId("ped");
         let clienteId: string | null = null;
         if (medioPago === "cuenta_corriente") {
-          if (!permiteCuentaCorriente(presencia.tier)) {
+          if (!permiteCuentaCorriente(publicadas.get(tenantId) ?? null)) {
             throw new MercadoError("Este puesto no tiene cuenta corriente.");
           }
           const cliente = await tx<{ id: string }>`
@@ -630,17 +735,17 @@ export async function crearPedidos(ses: Sesion, clave: string, lineas: LineaCana
           ) values (
             ${pedidoId}, ${tenantId}, ${clientUuid}, ${clienteId}, ${comprador.nombre}, ${"enviado"}, ${nota || null},
             ${"mercado_al_toque"}, ${comprador.id}, ${pagoEstado},
-            now(), ${medioPago}, ${JSON.stringify({ tier: presencia.tier })}::jsonb
+            now(), ${medioPago}, ${JSON.stringify({ tier: publicadas.get(tenantId) ?? null })}::jsonb
           )
         `;
         for (const item of items) {
-          const ficha = porId.get(item.productoId)!;
+          const producto = porId.get(item.productoId)!;
           await tx`
             insert into pedido_items (
               id, pedido_id, producto_id, nombre_snapshot, cantidad, precio_unitario, unidad, unidad_label
             ) values (
-              ${newId("itm")}, ${pedidoId}, ${ficha.p.id}, ${ficha.p.nombre}, ${item.cantidad},
-              ${ficha.ars}, ${ficha.p.unidad}, ${ficha.p.unidad_label}
+              ${newId("itm")}, ${pedidoId}, ${producto.id}, ${producto.nombre}, ${item.cantidad},
+              ${num(producto.precio)}, ${producto.unidad}, ${producto.unidad_label}
             )
           `;
         }

@@ -1,20 +1,15 @@
 import { createServerFn } from "@tanstack/react-start";
 import { getSql } from "@/lib/db";
 import { num } from "@/lib/money";
-import { torreGuard } from "@/lib/torre-fn";
+import { requireTorre, torreGuard } from "@/lib/torre-fn";
 
 type FilaPedido = { estado: string; origen: string; n: number; monto: unknown };
 type FilaCobro = { origen: string; forma: string; n: number; monto: unknown; anulados: number; monto_anulado: unknown };
 type FilaProducto = { origen: string; nombre: string; cantidad: unknown; total: unknown };
 
-export const analiticaOperacion = createServerFn({ method: "GET" })
-  .middleware([torreGuard])
-  .validator((input: { dias?: number } | undefined) => {
-    const raw = input?.dias;
-    const dias = raw === 1 || raw === 30 ? raw : 7;
-    return { dias };
-  })
-  .handler(async ({ data }) => {
+type AnaliticaOperacionInput = { dias: number };
+
+export async function analiticaOperacionCore(email: string, data: AnaliticaOperacionInput) {
     const sql = await getSql();
     const dias = data.dias;
 
@@ -292,4 +287,16 @@ export const analiticaOperacion = createServerFn({ method: "GET" })
       cierres: { n: num(cierres[0]?.n), diferencia: num(cierres[0]?.diferencia) },
       catalogo: { productos: num(catalogo[0]?.productos), publicados: num(catalogo[0]?.publicados) },
     };
+}
+
+export const analiticaOperacion = createServerFn({ method: "GET" })
+  .middleware([torreGuard])
+  .validator((input: { dias?: number } | undefined) => {
+    const raw = input?.dias;
+    const dias = raw === 1 || raw === 30 ? raw : 7;
+    return { dias };
+  })
+  .handler(async ({ context, data }) => {
+    const email = await requireTorre(context.userId);
+    return analiticaOperacionCore(email, data);
   });

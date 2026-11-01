@@ -1,6 +1,5 @@
 import { createFileRoute, Navigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { RedirectToSignIn } from "@/lib/auth/gates";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { quienSoy } from "@/lib/fn";
 
@@ -24,7 +23,7 @@ function Home() {
       </div>
     );
   }
-  if (!user) return <RedirectToSignIn to="/login" />;
+  if (!user) return <Navigate to="/login" />;
   if (me.isPending) {
     return <div className="grid min-h-dvh place-items-center bg-paper text-muted">Preparando el puesto…</div>;
   }

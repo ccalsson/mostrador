@@ -21,15 +21,19 @@ import { Route as ConfirmarRouteImport } from './routes/confirmar'
 import { Route as ContratoRouteImport } from './routes/contrato'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as EscritorioRouteImport } from './routes/escritorio'
+import { Route as IdentidadRouteImport } from './routes/identidad'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as MarketingRouteImport } from './routes/marketing'
 import { Route as MercadoRouteImport } from './routes/mercado'
 import { Route as PortalRouteImport } from './routes/portal'
 import { Route as ProductosRouteImport } from './routes/productos'
 import { Route as ProveedoresRouteImport } from './routes/proveedores'
+import { Route as QrRouteImport } from './routes/qr'
 import { Route as RecuperarRouteImport } from './routes/recuperar'
 import { Route as RegistroRouteImport } from './routes/registro'
 import { Route as RemitosRouteImport } from './routes/remitos'
+import { Route as ReposicionRouteImport } from './routes/reposicion'
+import { Route as ReputacionRouteImport } from './routes/reputacion'
 import { Route as TorreRouteImport } from './routes/torre'
 import { Route as UsuariosRouteImport } from './routes/usuarios'
 import { Route as VendedorRouteImport } from './routes/vendedor'
@@ -124,6 +128,11 @@ const EscritorioRoute = EscritorioRouteImport.update({
   path: '/escritorio',
   getParentRoute: () => rootRouteImport,
 } as any)
+const IdentidadRoute = IdentidadRouteImport.update({
+  id: '/identidad',
+  path: '/identidad',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
@@ -154,6 +163,11 @@ const ProveedoresRoute = ProveedoresRouteImport.update({
   path: '/proveedores',
   getParentRoute: () => rootRouteImport,
 } as any)
+const QrRoute = QrRouteImport.update({
+  id: '/qr',
+  path: '/qr',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const RecuperarRoute = RecuperarRouteImport.update({
   id: '/recuperar',
   path: '/recuperar',
@@ -167,6 +181,16 @@ const RegistroRoute = RegistroRouteImport.update({
 const RemitosRoute = RemitosRouteImport.update({
   id: '/remitos',
   path: '/remitos',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReposicionRoute = ReposicionRouteImport.update({
+  id: '/reposicion',
+  path: '/reposicion',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReputacionRoute = ReputacionRouteImport.update({
+  id: '/reputacion',
+  path: '/reputacion',
   getParentRoute: () => rootRouteImport,
 } as any)
 const TorreRoute = TorreRouteImport.update({
@@ -349,15 +373,19 @@ export interface FileRoutesByFullPath {
   '/contrato': typeof ContratoRoute
   '/dashboard': typeof DashboardRoute
   '/escritorio': typeof EscritorioRoute
+  '/identidad': typeof IdentidadRoute
   '/login': typeof LoginRoute
   '/marketing': typeof MarketingRoute
   '/mercado': typeof MercadoRoute
   '/portal': typeof PortalRoute
   '/productos': typeof ProductosRoute
   '/proveedores': typeof ProveedoresRoute
+  '/qr': typeof QrRoute
   '/recuperar': typeof RecuperarRoute
   '/registro': typeof RegistroRoute
   '/remitos': typeof RemitosRouteWithChildren
+  '/reposicion': typeof ReposicionRoute
+  '/reputacion': typeof ReputacionRoute
   '/torre': typeof TorreRouteWithChildren
   '/usuarios': typeof UsuariosRoute
   '/vendedor': typeof VendedorRoute
@@ -405,15 +433,19 @@ export interface FileRoutesByTo {
   '/contrato': typeof ContratoRoute
   '/dashboard': typeof DashboardRoute
   '/escritorio': typeof EscritorioRoute
+  '/identidad': typeof IdentidadRoute
   '/login': typeof LoginRoute
   '/marketing': typeof MarketingRoute
   '/mercado': typeof MercadoRoute
   '/portal': typeof PortalRoute
   '/productos': typeof ProductosRoute
   '/proveedores': typeof ProveedoresRoute
+  '/qr': typeof QrRoute
   '/recuperar': typeof RecuperarRoute
   '/registro': typeof RegistroRoute
   '/remitos': typeof RemitosRouteWithChildren
+  '/reposicion': typeof ReposicionRoute
+  '/reputacion': typeof ReputacionRoute
   '/usuarios': typeof UsuariosRoute
   '/vendedor': typeof VendedorRoute
   '/factura/$id': typeof FacturaIdRoute
@@ -461,15 +493,19 @@ export interface FileRoutesById {
   '/contrato': typeof ContratoRoute
   '/dashboard': typeof DashboardRoute
   '/escritorio': typeof EscritorioRoute
+  '/identidad': typeof IdentidadRoute
   '/login': typeof LoginRoute
   '/marketing': typeof MarketingRoute
   '/mercado': typeof MercadoRoute
   '/portal': typeof PortalRoute
   '/productos': typeof ProductosRoute
   '/proveedores': typeof ProveedoresRoute
+  '/qr': typeof QrRoute
   '/recuperar': typeof RecuperarRoute
   '/registro': typeof RegistroRoute
   '/remitos': typeof RemitosRouteWithChildren
+  '/reposicion': typeof ReposicionRoute
+  '/reputacion': typeof ReputacionRoute
   '/torre': typeof TorreRouteWithChildren
   '/usuarios': typeof UsuariosRoute
   '/vendedor': typeof VendedorRoute
@@ -519,15 +555,19 @@ export interface FileRouteTypes {
     | '/contrato'
     | '/dashboard'
     | '/escritorio'
+    | '/identidad'
     | '/login'
     | '/marketing'
     | '/mercado'
     | '/portal'
     | '/productos'
     | '/proveedores'
+    | '/qr'
     | '/recuperar'
     | '/registro'
     | '/remitos'
+    | '/reposicion'
+    | '/reputacion'
     | '/torre'
     | '/usuarios'
     | '/vendedor'
@@ -575,15 +615,19 @@ export interface FileRouteTypes {
     | '/contrato'
     | '/dashboard'
     | '/escritorio'
+    | '/identidad'
     | '/login'
     | '/marketing'
     | '/mercado'
     | '/portal'
     | '/productos'
     | '/proveedores'
+    | '/qr'
     | '/recuperar'
     | '/registro'
     | '/remitos'
+    | '/reposicion'
+    | '/reputacion'
     | '/usuarios'
     | '/vendedor'
     | '/factura/$id'
@@ -630,15 +674,19 @@ export interface FileRouteTypes {
     | '/contrato'
     | '/dashboard'
     | '/escritorio'
+    | '/identidad'
     | '/login'
     | '/marketing'
     | '/mercado'
     | '/portal'
     | '/productos'
     | '/proveedores'
+    | '/qr'
     | '/recuperar'
     | '/registro'
     | '/remitos'
+    | '/reposicion'
+    | '/reputacion'
     | '/torre'
     | '/usuarios'
     | '/vendedor'
@@ -687,15 +735,19 @@ export interface RootRouteChildren {
   ContratoRoute: typeof ContratoRoute
   DashboardRoute: typeof DashboardRoute
   EscritorioRoute: typeof EscritorioRoute
+  IdentidadRoute: typeof IdentidadRoute
   LoginRoute: typeof LoginRoute
   MarketingRoute: typeof MarketingRoute
   MercadoRoute: typeof MercadoRoute
   PortalRoute: typeof PortalRoute
   ProductosRoute: typeof ProductosRoute
   ProveedoresRoute: typeof ProveedoresRoute
+  QrRoute: typeof QrRoute
   RecuperarRoute: typeof RecuperarRoute
   RegistroRoute: typeof RegistroRoute
   RemitosRoute: typeof RemitosRouteWithChildren
+  ReposicionRoute: typeof ReposicionRoute
+  ReputacionRoute: typeof ReputacionRoute
   TorreRoute: typeof TorreRouteWithChildren
   UsuariosRoute: typeof UsuariosRoute
   VendedorRoute: typeof VendedorRoute
@@ -794,6 +846,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof EscritorioRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/identidad': {
+      id: '/identidad'
+      path: '/identidad'
+      fullPath: '/identidad'
+      preLoaderRoute: typeof IdentidadRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/login': {
       id: '/login'
       path: '/login'
@@ -836,6 +895,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProveedoresRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/qr': {
+      id: '/qr'
+      path: '/qr'
+      fullPath: '/qr'
+      preLoaderRoute: typeof QrRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/recuperar': {
       id: '/recuperar'
       path: '/recuperar'
@@ -855,6 +921,20 @@ declare module '@tanstack/react-router' {
       path: '/remitos'
       fullPath: '/remitos'
       preLoaderRoute: typeof RemitosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reposicion': {
+      id: '/reposicion'
+      path: '/reposicion'
+      fullPath: '/reposicion'
+      preLoaderRoute: typeof ReposicionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reputacion': {
+      id: '/reputacion'
+      path: '/reputacion'
+      fullPath: '/reputacion'
+      preLoaderRoute: typeof ReputacionRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/torre': {
@@ -1167,15 +1247,19 @@ const rootRouteChildren: RootRouteChildren = {
   ContratoRoute: ContratoRoute,
   DashboardRoute: DashboardRoute,
   EscritorioRoute: EscritorioRoute,
+  IdentidadRoute: IdentidadRoute,
   LoginRoute: LoginRoute,
   MarketingRoute: MarketingRoute,
   MercadoRoute: MercadoRoute,
   PortalRoute: PortalRoute,
   ProductosRoute: ProductosRoute,
   ProveedoresRoute: ProveedoresRoute,
+  QrRoute: QrRoute,
   RecuperarRoute: RecuperarRoute,
   RegistroRoute: RegistroRoute,
   RemitosRoute: RemitosRouteWithChildren,
+  ReposicionRoute: ReposicionRoute,
+  ReputacionRoute: ReputacionRoute,
   TorreRoute: TorreRouteWithChildren,
   UsuariosRoute: UsuariosRoute,
   VendedorRoute: VendedorRoute,

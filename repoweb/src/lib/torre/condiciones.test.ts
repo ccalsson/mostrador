@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   apareceEnMercado,
+  cupoMercado,
   permiteCuentaCorriente,
   resolverComision,
   textoCondicion,
@@ -14,6 +15,18 @@ const presencia = {
   lineStatus: "active",
   subscriptionStatus: "active",
 };
+
+test("un mercado alcanza para una localidad, no para la otra", () => {
+  assert.equal(cupoMercado([presencia]), 1);
+  assert.equal(
+    cupoMercado([
+      presencia,
+      { family: "mercado", tier: "pro", lineStatus: "active", subscriptionStatus: "active" },
+      { family: "mostrador", tier: null, lineStatus: "active", subscriptionStatus: "active" },
+    ]),
+    2,
+  );
+});
 
 test("sin línea de mercado el puesto no aparece aunque esté publicado", () => {
   assert.equal(tierContratado([]), null);

@@ -3,8 +3,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Banknote, Minus, Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { AppShell } from "@/components/app-shell";
 import { CajaEgresos } from "@/components/caja-egresos";
+import { EntregaLista } from "@/components/entrega-lista";
+import { AppShell } from "@/components/app-shell";
 import { ClimaDolar } from "@/components/clima-dolar";
 import { MesaTurno } from "@/components/mesa-turno";
 import { TermicaBoton } from "@/components/termica-boton";
@@ -23,7 +24,6 @@ import {
   listClientes,
   listPedidos,
   listProductos,
-  marcarEntregado,
   updatePedidoEstado,
   updatePedidoItems,
 } from "@/lib/fn";
@@ -80,7 +80,7 @@ function CajaPage() {
   const [ticketListo, setTicketListo] = useState<{ cobroId: string; numero: number } | null>(null);
   const [anulaId, setAnulaId] = useState<string | null>(null);
   const [motivoTicket, setMotivoTicket] = useState("");
-  const [pasando, setPasando] = useState<string | null>(null);
+  const [entrega, setEntrega] = useState<Pedido | null>(null);
   const seen = useRef(new Set<string>());
   const prevEsperado = useRef<number | null>(null);
 
@@ -118,25 +118,11 @@ function CajaPage() {
   const refrescar = () => {
     void qc.invalidateQueries({ queryKey: ["bandeja"] });
     void qc.invalidateQueries({ queryKey: ["caja"] });
-    void qc.invalidateQueries({ queryKey: ["caja-egresos"] });
     void qc.invalidateQueries({ queryKey: ["productos"] });
     void qc.invalidateQueries({ queryKey: ["por-entregar"] });
     void qc.invalidateQueries({ queryKey: ["entregados"] });
+    void qc.invalidateQueries({ queryKey: ["alertas"] });
   };
-  const entregar = useMutation({
-    mutationFn: (id: string) => marcarEntregado({ data: id }),
-    onSuccess: () => {
-      toast.success("Pasó a entregados");
-      refrescar();
-    },
-    onError: (e: Error) => toast.error(e.message),
-    onSettled: () => setPasando(null),
-  });
-  function confirmarEntrega(id: string) {
-    if (pasando) return;
-    setPasando(id);
-    window.setTimeout(() => entregar.mutate(id), 450);
-  }
   const anularTicket = useMutation({
     mutationFn: async () => {
       const row = (caja.data?.ultimos ?? []).find((t) => t.id === anulaId);
@@ -179,7 +165,6 @@ function CajaPage() {
           </Link>
         </div>
       </div>
-      <MesaTurno modo="caja" />
       {direct ? (
         <VentaDirecta
           productos={productos.data ?? []}
@@ -191,7 +176,8 @@ function CajaPage() {
           }}
         />
       ) : (
-        <div className="flex flex-col gap-3 md:flex-row md:items-start md:overflow-x-auto">
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start">
           <section className="w-full rounded-lg border border-line bg-surface p-2 md:w-52 md:shrink-0">
             <h2 className="px-1 text-xs font-medium text-muted">Bandeja</h2>
             <ul className="mt-1 max-h-80 space-y-1 overflow-auto">
@@ -240,6 +226,9 @@ function CajaPage() {
               <div className="rounded-lg border border-dashed border-line p-6 text-sm text-muted">Elegí un pedido de la bandeja.</div>
             )}
           </section>
+          </div>
+          <MesaTurno modo="caja" />
+          <div className="flex flex-col gap-3 md:flex-row md:items-start">
           <section className="w-full rounded-lg border border-line bg-surface p-2 md:w-56 md:shrink-0">
             <h2 className="px-1 text-xs font-medium text-muted">Últimos tickets</h2>
             <ul className="mt-1 max-h-80 space-y-1 overflow-auto">
@@ -297,35 +286,25 @@ function CajaPage() {
             <p className="mt-1 px-1 text-[11px] font-medium text-terra">Por entregar</p>
             <ul className="mt-1 max-h-40 space-y-1 overflow-auto">
               {(porEntregar.data ?? []).length === 0 ? <li className="px-1 py-2 text-xs text-muted">Nada pendiente.</li> : null}
-              {(porEntregar.data ?? []).slice(0, 8).map((p) => {
-                const listo = pasando === p.id;
-                return (
+              {(porEntregar.data ?? []).slice(0, 8).map((p) => (
                   <li key={p.id}>
                     <button
                       type="button"
-                      className={cn(
-                        "w-full rounded-md border px-2 py-1.5 text-left transition-colors",
-                        listo ? "border-leaf/50 bg-ok-bg" : "border-terra/40 bg-warn-bg",
-                      )}
-                      disabled={pasando !== null}
-                      onClick={() => confirmarEntrega(p.id)}
+                      className="w-full rounded-md border border-terra/40 bg-warn-bg px-2 py-1.5 text-left"
+                      onClick={() => setEntrega(p)}
                     >
                       <span className="block truncate text-sm font-medium">{p.clienteNombre}</span>
-                      <span className={cn("text-xs", listo ? "text-ok" : "text-terra")}>
-                        {listo ? "Entregado" : "Falta entregar"} · {money(p.total)}
-                      </span>
+                      <span className="text-xs text-terra">Falta entregar · {money(p.total)}</span>
                     </button>
                   </li>
-                );
-              })}
+                ))}
             </ul>
             <p className="mt-2 px-1 text-[11px] font-medium text-ok">Entregados</p>
             <ul className="mt-1 max-h-36 space-y-1 overflow-auto">
-              {(entregados.data ?? []).filter((p) => p.id !== pasando).length === 0 ? (
+              {(entregados.data ?? []).length === 0 ? (
                 <li className="px-1 py-2 text-xs text-muted">Todavía no.</li>
               ) : null}
               {(entregados.data ?? [])
-                .filter((p) => p.id !== pasando)
                 .slice(0, 6)
                 .map((p) => (
                   <li key={p.id} className="rounded-md border border-leaf/30 bg-ok-bg px-2 py-1.5">
@@ -334,9 +313,6 @@ function CajaPage() {
                   </li>
                 ))}
             </ul>
-          </section>
-          <section className="w-full md:w-56 md:shrink-0">
-            <CajaEgresos verMontos={verMontos} />
           </section>
           <section
             className={cn(
@@ -358,11 +334,6 @@ function CajaPage() {
               esperado
               {caja.data?.abiertoAt ? ` · ${clock(caja.data.abiertoAt)}` : ""}
             </p>
-            {(caja.data?.egresos ?? 0) > 0 ? (
-              <p className="mt-0.5 text-xs text-terra">
-                egresos {verMontos ? money(caja.data?.egresos ?? 0) : "····"}
-              </p>
-            ) : null}
             <ul className="mt-2 space-y-1">
               {(caja.data?.totales ?? []).length === 0 ? (
                 <li className="text-xs text-muted">Sin cobros.</li>
@@ -376,6 +347,8 @@ function CajaPage() {
               )}
             </ul>
           </section>
+          <CajaEgresos verMontos={verMontos} />
+          </div>
         </div>
       )}
       {ticketListo ? (
@@ -384,6 +357,16 @@ function CajaPage() {
           lista={Boolean(afip.data?.habilitada)}
           homo={afip.data?.ambiente === "homo"}
           onClose={() => setTicketListo(null)}
+        />
+      ) : null}
+      {entrega ? (
+        <EntregaLista
+          pedido={entrega}
+          onClose={() => setEntrega(null)}
+          onDone={() => {
+            setEntrega(null);
+            refrescar();
+          }}
         />
       ) : null}
     </AppShell>
@@ -617,8 +600,6 @@ function CobroPanel({
                   unidad: p.unidad,
                   unidadLabel: p.unidadLabel,
                   subtotal: p.precio,
-                  cantidadEntregada: 0,
-                  notaEntrega: null,
                 },
               ];
             });

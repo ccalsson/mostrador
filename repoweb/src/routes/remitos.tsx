@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { crearRemito, listRemitos } from "@/lib/fn";
 import { listarProveedores } from "@/lib/portal-fn";
+import { planDelPuesto } from "@/lib/plan-puesto";
 import { dayLabel } from "@/lib/money";
 
 export const Route = createFileRoute("/remitos")({ component: FacturarPage });
@@ -100,6 +101,7 @@ function Ingreso() {
     onError: (e: Error) => toast.error(e.message),
   });
   const activos = (proveedores.data ?? []).filter((p) => p.activo);
+  const plan = useQuery({ queryKey: ["plan-puesto"], queryFn: () => planDelPuesto() });
 
   return (
     <section className="max-w-xl rounded-lg border border-line border-t-2 border-t-naranja bg-surface p-4">
@@ -107,6 +109,7 @@ function Ingreso() {
       <p className="mt-1 text-sm text-muted">
         Sacale una foto al remito o cargá las líneas a mano. El texto se lee en el celular y después confirmás el match.
       </p>
+      {plan.data?.premium ? (
       <label className="mt-3 inline-flex h-11 cursor-pointer items-center rounded-md border border-line px-3 text-sm font-medium">
         {leyendo ? "Leyendo foto…" : "Foto del remito"}
         <input
@@ -123,6 +126,9 @@ function Ingreso() {
           }}
         />
       </label>
+      ) : (
+        <p className="mt-3 text-sm text-muted">La foto del remito es del plan Premium. Las líneas se pueden cargar a mano.</p>
+      )}
       {foto ? <img src={foto} alt="Remito" className="mt-3 max-h-56 w-full rounded-md object-contain bg-paper" /> : null}
       <label className="mt-3 block text-sm font-medium">
         Proveedor

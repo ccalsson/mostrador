@@ -70,7 +70,11 @@ export async function sesionTorre(request: Request) {
   `;
   const row = rows[0];
   if (!row) throw new TorreMovilError("La sesión no sirve. Entrá de nuevo.", 401);
-  return { userId: row.user_id, email: row.email };
+  const acceso = await db<{ role: string }>`
+    select role from torre.saas_access where lower(email) = ${row.email} limit 1
+  `;
+  if (!acceso[0]) throw new TorreMovilError("Esta cuenta no abre la Torre.", 403);
+  return { userId: row.user_id, email: row.email, role: acceso[0].role };
 }
 
 export async function pendientesTorre() {

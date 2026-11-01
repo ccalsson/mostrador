@@ -12,10 +12,7 @@ function day(value: unknown) {
   return String(value ?? "").slice(0, 10);
 }
 
-export const listLegal = createServerFn({ method: "GET" })
-  .middleware([torreGuard])
-  .handler(async ({ context }) => {
-    await requireTorre(context.userId);
+export async function listLegalCore(_email: string) {
     const sql = await getSql();
     const documents = await sql<{
       id: string;
@@ -101,13 +98,25 @@ export const listLegal = createServerFn({ method: "GET" })
         action: row.action,
       })),
     };
+}
+
+export const listLegal = createServerFn({ method: "GET" })
+  .middleware([torreGuard])
+  .handler(async ({ context }) => {
+    const email = await requireTorre(context.userId);
+    return listLegalCore(email);
   });
 
-export const saveDocument = createServerFn({ method: "POST" })
-  .middleware([torreGuard])
-  .validator((input: { id?: string; code: string; title: string; audience: string; reacceptOnChange: boolean; status: string }) => input)
-  .handler(async ({ context, data }) => {
-    const email = await requireTorre(context.userId);
+type SaveDocumentInput = {
+  id?: string;
+  code: string;
+  title: string;
+  audience: string;
+  reacceptOnChange: boolean;
+  status: string;
+};
+
+export async function saveDocumentCore(email: string, data: SaveDocumentInput) {
     await exigirAccion(email, "legal");
     if (!data.code.trim() || !data.title.trim()) throw new Error("Código y título son obligatorios.");
     const sql = await getSql();
@@ -127,13 +136,23 @@ export const saveDocument = createServerFn({ method: "POST" })
     }
     await auditar(email, "guardar_documento", "legal_document", id, { code: data.code, audience: data.audience });
     return { id };
-  });
+}
 
-export const publishVersion = createServerFn({ method: "POST" })
+export const saveDocument = createServerFn({ method: "POST" })
   .middleware([torreGuard])
-  .validator((input: { documentId: string; label: string; body: string }) => input)
+  .validator((input: SaveDocumentInput) => input)
   .handler(async ({ context, data }) => {
     const email = await requireTorre(context.userId);
+    return saveDocumentCore(email, data);
+  });
+
+type PublishVersionInput = {
+  documentId: string;
+  label: string;
+  body: string;
+};
+
+export async function publishVersionCore(email: string, data: PublishVersionInput) {
     await exigirAccion(email, "legal");
     if (!data.body.trim() || !data.label.trim()) throw new Error("La versión necesita etiqueta y texto.");
     const sql = await getSql();
@@ -161,13 +180,22 @@ export const publishVersion = createServerFn({ method: "POST" })
     await sql`update torre.saas_legal_documents set status = 'published', updated_at = now() where id = ${data.documentId}`;
     await auditar(email, "publicar_version_legal", "legal_version", id, { hash, label: data.label });
     return { id, hash };
-  });
+}
 
-export const offerContract = createServerFn({ method: "POST" })
+export const publishVersion = createServerFn({ method: "POST" })
   .middleware([torreGuard])
-  .validator((input: { tenantId: string; versionId: string }) => input)
+  .validator((input: PublishVersionInput) => input)
   .handler(async ({ context, data }) => {
     const email = await requireTorre(context.userId);
+    return publishVersionCore(email, data);
+  });
+
+type OfferContractInput = {
+  tenantId: string;
+  versionId: string;
+};
+
+export async function offerContractCore(email: string, data: OfferContractInput) {
     await exigirAccion(email, "legal");
     const sql = await getSql();
     const versions = await sql<{ id: string; document_id: string; body: string; content_hash: string; status: string; audience: string }>`
@@ -196,12 +224,17 @@ export const offerContract = createServerFn({ method: "POST" })
     `;
     await auditar(email, "ofrecer_contrato", "tenant_contract", id, { tenantId: data.tenantId, hash: version.content_hash });
     return { id, hash: version.content_hash };
+}
+
+export const offerContract = createServerFn({ method: "POST" })
+  .middleware([torreGuard])
+  .validator((input: OfferContractInput) => input)
+  .handler(async ({ context, data }) => {
+    const email = await requireTorre(context.userId);
+    return offerContractCore(email, data);
   });
 
-export const listPromotions = createServerFn({ method: "GET" })
-  .middleware([torreGuard])
-  .handler(async ({ context }) => {
-    await requireTorre(context.userId);
+export async function listPromotionsCore(_email: string) {
     const sql = await getSql();
     const promos = await sql<{ id: string; code: string; name: string; description: string; status: string; config: unknown }>`
       select id, code, name, description, status, config from torre.saas_promotions order by name
@@ -254,13 +287,25 @@ export const listPromotions = createServerFn({ method: "GET" })
         endsOn: row.ends_on ? day(row.ends_on) : "",
       })),
     };
+}
+
+export const listPromotions = createServerFn({ method: "GET" })
+  .middleware([torreGuard])
+  .handler(async ({ context }) => {
+    const email = await requireTorre(context.userId);
+    return listPromotionsCore(email);
   });
 
-export const savePromotion = createServerFn({ method: "POST" })
-  .middleware([torreGuard])
-  .validator((input: { id?: string; code: string; name: string; description: string; status: string; config: string }) => input)
-  .handler(async ({ context, data }) => {
-    const email = await requireTorre(context.userId);
+type SavePromotionInput = {
+  id?: string;
+  code: string;
+  name: string;
+  description: string;
+  status: string;
+  config: string;
+};
+
+export async function savePromotionCore(email: string, data: SavePromotionInput) {
     await exigirAccion(email, "comercial");
     if (!data.code.trim() || !data.name.trim()) throw new Error("Código y nombre son obligatorios.");
     let config = "{}";
@@ -286,13 +331,26 @@ export const savePromotion = createServerFn({ method: "POST" })
     }
     await auditar(email, "guardar_promocion", "promotion", id, { code: data.code, status: data.status });
     return { id };
-  });
+}
 
-export const grantPromotion = createServerFn({ method: "POST" })
+export const savePromotion = createServerFn({ method: "POST" })
   .middleware([torreGuard])
-  .validator((input: { promotionId: string; tenantId: string; startsOn: string; endsOn: string; conditions: string; evidenceRef: string }) => input)
+  .validator((input: SavePromotionInput) => input)
   .handler(async ({ context, data }) => {
     const email = await requireTorre(context.userId);
+    return savePromotionCore(email, data);
+  });
+
+type GrantPromotionInput = {
+  promotionId: string;
+  tenantId: string;
+  startsOn: string;
+  endsOn: string;
+  conditions: string;
+  evidenceRef: string;
+};
+
+export async function grantPromotionCore(email: string, data: GrantPromotionInput) {
     await exigirAccion(email, "comercial");
     const sql = await getSql();
     const promos = await sql<{ status: string }>`select status from torre.saas_promotions where id = ${data.promotionId} limit 1`;
@@ -317,12 +375,17 @@ export const grantPromotion = createServerFn({ method: "POST" })
       adjustments: ajustes.inserted,
     });
     return { id, adjustments: ajustes.inserted };
+}
+
+export const grantPromotion = createServerFn({ method: "POST" })
+  .middleware([torreGuard])
+  .validator((input: GrantPromotionInput) => input)
+  .handler(async ({ context, data }) => {
+    const email = await requireTorre(context.userId);
+    return grantPromotionCore(email, data);
   });
 
-export const listProcessors = createServerFn({ method: "GET" })
-  .middleware([torreGuard])
-  .handler(async ({ context }) => {
-    await requireTorre(context.userId);
+export async function listProcessorsCore(_email: string) {
     const sql = await getSql();
     const rows = await sql<{ id: string; name: string; category: string; purpose: string; legal_role_note: string; status: string }>`
       select id, name, category, purpose, legal_role_note, status from torre.saas_processors order by name
@@ -335,13 +398,23 @@ export const listProcessors = createServerFn({ method: "GET" })
       legalRoleNote: row.legal_role_note,
       status: row.status,
     }));
+}
+
+export const listProcessors = createServerFn({ method: "GET" })
+  .middleware([torreGuard])
+  .handler(async ({ context }) => {
+    const email = await requireTorre(context.userId);
+    return listProcessorsCore(email);
   });
 
-export const saveProcessor = createServerFn({ method: "POST" })
-  .middleware([torreGuard])
-  .validator((input: { name: string; category: string; purpose: string; legalRoleNote: string }) => input)
-  .handler(async ({ context, data }) => {
-    const email = await requireTorre(context.userId);
+type SaveProcessorInput = {
+  name: string;
+  category: string;
+  purpose: string;
+  legalRoleNote: string;
+};
+
+export async function saveProcessorCore(email: string, data: SaveProcessorInput) {
     await exigirAccion(email, "legal");
     if (!data.name.trim() || !data.category.trim()) throw new Error("Nombre y categoría son obligatorios.");
     const sql = await getSql();
@@ -352,4 +425,12 @@ export const saveProcessor = createServerFn({ method: "POST" })
     `;
     await auditar(email, "documentar_procesador", "processor", id, { name: data.name });
     return { id };
+}
+
+export const saveProcessor = createServerFn({ method: "POST" })
+  .middleware([torreGuard])
+  .validator((input: SaveProcessorInput) => input)
+  .handler(async ({ context, data }) => {
+    const email = await requireTorre(context.userId);
+    return saveProcessorCore(email, data);
   });

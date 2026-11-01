@@ -2,7 +2,6 @@ import { createServerFn } from "@tanstack/react-start";
 import { getSql, type Sql } from "@/lib/db";
 import { money, num } from "@/lib/money";
 import { requireTorre, torreGuard } from "@/lib/torre-fn";
-import { leerKpisSuperAlToque } from "@/lib/torre/super-al-toque-fn";
 
 const CLAVES = [
   "negocios",
@@ -16,8 +15,6 @@ const CLAVES = [
   "publicidad",
   "finanzas",
   "operacion",
-  "super-al-toque",
-  "puesto",
   "legal",
   "procesadores",
   "apps",
@@ -737,73 +734,6 @@ async function armar(sql: Sql, clave: Clave): Promise<PanelTorre> {
     };
   }
 
-  if (clave === "super-al-toque") {
-    const k = await leerKpisSuperAlToque(30);
-    return {
-      titulo: "Super al Toque",
-      detalle: "KPIs leídos de la API con token de servicio. La Torre no toca la base de esa app.",
-      serieLabel: "Pedidos por día",
-      kpis: [
-        { label: "GMV", value: money(k.sales.gmvCents / 100) },
-        { label: "Comisión", value: money(k.sales.commissionCents / 100) },
-        { label: "Pedidos", value: String(k.sales.ordersCount) },
-        { label: "Sin repartidor", value: String(k.deliveries.unassigned) },
-      ],
-      serie: [],
-      barrasLabel: "Ventas por comercio",
-      barras: k.byMerchant.map((m) => ({ nombre: m.name, valor: Math.round(m.salesCents / 100) })),
-      filasLabel: "Para mirar",
-      filas: [
-        { titulo: "Comercios pendientes", detalle: `${k.merchants.pending} esperando aprobación` },
-        { titulo: "Flete en juego", detalle: money(k.deliveries.deliveryFeeCents / 100) },
-      ],
-    };
-  }
-
-  if (clave === "puesto") {
-    const [tot] = await sql.query<{ total: unknown; con_identidad: unknown; con_costos: unknown; con_reposicion: unknown }>(
-      `select count(*)::int as total,
-              count(*) filter (where coalesce(config->>'bajada', '') <> '' and coalesce(config->>'direccion', '') <> '') as con_identidad,
-              count(*) filter (where exists (select 1 from productos p where p.tenant_id = tenants.id and p.activo = true and p.costo is not null)) as con_costos,
-              0 as con_reposicion
-       from tenants`,
-    );
-    const barras = await sql.query<{ nombre: string; valor: unknown }>(
-      `select case when coalesce(config->>'bajada', '') = '' then 'Sin identidad' else 'Con identidad' end as nombre,
-              count(*)::int as valor
-       from tenants
-       group by nombre
-       order by count(*) desc`,
-    );
-    const filas = await sql.query<{ titulo: string; detalle: string }>(
-      `select nombre as titulo,
-              case
-                when coalesce(config->>'bajada', '') = '' then 'Falta bajada'
-                when coalesce(config->>'direccion', '') = '' then 'Falta dirección'
-                else 'Identidad completa'
-              end as detalle
-       from tenants
-       order by nombre
-       limit 6`,
-    );
-    return {
-      titulo: "Del puesto",
-      detalle: "Fichas por puesto operativo. Lo que el dueño carga y antes Torre no miraba.",
-      serieLabel: "Puestos creados",
-      kpis: [
-        { label: "Total puestos", value: entero(tot?.total) },
-        { label: "Con identidad", value: entero(tot?.con_identidad) },
-        { label: "Con costos", value: entero(tot?.con_costos) },
-        { label: "Con reposición", value: entero(tot?.con_reposicion) },
-      ],
-      serie: await puntos(sql, "tenants x on x.created_at::date = d::date"),
-      barrasLabel: "Identidad cargada",
-      barras: barras.map((row) => ({ nombre: row.nombre, valor: num(row.valor) })),
-      filasLabel: "Para completar",
-      filas,
-    };
-  }
-
   const [fx] = await sql.query<{ usd_ars: unknown; as_of: string; fuente: string }>(
     `select usd_ars, as_of::text as as_of, source as fuente from torre.saas_fx_rates order by as_of desc limit 1`,
   );
@@ -837,6 +767,13 @@ async function armar(sql: Sql, clave: Clave): Promise<PanelTorre> {
   };
 }
 
+type PanelPantallaInput = { clave: Clave };
+
+export async function panelPantallaCore(email: string, data: PanelPantallaInput) {
+    const sql = await getSql();
+    return armar(sql, data.clave);
+}
+
 export const panelPantalla = createServerFn({ method: "GET" })
   .middleware([torreGuard])
   .validator((input: { clave?: string } | undefined) => {
@@ -845,7 +782,6 @@ export const panelPantalla = createServerFn({ method: "GET" })
     return { clave: clave as Clave };
   })
   .handler(async ({ context, data }) => {
-    await requireTorre(context.userId);
-    const sql = await getSql();
-    return armar(sql, data.clave);
+    const email = await requireTorre(context.userId);
+    return panelPantallaCore(email, data);
   });

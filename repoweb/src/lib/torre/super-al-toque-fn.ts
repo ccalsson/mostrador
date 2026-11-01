@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { torreGuard } from "@/lib/torre-fn";
+import { requireTorre, torreGuard } from "@/lib/torre-fn";
 
 export type KpisSuperAlToque = {
   city: string;
@@ -60,6 +60,14 @@ export async function leerKpisSuperAlToque(dias: number): Promise<KpisSuperAlToq
   return res.json() as Promise<KpisSuperAlToque>;
 }
 
+type KpisSuperAlToqueInput = { dias: number };
+
+// Uso de la API de Super al Toque. El email ya llegó validado (Torre en la web, sesión
+// Bearer + saas_access en el teléfono); los KPIs no dependen de quién mira.
+export async function kpisSuperAlToqueCore(email: string, data: KpisSuperAlToqueInput) {
+  return leerKpisSuperAlToque(data.dias);
+}
+
 // KPIs comerciales de Super al Toque, leídos vía API con token de servicio.
 // La Torre no tiene acceso directo a la base de Super al Toque: todo pasa por HTTP.
 export const kpisSuperAlToque = createServerFn({ method: "GET" })
@@ -69,4 +77,7 @@ export const kpisSuperAlToque = createServerFn({ method: "GET" })
     const dias = raw === 1 || raw === 7 || raw === 30 ? raw : 30;
     return { dias };
   })
-  .handler(async ({ data }) => leerKpisSuperAlToque(data.dias));
+  .handler(async ({ context, data }) => {
+    const email = await requireTorre(context.userId);
+    return kpisSuperAlToqueCore(email, data);
+  });

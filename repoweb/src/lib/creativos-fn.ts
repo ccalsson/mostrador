@@ -18,32 +18,6 @@ function formatoDe(value: string): Formato {
   throw new Error("Esa pieza no se pide desde acá.");
 }
 
-async function piezasHabilitadas(tenantId: string) {
-  const sql = await getSql();
-  const banner = await sql<{ id: string }>`
-    select a.id
-    from torre.saas_ads a
-    join torre.saas_tenants t on t.id = a.tenant_id
-    where t.operational_tenant_ref = ${tenantId}
-      and a.status in ('scheduled', 'active')
-      and a.ends_on >= current_date
-    limit 1
-  `;
-  const push = await sql<{ id: string }>`
-    select k.id
-    from torre.saas_message_packs k
-    join torre.saas_tenants t on t.id = k.tenant_id
-    where t.operational_tenant_ref = ${tenantId}
-      and k.status = 'active'
-      and k.quantity > k.consumed
-    limit 1
-  `;
-  const piezas: Formato[] = [];
-  if (banner[0]) piezas.push("banner");
-  if (push[0]) piezas.push("push");
-  return piezas;
-}
-
 export const estadoCreativos = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
   .handler(async ({ context }) => {
@@ -80,7 +54,7 @@ export const estadoCreativos = createServerFn({ method: "GET" })
       costo: CREDITOS_POR_FOTO,
       textos: TEXTOS_POR_FOTO,
       paquetes: PAQUETES,
-      piezas: await piezasHabilitadas(staff.casaId),
+      piezas: ["banner", "push"],
       pedidos: pedidos.map((pedido) => ({
         ...pedido,
         variantes: variantes.filter((item) => item.pedido_id === pedido.id),
@@ -97,8 +71,6 @@ export const pedirCreativos = createServerFn({ method: "POST" })
     const formato = formatoDe(data.formato);
     const brief = data.brief.trim().slice(0, 400);
     if (brief.length < 8) throw new Error("Contá un poco más qué tiene que decir la pieza.");
-    const habilitadas = await piezasHabilitadas(staff.casaId);
-    if (!habilitadas.includes(formato)) throw new Error("Torre todavía no habilitó esa pieza.");
     const golpe = await cupoFirme(`creativos:${staff.casaId}`, 12, 60 * 60 * 1000);
     if (!golpe.ok) throw new Error("Demasiados pedidos. Esperá un momento.");
     const sql = await getSql();
@@ -128,4 +100,28 @@ export const pedirCreativos = createServerFn({ method: "POST" })
       hechas.push({ n: n + 1, titulo: texto.titulo, texto: texto.texto, imagen });
     }
     return { id: pedidoId, variantes: hechas, creditos: CREDITOS_POR_FOTO, aviso: "" };
+  });
+
+export const editarTextosCreativos = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: { pedidoId: string; textos: { id: string; titulo: string; texto: string }[] }) => input)
+  .handler(async ({ context, data }) => {
+    const staff = await ensureStaffForUser(context.userId);
+    assertRole(staff, ["admin"]);
+    const sql = await getSql();
+    const propio = await sql<{ id: string }>`
+      select id from creativos_pedidos where id = ${data.pedidoId} and tenant_id = ${staff.casaId} limit 1
+    `;
+    if (!propio[0]) throw new Error("Esa pieza no es de este puesto.");
+    for (const item of data.textos) {
+      const titulo = item.titulo.trim().slice(0, 80);
+      const texto = item.texto.trim().slice(0, 240);
+      if (!titulo || !texto) throw new Error("Cada texto necesita título y bajada.");
+      await sql`
+        update creativos_variantes
+        set titulo = ${titulo}, texto = ${texto}
+        where id = ${item.id} and pedido_id = ${data.pedidoId}
+      `;
+    }
+    return { ok: true };
   });

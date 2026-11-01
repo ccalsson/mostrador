@@ -147,15 +147,6 @@ function Forma({
       <Field label="Puesta en marcha" value={form.setupPrice} onChange={(setupPrice) => setForm({ ...form, setupPrice })} type="number" />
       <Field label="Vigente desde" value={form.validFrom} onChange={(validFrom) => setForm({ ...form, validFrom })} type="date" />
       <Field label="Vigente hasta" value={form.validTo} onChange={(validTo) => setForm({ ...form, validTo })} type="date" />
-      <label className="mt-2 block text-sm font-medium">Funcionalidades JSON
-        <textarea className="mt-1 w-full rounded-md border border-line bg-paper p-2 font-mono text-xs" rows={3} value={form.features} onChange={(e) => setForm({ ...form, features: e.target.value })} />
-      </label>
-      <label className="mt-2 block text-sm font-medium">Límites JSON
-        <textarea className="mt-1 w-full rounded-md border border-line bg-paper p-2 font-mono text-xs" rows={3} value={form.limits} onChange={(e) => setForm({ ...form, limits: e.target.value })} />
-      </label>
-      <label className="mt-2 block text-sm font-medium">Metadata JSON
-        <textarea className="mt-1 w-full rounded-md border border-line bg-paper p-2 font-mono text-xs" rows={3} value={form.metadata} onChange={(e) => setForm({ ...form, metadata: e.target.value })} />
-      </label>
       <SelectField label="Estado" value={form.status} onChange={(status) => setForm({ ...form, status })} options={[{ value: "active", label: "Activo" }, { value: "archived", label: "Archivado" }]} />
       <Button type="submit" className="mt-3 w-full" disabled={busy}>Guardar</Button>
     </form>

@@ -3,13 +3,14 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Bar, BarChart, Cell, Line, LineChart, Area, AreaChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { AppShell } from "@/components/app-shell";
-import { Button } from "@/components/ui/button";
 import { ClimaDolar } from "@/components/clima-dolar";
 import { IdentidadPuesto } from "@/components/identidad-puesto";
 import { MesaTurno } from "@/components/mesa-turno";
+import { ReputacionPuesto } from "@/components/reputacion-puesto";
 import { StockBoard } from "@/components/stock-board";
 import { SucursalesPuesto } from "@/components/sucursales-puesto";
-import { dashboardResumen, listAlertas, marcarAlertaLeida, rankingCargadores, quienSoy, getMarca } from "@/lib/fn";
+import { CompararSucursales } from "@/components/comparar-sucursales";
+import { dashboardResumen, listAlertas, marcarAlertaLeida, quienSoy, rankingCargadores } from "@/lib/fn";
 import { cn } from "@/lib/cn";
 import { clock, money } from "@/lib/money";
 import { ESTADO_LABEL, PAGO_LABEL, type FormaPago, type PedidoEstado } from "@/lib/types";
@@ -31,6 +32,7 @@ function DashboardPage() {
   const [buscar, setBuscar] = useState("");
   const [verCola, setVerCola] = useState(false);
 
+  const yo = useQuery({ queryKey: ["quien"], queryFn: () => quienSoy() });
   const kpis = useQuery({
     queryKey: ["kpis", rango],
     queryFn: () => dashboardResumen({ data: { dias: rango } }),
@@ -75,17 +77,27 @@ function DashboardPage() {
 
   return (
     <AppShell title="" ancho="completo">
-      <div className="mb-4 grid grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] items-start gap-3">
-        <div className="min-w-0">
-          <p className="text-[11px] font-medium tracking-[0.14em] text-muted uppercase">El puesto</p>
-          <h1 className="mt-1 font-display text-[1.65rem] leading-none font-semibold tracking-tight">Tablero</h1>
-          <IdentidadPuesto />
+      <div className="mb-4 space-y-3">
+        <div className="grid grid-cols-1 items-start gap-3 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
+          <div className="relative z-20 min-w-0">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[11px] font-medium tracking-[0.14em] text-muted uppercase">El puesto</p>
+                <h1 className="mt-1 font-display text-[1.65rem] leading-none font-semibold tracking-tight">Tablero</h1>
+                <p className="mt-1 text-sm text-muted">
+                  {yo.data?.tipo === "staff" && yo.data.staff.sucursalNombre ? yo.data.staff.sucursalNombre : "Casa matriz"}
+                </p>
+              </div>
+              <ReputacionPuesto />
+            </div>
+          </div>
+          <Vitrina
+            trial={d?.trial ?? null}
+            productos={(d?.top ?? []).slice(0, 3).map((t) => ({ nombre: t.nombre, total: t.total }))}
+            onProducto={(nombre) => setProducto((cur) => (cur === nombre ? null : nombre))}
+          />
         </div>
-        <Vitrina
-          trial={d?.trial ?? null}
-          productos={(d?.top ?? []).slice(0, 3).map((t) => ({ nombre: t.nombre, total: t.total }))}
-          onProducto={(nombre) => setProducto((cur) => (cur === nombre ? null : nombre))}
-        />
+        <IdentidadPuesto />
       </div>
       <MesaTurno modo="dueno" />
       <div className="space-y-4">
@@ -140,8 +152,7 @@ function DashboardPage() {
           </div>
 
           <SucursalesPuesto />
-
-          <QrPuesto />
+          <CompararSucursales />
 
           <section className="rounded-[10px] border border-line bg-surface p-3">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -350,10 +361,10 @@ function desplazarSlider(el: HTMLDivElement | null, n: number) {
 
 const FOTOS = ["/slides/citricos.jpg", "/slides/rojos.jpg", "/slides/verdura.jpg", "/slides/puesto-color.jpg"];
 const TINTES = [
-  { fondo: "#e6ebf5", tinta: "#263449" },
-  { fondo: "#dbe7fb", tinta: "#1746a8" },
-  { fondo: "#eef2f8", tinta: "#374151" },
-  { fondo: "#dfe7f5", tinta: "#1d5fd4" },
+  { fondo: "#f6e3cf", tinta: "#6a2e12" },
+  { fondo: "#e7f2e4", tinta: "#145c38" },
+  { fondo: "#f8efd0", tinta: "#6d5310" },
+  { fondo: "#f4e4d6", tinta: "#7a3418" },
 ];
 
 function fotoDe(nombre: string, indice: number) {
@@ -476,7 +487,7 @@ function Vitrina({
             <div className="absolute inset-0 bg-gradient-to-r from-black/75 via-black/40 to-black/10" />
             <button
               type="button"
-              className="relative flex h-full w-full flex-col justify-end px-3 py-2.5 text-left text-[#f2f5f9]"
+              className="relative flex h-full w-full flex-col justify-end px-3 py-2.5 text-left text-[#f6e7c4]"
               onClick={() => {
                 if (lamina.producto) onProducto(lamina.producto);
               }}
@@ -496,7 +507,7 @@ function Vitrina({
               type="button"
               aria-label={lamina.kicker}
               onClick={() => ir(n)}
-              className={cn("pointer-events-auto h-1.5 rounded-full", pagina === n ? "w-4 bg-[#f2f5f9]" : "w-1.5 bg-white/50")}
+              className={cn("pointer-events-auto h-1.5 rounded-full", pagina === n ? "w-4 bg-[#f6e7c4]" : "w-1.5 bg-white/50")}
             />
           ))}
         </div>
@@ -663,71 +674,5 @@ function Chip({ children, onClear }: { children: React.ReactNode; onClear: () =>
     <button type="button" onClick={onClear} className="rounded-full bg-ok-bg px-2.5 py-1 text-leaf">
       {children} · quitar
     </button>
-  );
-}
-
-function QrPuesto() {
-  const me = useQuery({ queryKey: ["quien"], queryFn: () => quienSoy() });
-  const marca = useQuery({ queryKey: ["marca"], queryFn: () => getMarca() });
-  const [qr, setQr] = useState<string | null>(null);
-  const [abierta, setAbierta] = useState(false);
-
-  const tenantId = me.data?.tipo === "staff" ? me.data.staff.tenantId : me.data?.tipo === "cliente" ? me.data.tenant?.id : null;
-  const nombre = marca.data?.nombre ?? (me.data?.tipo === "staff" ? me.data.tenant?.nombre : null);
-  const url = tenantId && typeof window !== "undefined" ? `${window.location.origin}/mercado?puesto=${tenantId}` : "";
-
-  useEffect(() => {
-    if (!url) return;
-    void import("qrcode")
-      .then((mod) => mod.default.toDataURL(url, { margin: 1, width: 240 }))
-      .then(setQr)
-      .catch(() => setQr(null));
-  }, [url]);
-
-  if (!tenantId || !url) return null;
-
-  function imprimir() {
-    window.print();
-  }
-
-  return (
-    <section className="rounded-[10px] border border-line bg-surface p-3">
-      <button type="button" className="flex w-full items-center justify-between text-left" onClick={() => setAbierta((v) => !v)}>
-        <h2 className="text-sm font-medium">QR del puesto</h2>
-        <span className="text-xs text-leaf">{abierta ? "Cerrar" : "Ver e imprimir"}</span>
-      </button>
-      {abierta ? (
-        <div className="mt-3 space-y-3">
-          <p className="text-xs text-muted">
-            Los compradores pueden escanear este QR para entrar directo a tu puesto en Mercado al Toque.
-          </p>
-          <div className="flex flex-col items-center gap-3">
-            {qr ? (
-              <img src={qr} alt={`QR de ${nombre ?? "puesto"}`} className="size-40 rounded-md border border-line" />
-            ) : (
-              <div className="flex size-40 items-center justify-center rounded-md border border-line bg-paper text-xs text-muted">
-                Generando…
-              </div>
-            )}
-            <p className="max-w-full break-all text-center text-xs text-muted">{url}</p>
-          </div>
-          <div className="flex gap-2">
-            <Button onClick={imprimir}>Imprimir QR</Button>
-            <Button
-              variant="secondary"
-              onClick={() => void navigator.clipboard?.writeText(url)}
-            >
-              Copiar enlace
-            </Button>
-          </div>
-        </div>
-      ) : null}
-      <div id="qr-print" className="hidden print:block">
-        <p className="qr-nombre">{nombre ?? "Mi puesto"}</p>
-        {qr ? <img src={qr} alt="" className="qr-imagen" /> : null}
-        <p className="qr-url">{url}</p>
-        <p className="qr-subtitulo">Escaneá para entrar en Mercado al Toque</p>
-      </div>
-    </section>
   );
 }

@@ -1,3 +1,4 @@
+import { armarCompra, estadoCompra, pedirCompra } from "@/lib/mercado/compra-servicio";
 import { MercadoError, leerSesion } from "@/lib/mercado/servicio";
 import * as mercado from "@/lib/mercado/servicio";
 import { confirmarToken, reenviarSiPendiente } from "@/lib/seguridad/confirmar";
@@ -69,6 +70,7 @@ export async function handleMercado(request: Request) {
           pais: texto(data, "pais"),
           tipoDocumento: texto(data, "tipoDocumento"),
           numeroDocumento: texto(data, "numeroDocumento"),
+          puestoId: texto(data, "puestoId"),
         }),
         201,
       );
@@ -114,6 +116,10 @@ export async function handleMercado(request: Request) {
     if (request.method === "GET" && ruta === "auth/google/vuelta") return mercado.volverDeGoogle(request);
     if (request.method === "GET" && ruta === "ranking") return json(await mercado.ranking());
     if (request.method === "GET" && ruta === "avisos") return json(await mercado.avisos());
+    const fotoProducto = ruta.match(/^productos\/([^/]+)\/foto$/);
+    if (request.method === "GET" && fotoProducto) {
+      return mercado.fotoDeProducto(request, decodeURIComponent(fotoProducto[1]));
+    }
 
     const ses = await leerSesion(request);
     if (request.method === "GET" && ruta === "yo") return json(await mercado.yo(ses));
@@ -128,6 +134,14 @@ export async function handleMercado(request: Request) {
         }),
       );
     }
+    if (request.method === "POST" && ruta === "puesto-vinculo") {
+      return json(await mercado.vincularPuesto(ses.userId, texto(data, "puestoId")));
+    }
+    if (request.method === "GET" && ruta === "compra") return json(await estadoCompra(ses.userId));
+    if (request.method === "POST" && ruta === "compra/comprobante") {
+      return json(await pedirCompra(ses.userId, texto(data, "nombre"), texto(data, "data")));
+    }
+    if (request.method === "POST" && ruta === "compra/armar") return json(await armarCompra(ses.userId, texto(data, "texto")));
     if (request.method === "GET" && ruta === "puestos") return json(await mercado.puestos(ses.userId));
     const productos = ruta.match(/^puestos\/([^/]+)\/productos$/);
     if (request.method === "GET" && productos) return json(await mercado.productosDe(decodeURIComponent(productos[1])));

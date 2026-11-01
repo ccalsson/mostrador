@@ -3,11 +3,12 @@ import { authMiddleware } from "@/lib/auth/middleware";
 import { getSql } from "@/lib/db";
 import { newId } from "@/lib/ids";
 import { num } from "@/lib/money";
-import { monedaDeFila } from "@/lib/moneda";
 import { assertRole } from "@/lib/server/context";
 import { ensureStaffForUser } from "@/lib/server/bootstrap";
 import type { Staff } from "@/lib/types";
 import { incluidasPorBase } from "@/lib/torre/reglas";
+import { localidadesPublicadas } from "@/lib/torre/presencia";
+import { limitesPlan } from "@/lib/torre/acceso-puesto";
 
 type Sql = Awaited<ReturnType<typeof getSql>>;
 
@@ -19,6 +20,8 @@ async function cupoDe(sql: Sql, casaId: string) {
     join torre.saas_tenants t on t.id = s.tenant_id
     join torre.saas_products p on p.id = l.product_id
     where t.operational_tenant_ref = ${casaId} and t.status = 'active' and l.status = 'active'
+      and l.charge='recurring' and s.start_date<=current_date
+      and s.status in ('active','past_due') and l.starts_on <= current_date and (l.ends_on is null or l.ends_on >= current_date)
   `;
   const incluidas = Math.max(
     1,
@@ -30,10 +33,24 @@ async function cupoDe(sql: Sql, casaId: string) {
       })),
     ),
   );
-  const extras = lineas
-    .filter((linea) => linea.slug === "sucursal-extra" || linea.kind === "branch")
-    .reduce((suma, linea) => suma + linea.quantity, 0);
-  return { incluidas, extras, cupo: incluidas + extras };
+  const limits = await limitesPlan(sql,casaId);
+  const extras = lineas.reduce((suma, linea) => {
+    let config = linea.config;
+    if (typeof config === "string") {
+      try {
+        config = JSON.parse(config) as unknown;
+      } catch {
+        config = null;
+      }
+    }
+    const plan = config && typeof config === "object" ? (config as { plan?: unknown }).plan : null;
+    if (linea.slug === "sucursal-extra" || linea.kind === "branch" || (plan === "multi" && limits.branches==null)) {
+      return suma + Math.max(1, linea.quantity);
+    }
+    return suma;
+  }, 0);
+  const allowance=limits.branches??incluidas;
+  return { incluidas:allowance, extras, cupo:allowance+extras };
 }
 
 async function asegurarMatriz(sql: Sql, casaId: string) {
@@ -41,12 +58,24 @@ async function asegurarMatriz(sql: Sql, casaId: string) {
     select id from sucursales where tenant_id = ${casaId} and es_matriz = true limit 1
   `;
   if (ya[0]) return ya[0].id;
-  const casa = await sql<{ nombre: string }>`select nombre from tenants where id = ${casaId} limit 1`;
+  const casa = await sql<{ nombre: string; config: unknown }>`select nombre, config from tenants where id = ${casaId} limit 1`;
   const id = newId("suc");
   const nombre = casa[0]?.nombre || "Casa matriz";
+  const crudo = casa[0]?.config;
+  let config: unknown = crudo;
+  if (typeof crudo === "string") {
+    try {
+      config = JSON.parse(crudo);
+    } catch {
+      config = null;
+    }
+  }
+  const direccion = config && typeof config === "object" && typeof (config as { direccion?: unknown }).direccion === "string"
+    ? (config as { direccion: string }).direccion.trim().slice(0, 160)
+    : "";
   await sql`
     insert into sucursales (id, tenant_id, libros_tenant_id, nombre, referencia, es_matriz, activa)
-    values (${id}, ${casaId}, ${casaId}, ${nombre}, ${""}, ${true}, ${true})
+    values (${id}, ${casaId}, ${casaId}, ${nombre}, ${direccion}, ${true}, ${true})
   `;
   const torre = await sql<{ id: string }>`
     select id from torre.saas_tenants where operational_tenant_ref = ${casaId} and status = 'active' limit 1
@@ -83,6 +112,131 @@ function configSinMercado(raw: unknown) {
   base.mercadoAlToque = false;
   return base;
 }
+
+export const compararEconomia = createServerFn({ method: "GET" })
+  .middleware([authMiddleware])
+  .validator((dias: number) => (dias === 30 ? 30 : 7))
+  .handler(async ({ context, data: dias }) => {
+    const staff = await ensureStaffForUser(context.userId);
+    assertRole(staff, ["admin"]);
+    const sql = await getSql();
+    await asegurarMatriz(sql, staff.casaId);
+    const localidades = await sql<{ id: string; nombre: string; es_matriz: boolean; libros_tenant_id: string }>`
+      select id, nombre, es_matriz, libros_tenant_id
+      from sucursales
+      where tenant_id = ${staff.casaId} and activa = true
+      order by es_matriz desc, nombre
+    `;
+    const serie = await sql.query<{ id: string; dia: string; total: unknown; n: unknown }>(
+      `select s.id,
+              to_char(d::date, 'YYYY-MM-DD') as dia,
+              coalesce(sum(c.monto), 0) as total,
+              count(c.id)::int as n
+       from sucursales s
+       cross join generate_series(current_date - ($2::int - 1), current_date, interval '1 day') as d
+       left join cobros c
+         on c.tenant_id = s.libros_tenant_id
+        and c.anulado = false
+        and c.created_at::date = d::date
+       where s.tenant_id = $1 and s.activa = true
+       group by s.id, d::date
+       order by d::date`,
+      [staff.casaId, dias],
+    );
+    const stock = await sql<{ id: string; stock: unknown; bajos: unknown }>`
+      select s.id,
+             coalesce(sum(p.stock), 0) as stock,
+             count(*) filter (where p.activo = true and p.stock <= p.stock_minimo)::int as bajos
+      from sucursales s
+      left join productos p on p.tenant_id = s.libros_tenant_id and p.activo = true
+      where s.tenant_id = ${staff.casaId} and s.activa = true
+      group by s.id
+    `;
+    const porDia = new Map<string, { dia: string; valores: Record<string, { total: number; n: number }> }>();
+    for (const punto of serie) {
+      const fila = porDia.get(punto.dia) ?? { dia: punto.dia, valores: {} };
+      fila.valores[punto.id] = { total: num(punto.total), n: num(punto.n) };
+      porDia.set(punto.dia, fila);
+    }
+    const stockDe = new Map(stock.map((fila) => [fila.id, fila]));
+    return {
+      dias,
+      localidades: localidades.map((fila) => {
+        const existencias = stockDe.get(fila.id);
+        let ventas = 0;
+        let tickets = 0;
+        for (const punto of porDia.values()) {
+          ventas += punto.valores[fila.id]?.total ?? 0;
+          tickets += punto.valores[fila.id]?.n ?? 0;
+        }
+        return {
+          id: fila.id,
+          nombre: fila.nombre,
+          esMatriz: fila.es_matriz,
+          ventas,
+          tickets,
+          stock: num(existencias?.stock),
+          stockBajo: num(existencias?.bajos),
+        };
+      }),
+      serie: [...porDia.values()],
+    };
+  });
+
+export const qrsDelPuesto = createServerFn({ method: "GET" })
+  .middleware([authMiddleware])
+  .handler(async ({ context }) => {
+    const staff = await ensureStaffForUser(context.userId);
+    assertRole(staff, ["admin"]);
+    const sql = await getSql();
+    await asegurarMatriz(sql, staff.casaId);
+    const filas = await sql<{
+      id: string;
+      nombre: string;
+      referencia: string;
+      es_matriz: boolean;
+      libros_tenant_id: string;
+      config: unknown;
+    }>`
+      select s.id, s.nombre, s.referencia, s.es_matriz, s.libros_tenant_id, t.config
+      from sucursales s
+      join tenants t on t.id = s.libros_tenant_id
+      where s.tenant_id = ${staff.casaId} and s.activa = true
+      order by s.es_matriz desc, s.nombre
+    `;
+    const publicadas = await localidadesPublicadas();
+    const casa = await sql<{ nombre: string }>`select nombre from tenants where id = ${staff.casaId} limit 1`;
+    return {
+      casa: casa[0]?.nombre ?? "Puesto",
+      localidades: filas.map((fila) => {
+        let prendido = false;
+        let direccion = fila.referencia;
+        let config: unknown = fila.config;
+        if (typeof fila.config === "string") {
+          try {
+            config = JSON.parse(fila.config);
+          } catch {
+            config = null;
+          }
+        }
+        if (config && typeof config === "object") {
+          const marca = config as { mercadoAlToque?: boolean; direccion?: string };
+          prendido = marca.mercadoAlToque === true;
+          if (marca.direccion?.trim()) direccion = marca.direccion.trim();
+        }
+        return {
+          id: fila.id,
+          nombre: fila.nombre,
+          referencia: fila.referencia,
+          direccion,
+          esMatriz: fila.es_matriz,
+          puestoId: fila.libros_tenant_id,
+          publicado: publicadas.has(fila.libros_tenant_id),
+          prendido,
+        };
+      }),
+    };
+  });
 
 export const sucursalesDelPuesto = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
@@ -175,6 +329,7 @@ export const crearSucursalPuesto = createServerFn({ method: "POST" })
     const nombre = data.nombre.trim().slice(0, 80);
     const referencia = data.referencia.trim().slice(0, 160);
     if (nombre.length < 2) throw new Error("La sucursal necesita un nombre.");
+    if (referencia.length < 4) throw new Error("Falta la dirección o el mercado de la sucursal.");
     const sql = await getSql();
     await asegurarMatriz(sql, staff.casaId);
     const cupo = await cupoDe(sql, staff.casaId).catch(() => ({ incluidas: 1, extras: 0, cupo: 1 }));
@@ -185,9 +340,11 @@ export const crearSucursalPuesto = createServerFn({ method: "POST" })
     const libros = newId("ten");
     const sucursalId = newId("suc");
     const casa = await sql<{ config: unknown }>`select config from tenants where id = ${staff.casaId} limit 1`;
+    const config = configSinMercado(casa[0]?.config);
+    config.direccion = referencia;
     await sql`
       insert into tenants (id, nombre, config)
-      values (${libros}, ${nombre}, ${JSON.stringify(configSinMercado(casa[0]?.config))}::jsonb)
+      values (${libros}, ${nombre}, ${JSON.stringify(config)}::jsonb)
     `;
     await sql`
       insert into ticket_seq (tenant_id, ultimo) values (${libros}, ${0})
@@ -204,12 +361,11 @@ export const crearSucursalPuesto = createServerFn({ method: "POST" })
       unidad: string;
       unidad_label: string;
       precio: unknown;
-      moneda: unknown;
       stock_minimo: unknown;
       alias: unknown;
       orden: number | null;
     }>`
-      select id, nombre, unidad, unidad_label, precio, moneda, stock_minimo, alias, orden
+      select id, nombre, unidad, unidad_label, precio, stock_minimo, alias, orden
       from productos
       where tenant_id = ${staff.casaId} and activo = true
     `;
@@ -218,10 +374,10 @@ export const crearSucursalPuesto = createServerFn({ method: "POST" })
       const alias = typeof producto.alias === "string" ? producto.alias : JSON.stringify(producto.alias ?? []);
       await sql`
         insert into productos (
-          id, tenant_id, nombre, unidad, unidad_label, precio, moneda, stock, stock_minimo, alias, activo, orden, publicado_online
+          id, tenant_id, nombre, unidad, unidad_label, precio, stock, stock_minimo, alias, activo, orden, publicado_online
         ) values (
           ${copia}, ${libros}, ${producto.nombre}, ${producto.unidad}, ${producto.unidad_label},
-          ${num(producto.precio)}, ${monedaDeFila(producto.moneda)}, ${0}, ${num(producto.stock_minimo)}, ${alias}::jsonb,
+          ${num(producto.precio)}, ${0}, ${num(producto.stock_minimo)}, ${alias}::jsonb,
           ${true}, ${producto.orden}, ${false}
         )
       `;

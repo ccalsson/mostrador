@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { Link, createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -79,13 +79,16 @@ function Lista() {
                 <p className="text-sm text-muted">{item.description}</p>
                 <p className="text-sm tabular-nums">{etiquetaPrecio(item, venta)}</p>
               </div>
-              {ya ? (
-                <span className="text-sm text-leaf">Contratado</span>
-              ) : espera ? (
-                <span className="text-sm text-muted">Esperando habilitación</span>
-              ) : (
-                <Button onClick={() => setElegido(item.id)}>Contratar</Button>
-              )}
+              <div className="flex flex-wrap items-center gap-2">
+                {ya ? (
+                  <span className="text-sm text-leaf">Contratado</span>
+                ) : espera ? (
+                  <span className="text-sm text-muted">Esperando habilitación</span>
+                ) : (
+                  <Button onClick={() => setElegido(item.id)}>Contratar</Button>
+                )}
+                {item.id.includes("credito") ? <Link to="/marketing" className="text-sm text-leaf">Usar créditos</Link> : null}
+              </div>
             </li>
           );
         })}

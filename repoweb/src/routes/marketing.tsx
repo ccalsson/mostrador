@@ -5,9 +5,10 @@ import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { canalMercado, catalogoAddons, confirmarAddon, cotizarAddon, listProductos, publicarBanner } from "@/lib/fn";
-import { estadoCreativos, pedirCreativos } from "@/lib/creativos-fn";
+import { estadoCreativos, editarTextosCreativos, pedirCreativos } from "@/lib/creativos-fn";
 import { textoArs } from "@/lib/torre/reglas";
 import { ChecksContrato } from "@/components/checks-contrato";
+import { escenaDe, medidaDe, MuestraTelefono } from "@/components/muestra-telefono";
 import { PLANTILLAS } from "@/lib/mercado/plantillas";
 
 export const Route = createFileRoute("/marketing")({ component: Page });
@@ -38,6 +39,7 @@ function etiquetaPrecio(producto: Producto, venta: number | null) {
   const partes = unaVez
     ? [linea(producto.onceUsd, producto.unitLabel ? ` / ${producto.unitLabel}` : "")]
     : [linea(producto.recurringUsd, " / mes")];
+  if (!unaVez && producto.setupUsd != null) partes.push(linea(producto.setupUsd, " instalación, una vez"));
   return partes.filter(Boolean).join(" · ") || "Sin precio en el catálogo";
 }
 
@@ -53,7 +55,7 @@ function Pantalla() {
   const catalogo = useQuery({ queryKey: ["addons"], queryFn: () => catalogoAddons() });
   const canal = useQuery({ queryKey: ["canal-mercado"], queryFn: () => canalMercado() });
   const [elegido, setElegido] = useState<string | null>(null);
-  const productos = (catalogo.data?.productos ?? []).filter((item) => item.kind === "advertising" || item.kind === "messaging");
+  const productos = catalogo.data?.productos ?? [];
   const venta = catalogo.data?.dolar?.venta ?? null;
   const contratados = new Set(catalogo.data?.contratados ?? []);
   const pendientes = new Set(catalogo.data?.pendientes ?? []);
@@ -66,28 +68,35 @@ function Pantalla() {
       <section>
         <h2 className="font-display text-xl font-semibold">Contratar</h2>
         <p className="mt-1 max-w-2xl text-sm text-muted">
-          Torre habilita el espacio. El dueño publica el banner acá. En esta web no se envía push.
+          El catálogo de Torre, cada uno en el teléfono donde se usa. La verdura es de ejemplo.
         </p>
         {catalogo.isPending ? <p className="mt-3 text-sm text-muted">Leyendo el catálogo…</p> : null}
-        <ul className="mt-3 divide-y divide-line overflow-hidden rounded-lg border border-line bg-surface">
-          {productos.length === 0 && !catalogo.isPending ? <li className="px-3 py-3 text-sm text-muted">No hay productos de marketing.</li> : null}
+        <ul className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {productos.length === 0 && !catalogo.isPending ? <li className="px-3 py-3 text-sm text-muted">No hay productos en el catálogo.</li> : null}
           {productos.map((item) => {
+            const escena = escenaDe(item.id, item.kind);
             const ya = item.billing === "recurring" && contratados.has(item.id);
             const espera = pendientes.has(item.id);
             return (
-              <li key={item.id} className="flex flex-wrap items-center justify-between gap-3 px-3 py-3">
-                <div>
-                  <p className="font-medium">{item.name}</p>
-                  <p className="text-sm text-muted">{item.description}</p>
-                  <p className="text-sm tabular-nums">{etiquetaPrecio(item, venta)}</p>
+              <li key={item.id} className="flex flex-col rounded-lg border border-line bg-surface p-3">
+                <div className="flex justify-center rounded-lg bg-paper py-4">
+                  <MuestraTelefono escena={escena} />
                 </div>
-                {ya ? <span className="text-sm text-leaf">Contratado</span> : espera ? <span className="text-sm text-muted">Esperando habilitación</span> : <Button onClick={() => setElegido(item.id)}>Contratar</Button>}
+                <p className="mt-3 text-[11px] font-medium tracking-[0.08em] text-terra uppercase">{medidaDe(escena)}</p>
+                <p className="mt-1 font-medium">{item.name}</p>
+                <p className="text-sm text-muted">{item.description}</p>
+                <p className="mt-1 text-sm tabular-nums">{etiquetaPrecio(item, venta)}</p>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  {ya ? <span className="text-sm text-leaf">Contratado</span> : espera ? <span className="text-sm text-muted">Esperando habilitación</span> : <Button onClick={() => setElegido(item.id)}>Contratar</Button>}
+                  {item.kind === "advertising" ? <a href="#banners" className="text-sm text-leaf">Editar aviso</a> : null}
+                  {item.id.includes("credito") ? <a href="#creativos" className="text-sm text-leaf">Usar créditos</a> : null}
+                </div>
               </li>
             );
           })}
         </ul>
       </section>
-      <section className="rounded-lg border border-line bg-surface p-4">
+      <section id="banners" className="rounded-lg border border-line bg-surface p-4">
         <h2 className="font-display text-xl font-semibold">Banners</h2>
         {canal.isPending ? <p className="mt-3 text-sm text-muted">Leyendo los espacios…</p> : null}
         {canal.data ? (
@@ -112,7 +121,7 @@ function Creativos({ onComprar }: { onComprar: (id: string) => void }) {
   const [formato, setFormato] = useState<"banner" | "push">("banner");
   const [brief, setBrief] = useState("");
   const pedir = useMutation({
-    mutationFn: () => pedirCreativos({ data: { formato: elegido ?? formato, brief } }),
+    mutationFn: () => pedirCreativos({ data: { formato, brief } }),
     onSuccess: async () => {
       toast.success("Foto lista, con los textos.");
       setBrief("");
@@ -121,16 +130,14 @@ function Creativos({ onComprar }: { onComprar: (id: string) => void }) {
     onError: (error: Error) => toast.error(error.message),
   });
   const data = estado.data;
-  const piezas = data?.piezas ?? [];
-  const elegido = piezas.includes(formato) ? formato : piezas[0];
   const costo = data?.costo ?? 4;
   return (
-    <section className="rounded-lg border border-line bg-surface p-4">
+    <section id="creativos" className="rounded-lg border border-line bg-surface p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="font-display text-xl font-semibold">Creativos</h2>
           <p className="mt-1 max-w-2xl text-sm text-muted">
-            Solo para el banner o el push que Torre ya habilitó. Una foto y cuatro textos distintos. Si la imagen no sale, no se cobra.
+            Una foto y cuatro textos. Los créditos alcanzan para pedirla aunque el banner ya esté ocupado. Editar los textos no gasta créditos. Si la imagen no sale, no se cobra.
           </p>
         </div>
         <div className="text-right">
@@ -144,59 +151,107 @@ function Creativos({ onComprar }: { onComprar: (id: string) => void }) {
         </div>
       </div>
       <p className="mt-3 text-sm text-muted">
-        Una foto sale {costo} créditos. El texto no se cobra aparte.
+        Una foto sale {costo} créditos y trae {data?.textos ?? 4} textos. Editarlos después no se cobra.
       </p>
       {estado.isPending ? <p className="mt-3 text-sm text-muted">Leyendo el saldo…</p> : null}
-      {!estado.isPending && piezas.length === 0 ? (
-        <p className="mt-3 text-sm text-muted">No hay una pieza habilitada. Contratá el banner o el push y esperá que Torre lo prenda.</p>
+      {estado.isError ? <p className="mt-3 text-sm text-terra">{(estado.error as Error).message}</p> : null}
+      {!estado.isPending && !estado.isError ? (
+        <p className="mt-3 text-sm">
+          {(data?.creditos ?? 0) < costo
+            ? `Tenés ${data?.creditos ?? 0} créditos y la foto sale ${costo}. No es que el producto esté ocupado: faltan créditos.`
+            : `Tenés ${data?.creditos ?? 0} créditos. Alcanzan para ${Math.floor((data?.creditos ?? 0) / costo)} fotos. Un banner ya publicado no las bloquea.`}
+        </p>
       ) : null}
-      {elegido ? (
-        <form
-          className="mt-4 grid gap-3 sm:grid-cols-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            pedir.mutate();
-          }}
-        >
-          <label className="block text-sm">
-            Pieza
-            <select className="mt-1 h-11 w-full rounded-md border border-line bg-paper px-3" value={elegido} onChange={(event) => setFormato(event.target.value as "banner" | "push")}>
-              {piezas.map((pieza) => (
-                <option key={pieza} value={pieza}>{pieza === "banner" ? "Banner" : "Push"}</option>
-              ))}
-            </select>
-          </label>
-          <label className="block text-sm sm:col-span-2">
-            Qué tiene que decir
-            <textarea className="mt-1 min-h-24 w-full rounded-md border border-line bg-paper px-3 py-2" value={brief} maxLength={400} onChange={(event) => setBrief(event.target.value)} placeholder="Tomate perita, cajón de hoy, precio de puesto." />
-          </label>
-          <Button type="submit" disabled={pedir.isPending || (data?.creditos ?? 0) < costo}>
-            {pedir.isPending ? "Armando…" : `Pedir la foto · ${costo} créditos`}
-          </Button>
-        </form>
-      ) : null}
+      <form
+        className="mt-4 grid gap-3 sm:grid-cols-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          pedir.mutate();
+        }}
+      >
+        <label className="block text-sm">
+          Pieza
+          <select className="mt-1 h-11 w-full rounded-md border border-line bg-paper px-3" value={formato} onChange={(event) => setFormato(event.target.value as "banner" | "push")}>
+            <option value="banner">Banner</option>
+            <option value="push">Push</option>
+          </select>
+        </label>
+        <label className="block text-sm sm:col-span-2">
+          Qué tiene que decir
+          <textarea className="mt-1 min-h-24 w-full rounded-md border border-line bg-paper px-3 py-2" value={brief} maxLength={400} onChange={(event) => setBrief(event.target.value)} placeholder="Tomate perita, cajón de hoy, precio de puesto." />
+        </label>
+        <Button type="submit" disabled={pedir.isPending || (data?.creditos ?? 0) < costo || brief.trim().length < 8}>
+          {pedir.isPending ? "Armando…" : `Pedir la foto · ${costo} créditos`}
+        </Button>
+        {brief.trim().length > 0 && brief.trim().length < 8 ? <p className="text-xs text-muted sm:col-span-2">Contá un poco más, aunque sea una frase.</p> : null}
+      </form>
       <ul className="mt-4 space-y-4">
         {data?.pedidos.map((pedido) => (
           <li key={pedido.id} className="border-t border-line pt-3">
             <p className="text-sm text-muted">{pedido.formato} · 1 foto · {pedido.variantes.length} textos · {pedido.creditos} créditos</p>
             <p className="text-sm">{pedido.brief}</p>
             {pedido.variantes[0] ? (
-              <div className="mt-2 grid gap-3 sm:grid-cols-[180px_minmax(0,1fr)]">
-                <img src={pedido.variantes[0].imagen} alt={pedido.variantes[0].titulo} className="aspect-square w-full rounded-md border border-line object-cover" />
-                <ul className="space-y-2 text-sm">
-                  {pedido.variantes.map((variante) => (
-                    <li key={variante.id}>
-                      <p className="font-medium">{variante.titulo}</p>
-                      <p className="text-muted">{variante.texto}</p>
-                    </li>
-                  ))}
-                </ul>
-              </div>
+              <Pieza pedidoId={pedido.id} imagen={pedido.variantes[0].imagen} variantes={pedido.variantes} onHecho={() => void qc.invalidateQueries({ queryKey: ["creativos"] })} />
             ) : null}
           </li>
         ))}
       </ul>
     </section>
+  );
+}
+
+function Pieza({
+  pedidoId,
+  imagen,
+  variantes,
+  onHecho,
+}: {
+  pedidoId: string;
+  imagen: string;
+  variantes: { id: string; titulo: string; texto: string }[];
+  onHecho: () => void;
+}) {
+  const [abierto, setAbierto] = useState(false);
+  const [textos, setTextos] = useState(variantes);
+  const guardar = useMutation({
+    mutationFn: () => editarTextosCreativos({ data: { pedidoId, textos } }),
+    onSuccess: () => {
+      toast.success("Textos guardados");
+      setAbierto(false);
+      onHecho();
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+  return (
+    <div className="mt-2 grid gap-3 sm:grid-cols-[180px_minmax(0,1fr)]">
+      <img src={imagen} alt="" className="aspect-square w-full rounded-md border border-line object-cover" />
+      <div>
+        <ul className="space-y-2 text-sm">
+          {textos.map((variante, index) => (
+            <li key={variante.id}>
+              {abierto ? (
+                <div className="space-y-1">
+                  <input className="h-10 w-full rounded-md border border-line bg-paper px-2" value={variante.titulo} onChange={(event) => setTextos((prev) => prev.map((item, i) => i === index ? { ...item, titulo: event.target.value } : item))} />
+                  <textarea className="min-h-16 w-full rounded-md border border-line bg-paper px-2 py-1" value={variante.texto} onChange={(event) => setTextos((prev) => prev.map((item, i) => i === index ? { ...item, texto: event.target.value } : item))} />
+                </div>
+              ) : (
+                <>
+                  <p className="font-medium">{variante.titulo}</p>
+                  <p className="text-muted">{variante.texto}</p>
+                </>
+              )}
+            </li>
+          ))}
+        </ul>
+        <div className="mt-2 flex gap-2">
+          {abierto ? (
+            <Button size="sm" disabled={guardar.isPending} onClick={() => guardar.mutate()}>Guardar textos</Button>
+          ) : (
+            <Button size="sm" variant="secondary" onClick={() => setAbierto(true)}>Editar</Button>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -319,11 +374,12 @@ function Banners({
                 {hecho?.frase ? `: ${hecho.frase}` : ""}
                 {hecho?.productoId && nombreDe(hecho.productoId) ? ` · ${nombreDe(hecho.productoId)}` : ""}
               </p>
-              {puedePublicar && hecho && plantilla?.pideProducto ? (
-                <CambiarProducto
+              {puedePublicar && hecho ? (
+                <EditarBanner
                   adId={aviso.id}
                   plantilla={hecho.plantilla}
                   productoId={hecho.productoId ?? ""}
+                  frase={hecho.frase}
                   productos={publicados.map((item) => ({ id: item.id, nombre: item.nombre }))}
                   onHecho={() => void qc.invalidateQueries({ queryKey: ["canal-mercado"] })}
                 />
@@ -337,7 +393,7 @@ function Banners({
       ) : (
         <p className="text-xs text-muted">
           {libres.length === 0
-            ? "El creador se cerró. El banner queda hasta el fin del espacio. Si es de producto, podés cambiar cuál se muestra."
+            ? "Este espacio ya tiene banner. Editalo acá. Una foto nueva no lo pisa: queda en Creativos."
             : "Solo el dueño publica el banner."}
         </p>
       )}
@@ -400,34 +456,51 @@ function Creador({
   );
 }
 
-function CambiarProducto({
+function EditarBanner({
   adId,
   plantilla,
   productoId,
+  frase,
   productos,
   onHecho,
 }: {
   adId: string;
   plantilla: string;
   productoId: string;
+  frase: string;
   productos: { id: string; nombre: string }[];
   onHecho: () => void;
 }) {
+  const [abierto, setAbierto] = useState(false);
+  const [siguientePlantilla, setSiguientePlantilla] = useState(plantilla);
   const [siguiente, setSiguiente] = useState(productoId);
+  const [texto, setTexto] = useState(frase);
+  const elegida = PLANTILLAS.find((item) => item.id === siguientePlantilla) ?? PLANTILLAS[0];
   const cambiar = useMutation({
-    mutationFn: () => publicarBanner({ data: { adId, plantilla, productoId: siguiente, frase: "" } }),
+    mutationFn: () => publicarBanner({ data: { adId, plantilla: siguientePlantilla, productoId: siguiente, frase: texto } }),
     onSuccess: () => {
-      toast.success("Producto del banner actualizado");
+      toast.success("Banner actualizado");
+      setAbierto(false);
       onHecho();
     },
     onError: (error: Error) => toast.error(error.message),
   });
+  if (!abierto) return <Button size="sm" variant="secondary" className="mt-1" onClick={() => setAbierto(true)}>Editar</Button>;
   return (
-    <form className="mt-1 flex flex-wrap items-center gap-2" onSubmit={(event) => { event.preventDefault(); cambiar.mutate(); }}>
-      <select className="h-11 min-w-0 flex-1 rounded-md border border-line bg-paper px-2 text-sm text-ink" value={siguiente} onChange={(event) => setSiguiente(event.target.value)}>
-        {productos.map((item) => <option key={item.id} value={item.id}>{item.nombre}</option>)}
+    <form className="mt-2 grid gap-2" onSubmit={(event) => { event.preventDefault(); cambiar.mutate(); }}>
+      <select className="h-11 rounded-md border border-line bg-paper px-2 text-sm" value={siguientePlantilla} onChange={(event) => setSiguientePlantilla(event.target.value)}>
+        {PLANTILLAS.map((item) => <option key={item.id} value={item.id}>{item.nombre}</option>)}
       </select>
-      <button type="submit" className="h-11 rounded-md border border-line px-3 text-sm" disabled={cambiar.isPending || siguiente === productoId}>Cambiar producto</button>
+      {elegida.pideProducto ? (
+        <select className="h-11 rounded-md border border-line bg-paper px-2 text-sm" value={siguiente} onChange={(event) => setSiguiente(event.target.value)}>
+          <option value="">Elegir producto</option>
+          {productos.map((item) => <option key={item.id} value={item.id}>{item.nombre}</option>)}
+        </select>
+      ) : (
+        <input className="h-11 rounded-md border border-line bg-paper px-2 text-sm" maxLength={80} value={texto} onChange={(event) => setTexto(event.target.value)} />
+      )}
+      <Button type="submit" size="sm" disabled={cambiar.isPending}>Guardar</Button>
     </form>
   );
 }
+

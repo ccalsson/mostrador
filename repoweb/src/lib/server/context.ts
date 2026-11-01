@@ -8,6 +8,7 @@ type MarcaConfig = {
   bajada?: string;
   membrete?: string;
   fondo?: string | null;
+  direccion?: string;
 };
 
 function leerConfig(raw: unknown): MarcaConfig {
@@ -36,6 +37,7 @@ export async function getMarcaCompleta(tenantId: string = TENANT_ID): Promise<Ma
     bajada: config.bajada?.trim() || "",
     membrete: config.membrete?.trim() || "",
     pieTicket: config.pieTicket?.trim() || (tenantId === TENANT_ID ? TENANT_PIE : ""),
+    direccion: config.direccion?.trim() || "",
     fondo,
   };
 }
@@ -100,31 +102,27 @@ export function mapProducto(r: {
   unidad: Producto["unidad"];
   unidad_label: string;
   precio: unknown;
-  moneda?: unknown;
-  costo?: unknown;
   stock: unknown;
   stock_minimo: unknown;
   alias: unknown;
   activo: boolean;
   orden?: unknown;
   publicado_online?: unknown;
-  foto_url?: string | null;
+  costo?: unknown;
+  margen_pct?: unknown;
+  foto_id?: unknown;
 }): Producto {
   const alias = parseAlias(r.alias);
   const stock = num(r.stock);
   const stockMinimo = num(r.stock_minimo);
-  const precio = num(r.precio);
-  const costo = r.costo == null ? null : num(r.costo);
-  const margen = calcularMargen(precio, costo);
   return {
     id: r.id,
     nombre: r.nombre,
     unidad: r.unidad,
     unidadLabel: r.unidad_label,
-    precio,
-    moneda: r.moneda === "USD" || r.moneda === "ARS" ? r.moneda : undefined,
-    costo,
-    margen,
+    precio: num(r.precio),
+    costo: r.costo == null ? null : num(r.costo),
+    margenPct: r.margen_pct == null ? null : num(r.margen_pct),
     stock,
     stockMinimo,
     alias,
@@ -132,20 +130,8 @@ export function mapProducto(r: {
     publicadoOnline: Boolean(r.publicado_online),
     stockBajo: stock <= stockMinimo,
     orden: r.orden == null ? null : num(r.orden),
-    fotoUrl: r.foto_url ?? null,
+    tieneFoto: Boolean(r.foto_id),
   };
-}
-
-/**
- * Calcula el margen de ganancia en porcentaje.
- * Si precio > 0 y costo > 0: margen = ((precio - costo) / precio) * 100
- * Si no: margen = null
- */
-export function calcularMargen(precio: number, costo: number | null): number | null {
-  if (precio > 0 && costo != null && costo > 0) {
-    return ((precio - costo) / precio) * 100;
-  }
-  return null;
 }
 
 function parseAlias(value: unknown): string[] {
@@ -226,11 +212,8 @@ export async function loadItems(pedidoId: string): Promise<PedidoItem[]> {
     precio_unitario: unknown;
     unidad: PedidoItem["unidad"];
     unidad_label: string;
-    cantidad_entregada: unknown;
-    nota_entrega: string | null;
   }>`
-    select id, producto_id, nombre_snapshot, cantidad, precio_unitario, unidad, unidad_label,
-           cantidad_entregada, nota_entrega
+    select id, producto_id, nombre_snapshot, cantidad, precio_unitario, unidad, unidad_label
     from pedido_items
     where pedido_id = ${pedidoId}
     order by nombre_snapshot
@@ -247,8 +230,6 @@ export async function loadItems(pedidoId: string): Promise<PedidoItem[]> {
       unidad: r.unidad,
       unidadLabel: r.unidad_label,
       subtotal: Math.round(cantidad * precioUnitario * 100) / 100,
-      cantidadEntregada: num(r.cantidad_entregada),
-      notaEntrega: r.nota_entrega,
     };
   });
 }

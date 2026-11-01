@@ -6,6 +6,7 @@ import {
   FileText,
   LayoutDashboard,
   Megaphone,
+  QrCode,
   NotebookPen,
   Package,
   ChevronDown,
@@ -15,6 +16,8 @@ import {
   ScrollText,
   ShoppingBag,
   Smartphone,
+  Star,
+  Store,
   Truck,
   UserRound,
   Users,
@@ -58,20 +61,26 @@ const GRUPOS: { id: string; label: string; items: { to: string; label: string; i
     items: [
       { to: "/addons", label: "Add-ons", icon: Package, roles: ["admin"] },
       { to: "/usuarios", label: "Usuarios", icon: Users, roles: ["admin"] },
+      { to: "/identidad", label: "Identidad", icon: Store, roles: ["admin"] },
       { to: "/contrato", label: "Contrato", icon: ScrollText, roles: ["admin"] },
     ],
   },
   {
     id: "marketing",
     label: "Marketing",
-    items: [{ to: "/marketing", label: "Marketing", icon: Megaphone, roles: ["admin"] }],
+    items: [
+      { to: "/marketing", label: "Marketing", icon: Megaphone, roles: ["admin"] },
+      { to: "/qr", label: "QR", icon: QrCode, roles: ["admin"] },
+    ],
   },
   {
     id: "informes",
     label: "Informes",
     items: [
       { to: "/escritorio", label: "Escritorio", icon: NotebookPen, roles: ["admin"] },
+      { to: "/reposicion", label: "Reposición", icon: Package, roles: ["admin"] },
       { to: "/dashboard", label: "Tablero", icon: LayoutDashboard, roles: ["admin"] },
+      { to: "/reputacion", label: "Reputación", icon: Star, roles: ["admin"] },
       { to: "/auditoria", label: "Auditoría", icon: ClipboardList, roles: ["admin"] },
     ],
   },
@@ -154,22 +163,22 @@ export function AppShell({ children, title, ancho }: { children: ReactNode; titl
   return (
     <div className="puesto-app min-h-dvh overflow-x-hidden bg-paper text-ink">
       <header className="sticky top-0 z-30 border-b border-white/10 bg-leaf-2 text-leaf-fg">
-        <div className={cn("mx-auto flex w-full items-center gap-2 px-3 py-1.5 sm:px-4", ancho === "completo" ? "max-w-none" : "max-w-6xl")}>
+        <div className={cn("mx-auto flex w-full flex-wrap items-center gap-x-2 gap-y-1 px-3 py-1.5 sm:px-4 lg:flex-nowrap", ancho === "completo" ? "max-w-none" : "max-w-6xl")}>
           <Link to="/" className="shrink-0 pr-2" onClick={() => setMenu(null)}>
             <span className="font-display text-base leading-none font-semibold tracking-tight">Mostrador</span>
           </Link>
-          <nav className="flex min-w-0 flex-1 flex-wrap items-center gap-0.5" onPointerDown={(event) => event.stopPropagation()}>
+          <nav aria-label="Navegación principal" className="order-3 flex min-w-0 basis-full items-center gap-0.5 overflow-x-auto lg:order-none lg:flex-1 lg:basis-auto lg:overflow-visible" onPointerDown={(event) => event.stopPropagation()}>
             {grupos.map((grupo, index) => {
               const activo = grupo.items.some((item) => pathname === item.to || pathname.startsWith(`${item.to}/`));
               const abierto = menu === grupo.id;
               const alBorde = index >= grupos.length - 2;
               return (
-                <div key={grupo.id} className="relative">
+                <div key={grupo.id} className="relative shrink-0">
                   <button
                     type="button"
                     aria-expanded={abierto}
                     className={cn(
-                      "inline-flex h-8 items-center gap-1 rounded-md px-2 text-xs",
+                      "inline-flex h-11 items-center gap-1 rounded-md px-2 text-xs whitespace-nowrap lg:h-8",
                       activo || abierto ? "bg-white/15 text-leaf-fg" : "text-leaf-fg/70",
                     )}
                     onClick={() => setMenu(abierto ? null : grupo.id)}
@@ -180,7 +189,7 @@ export function AppShell({ children, title, ancho }: { children: ReactNode; titl
                   {abierto ? (
                     <div
                       className={cn(
-                        "absolute top-full z-40 mt-1 hidden min-w-44 rounded-md border border-line bg-surface py-1 text-ink shadow-lg sm:block",
+                        "absolute top-full z-40 mt-1 hidden min-w-44 rounded-md border border-line bg-surface py-1 text-ink shadow-lg lg:block",
                         alBorde ? "right-0" : "left-0",
                       )}
                     >
@@ -207,36 +216,8 @@ export function AppShell({ children, title, ancho }: { children: ReactNode; titl
                 </div>
               );
             })}
-            {menu ? (
-              <div className="basis-full sm:hidden">
-                {grupos
-                  .filter((grupo) => grupo.id === menu)
-                  .map((grupo) => (
-                    <div key={grupo.id} className="mt-1 overflow-hidden rounded-md border border-line bg-surface py-1 text-ink">
-                      {grupo.items.map((item) => {
-                        const Icon = item.icon;
-                        const marcado = pathname === item.to || pathname.startsWith(`${item.to}/`);
-                        return (
-                          <Link
-                            key={item.to}
-                            to={item.to}
-                            className={cn(
-                              "flex h-9 items-center gap-2 px-2.5 text-sm",
-                              marcado ? "bg-leaf/10 font-medium text-leaf" : "text-ink",
-                            )}
-                            onClick={() => setMenu(null)}
-                          >
-                            <Icon className="size-3.5" />
-                            {item.label}
-                          </Link>
-                        );
-                      })}
-                    </div>
-                  ))}
-              </div>
-            ) : null}
           </nav>
-          <div className="flex shrink-0 items-center gap-1.5">
+          <div className="ml-auto flex shrink-0 items-center gap-1.5 lg:ml-0">
             <span
               className={cn(
                 "inline-flex items-center gap-1 rounded-full px-1.5 py-1 text-[11px]",
@@ -250,6 +231,34 @@ export function AppShell({ children, title, ancho }: { children: ReactNode; titl
             <TemaBoton />
             <UserButton />
           </div>
+            {menu ? (
+              <div className="order-4 basis-full lg:hidden" onPointerDown={(event) => event.stopPropagation()}>
+                {grupos
+                  .filter((grupo) => grupo.id === menu)
+                  .map((grupo) => (
+                    <div key={grupo.id} className="mt-1 overflow-hidden rounded-md border border-line bg-surface py-1 text-ink">
+                      {grupo.items.map((item) => {
+                        const Icon = item.icon;
+                        const marcado = pathname === item.to || pathname.startsWith(`${item.to}/`);
+                        return (
+                          <Link
+                            key={item.to}
+                            to={item.to}
+                            className={cn(
+                              "flex h-11 items-center gap-2 px-2.5 text-sm",
+                              marcado ? "bg-leaf/10 font-medium text-leaf" : "text-ink",
+                            )}
+                            onClick={() => setMenu(null)}
+                          >
+                            <Icon className="size-3.5" />
+                            {item.label}
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  ))}
+              </div>
+            ) : null}
         </div>
       </header>
       <main className={cn("mx-auto w-full px-4 py-5 sm:px-6", ancho === "completo" ? "max-w-none" : "max-w-6xl")}>
@@ -259,8 +268,7 @@ export function AppShell({ children, title, ancho }: { children: ReactNode; titl
             <h1 className="mt-1 font-display text-[1.65rem] leading-none font-semibold tracking-tight">{title}</h1>
           </div>
         ) : null}
-        {/* Aceptar las condiciones es acto del dueño; la central API rechaza a los otros roles. */}
-        {staff.rol === "admin" ? <PuertaLegal modo="mostrador">{children}</PuertaLegal> : children}
+        <PuertaLegal modo="mostrador">{children}</PuertaLegal>
       </main>
       <a
         href="/login"

@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { GROK_PROVIDERS, GOOGLE_PROVIDER, authClient, authEnabled, googleDirectEnabled, signIn } from "@/lib/auth/client";
+import { GROK_PROVIDERS, authClient, authEnabled, signIn } from "@/lib/auth/client";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { prepareDemo } from "@/lib/fn";
 import { Button } from "@/components/ui/button";
@@ -66,13 +66,19 @@ function Login() {
       <div className="fixed top-3 right-3 z-10">
         <TemaBoton tono="pagina" />
       </div>
-      <div className="relative mx-auto flex min-h-dvh max-w-5xl flex-col justify-center gap-5 px-4 py-8 sm:px-5 lg:grid lg:grid-cols-2 lg:items-center lg:gap-8">
-        <section className="rounded-xl border border-line bg-paper/95 p-4 sm:p-5">
-          <p className="text-xs font-medium tracking-wide text-terra uppercase sm:text-sm">Mostrador</p>
-          <h1 className="mt-1 font-display text-[1.65rem] leading-[1.05] font-semibold tracking-tight text-leaf sm:mt-2 sm:text-4xl">
-            Mostrador
-          </h1>
-          <p className="mt-2 text-base leading-snug text-ink-soft sm:text-lg">tu gestión inteligente</p>
+      <div className="relative mx-auto flex min-h-dvh max-w-5xl flex-col justify-center gap-5 px-4 py-8 sm:px-5 lg:grid lg:grid-cols-2 lg:items-stretch lg:gap-8">
+        <section className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-line bg-surface">
+          <div className="px-4 pt-4 sm:px-5 sm:pt-5">
+            <p className="text-xs font-medium tracking-wide text-terra uppercase sm:text-sm">Mostrador</p>
+            <h1 className="mt-1 font-display text-[1.65rem] leading-[1.05] font-semibold tracking-tight text-leaf sm:mt-2 sm:text-4xl">
+              Mostrador
+            </h1>
+            <p className="mt-2 text-base leading-snug text-ink-soft sm:text-lg">tu gestión inteligente</p>
+          </div>
+          <div className="relative mt-4 h-52 overflow-hidden sm:h-64 lg:h-auto lg:min-h-56 lg:flex-1">
+            <img src="/login-puesto.jpg" alt="" className="absolute inset-0 h-full w-full object-cover" />
+            <div className="pointer-events-none absolute inset-0 bg-paper/25" />
+          </div>
         </section>
 
         <section className="rounded-xl border border-line border-t-4 border-t-leaf bg-surface p-4 shadow-[0_12px_40px_rgba(15,61,38,0.08)] sm:p-6">
@@ -123,15 +129,6 @@ function Login() {
           </p>
           {authEnabled ? (
             <div className="mt-5 space-y-2 border-t border-line pt-5">
-              {googleDirectEnabled ? (
-                <Button
-                  variant="secondary"
-                  className="w-full"
-                  onClick={() => void signIn(GOOGLE_PROVIDER.providerId, { callbackURL: "/" })}
-                >
-                  Continuar con {GOOGLE_PROVIDER.label}
-                </Button>
-              ) : null}
               {GROK_PROVIDERS.map((p) => (
                 <Button
                   key={p.providerId}

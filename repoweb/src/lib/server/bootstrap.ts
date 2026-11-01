@@ -8,12 +8,14 @@ import {
   TENANT_NOMBRE,
   TENANT_PIE,
 } from "@/lib/catalog";
-import { getSql } from "@/lib/db";
+import { dbSource, getSql } from "@/lib/db";
+import { runBootstrap } from "../../../scripts/bootstrap-policy.ts";
 import { sincronizarPresenciaPublicada } from "@/lib/torre/presencia";
 import { newId, slugId } from "@/lib/ids";
 import { num } from "@/lib/money";
 import type { Rol, Staff } from "@/lib/types";
 import { loadStaffByUserId } from "./context";
+import { exigirAccesoPuesto } from "@/lib/torre/acceso-puesto";
 
 const g = globalThis as typeof globalThis & {
   __mostradorBoot__?: Promise<void>;
@@ -114,8 +116,8 @@ async function asegurarPuestoPrueba(sql: Awaited<ReturnType<typeof getSql>>) {
   `;
   await sql.query(
     `insert into productos (
-       id, tenant_id, nombre, unidad, unidad_label, precio, moneda, stock, stock_minimo, alias, activo, publicado_online
-     ) values ($1,$2,$3,$4,$5,$6,'ARS',$7,$8,$9::jsonb, true, true)
+       id, tenant_id, nombre, unidad, unidad_label, precio, stock, stock_minimo, alias, activo, publicado_online
+     ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb, true, true)
      on conflict (id) do nothing`,
     ["p_prueba_tomate", id, "Tomate de prueba", "bulto", "cajón", 1500, 40, 4, "[]"],
   );
@@ -145,11 +147,10 @@ async function asegurarCatalogo(sql: Awaited<ReturnType<typeof getSql>>) {
   for (const item of CATALOG) {
     const id = slugId("p", item.nombre);
     if (ya) {
-      // El seed del catálogo está escrito en pesos; la API lo cobra tal cual.
       await sql.query(
         `insert into productos (
-           id, tenant_id, nombre, unidad, unidad_label, precio, moneda, stock, stock_minimo, alias, activo, publicado_online
-         ) values ($1,$2,$3,$4,$5,$6,'ARS',$7,$8,$9::jsonb, true, true)
+           id, tenant_id, nombre, unidad, unidad_label, precio, stock, stock_minimo, alias, activo, publicado_online
+         ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb, true, true)
          on conflict (id) do nothing`,
         [
           id,
@@ -166,11 +167,10 @@ async function asegurarCatalogo(sql: Awaited<ReturnType<typeof getSql>>) {
     } else {
       await sql.query(
         `insert into productos (
-           id, tenant_id, nombre, unidad, unidad_label, precio, moneda, stock, stock_minimo, alias, activo, publicado_online
-         ) values ($1,$2,$3,$4,$5,$6,'ARS',$7,$8,$9::jsonb, true, true)
+           id, tenant_id, nombre, unidad, unidad_label, precio, stock, stock_minimo, alias, activo, publicado_online
+         ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb, true, true)
          on conflict (id) do update set
            precio = excluded.precio,
-           moneda = excluded.moneda,
            unidad = excluded.unidad,
            unidad_label = excluded.unidad_label,
            alias = excluded.alias,
@@ -209,8 +209,6 @@ async function asegurarCuentaDePrueba() {
     const account = await sql<{ id: string }>`
       select id from account where "userId" = ${userId} and "providerId" = ${"credential"} limit 1
     `;
-    // Reescribir la clave acá revierte cualquier recuperación del usuario en cada
-    // arranque en frío; sólo se crea la cuenta cuando falta.
     if (!account[0]) {
       const hash = await hashPassword(PRUEBA_PASSWORD);
       const accId = newId("acc").replace("acc_", "");
@@ -340,7 +338,11 @@ async function limpiarOperacionesDePrueba() {
 }
 
 export async function ensureBootstrapped() {
-  g.__mostradorBoot__ ??= seedCore();
+  g.__mostradorBoot__ ??= runBootstrap({
+    source: dbSource,
+    seedDemo: seedCore,
+    provisionOwner: provisionTorreOwner,
+  });
   try {
     await g.__mostradorBoot__;
   } catch (err) {
@@ -391,9 +393,11 @@ export async function ensureStaffForUser(userId: string): Promise<Staff> {
   }
   const existing = await loadStaffByUserId(userId);
   if (existing) {
+    await exigirAccesoPuesto(sql, existing.casaId);
     await sql`update staff set ultimo_login = now() where id = ${existing.id}`;
     return existing;
   }
+  if (dbSource === "neon") throw new Error("Tu cuenta no tiene un negocio habilitado. Contactá al administrador.");
   const demo = DEMO_USERS.find((u) => u.email === emailKey);
   const rol: Rol = demo?.rol ?? "admin";
   const nombre = demo?.nombre ?? users[0]?.name ?? "Dueño";
@@ -422,6 +426,7 @@ export async function ensureStaffForUser(userId: string): Promise<Staff> {
 
 export async function seedDemoAccounts() {
   await ensureBootstrapped();
+  if (dbSource !== "pglite") return [];
   return DEMO_USERS.map((u) => ({
     email: u.email,
     password: u.password,

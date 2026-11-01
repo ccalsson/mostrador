@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Minus, Plus, Search, Trash2 } from "lucide-react";
 import { Captcha } from "@/components/captcha";
+import { CompraInteligente } from "@/components/compra-inteligente";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PuertaLegal } from "@/components/puerta-legal";
@@ -82,6 +83,7 @@ type Cargador = {
 type FichaCargador = {
   nombre: string;
   telefono: string | null;
+  foto?: string | null;
   disponibilidad: string;
   puntos: number;
   nivel: string;
@@ -97,12 +99,14 @@ type FichaCargador = {
 type FichaComprador = {
   nombre: string;
   telefono: string | null;
+  foto?: string | null;
   pais: string | null;
   tipoDocumento: string | null;
   numeroDocumento: string | null;
   identidadEstado?: string;
+  puestoId?: string | null;
 };
-type Producto = { id: string; nombre: string; precio: number; disponible: number; unidad: string; unidadLabel: string };
+type Producto = { id: string; nombre: string; precio: number; disponible: number; unidad: string; unidadLabel: string; tieneFoto?: boolean };
 type Puesto = { id: string; nombre: string; bajada?: string | null; tier?: string; cuentaCorriente?: boolean };
 type Aviso = {
   id: string;
@@ -290,7 +294,8 @@ function MercadoPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const desdeGoogle = params.get("token");
-    const puestoQuery = params.get("puesto");
+    const puestoQuery = params.get("puesto") || sessionStorage.getItem("mercado-zona");
+    if (params.get("puesto")) sessionStorage.setItem("mercado-zona", params.get("puesto") ?? "");
     if (puestoQuery) setPuestoInicial(puestoQuery);
     const guardado = desdeGoogle || sessionStorage.getItem(TOKEN);
     if (desdeGoogle) {
@@ -306,6 +311,10 @@ function MercadoPage() {
         setPerfil(siguiente);
         setIdentidad(yo.comprador?.identidadEstado ?? "pendiente");
         if (yo.comprador) setFicha(yo.comprador);
+        if (!params.get("puesto") && yo.comprador?.puestoId) {
+          sessionStorage.setItem("mercado-zona", yo.comprador.puestoId);
+          setPuestoInicial(yo.comprador.puestoId);
+        }
         if (yo.cargador) setYoCargador(yo.cargador);
       })
       .catch(() => {
@@ -315,6 +324,11 @@ function MercadoPage() {
   }, []);
 
   useEffect(() => {
+    if (!token || perfil !== "comprador" || !puestoInicial) return;
+    void pedir("puesto-vinculo", { method: "POST", token, body: { puestoId: puestoInicial } }).catch(() => undefined);
+  }, [token, perfil, puestoInicial]);
+
+  useEffect(() => {
     if (!token || perfil !== "cargador") return;
     void cargarRecorridos();
   }, [token, perfil]);
@@ -322,10 +336,12 @@ function MercadoPage() {
   useEffect(() => {
     if (!token || perfil !== "comprador" || identidad === "pendiente" || identidad === "rechazada" || panel !== "puestos") return;
     void pedir<{ puestos: Puesto[] }>("puestos", { token }).then((data) => {
-      setPuestos(data.puestos);
+      const lista = puestoInicial ? data.puestos.filter((item) => item.id === puestoInicial) : data.puestos;
+      setPuestos(lista);
       if (puestoInicial) {
-        const elegido = data.puestos.find((item) => item.id === puestoInicial);
+        const elegido = lista[0];
         if (elegido) void abrirPuesto(elegido);
+        else setError("Ese puesto no está publicado en Mercado.");
       }
     }).catch((e: Error) => setError(e.message));
   }, [token, perfil, identidad, puestoInicial, panel]);
@@ -414,6 +430,7 @@ function MercadoPage() {
           pais,
           tipoDocumento: pais === "PY" ? "CI_PY" : "DNI",
           numeroDocumento: documento,
+          puestoId: puestoInicial ?? "",
           website,
           captcha,
         },
@@ -830,7 +847,7 @@ function MercadoPage() {
   if (!token) {
     return (
       <main className="mx-auto min-h-dvh max-w-md bg-paper px-4 py-8 text-ink">
-        <h1 className="font-display text-3xl">Mercado al Toque</h1>
+        <p className="font-display text-3xl">Mercado al Toque</p>
         <p className="mt-1 text-sm text-muted">Comprá en los puestos o entrá como cargador.</p>
         <div className="mt-4 grid grid-cols-2 gap-2">
           <Button variant={como === "comprador" ? "primary" : "secondary"} onClick={() => setComo("comprador")}>
@@ -892,13 +909,18 @@ function MercadoPage() {
 
   if (perfil === "cargador") {
     return (
-      <PuertaLegal modo="mercado" token={token}>
+      <PuertaLegal modo="mercado" token={token} onSalir={salir}>
       <Marco titulo="Cargador" onSalir={salir} onCargar={() => void cargarRecorridos()}>
         {error ? <p className="text-sm text-terra">{error}</p> : null}
         {yoCargador ? (
-          <section className="mb-4 rounded-md border border-line bg-surface px-3 py-3 text-sm">
-            <p className="font-medium">{yoCargador.nombre}</p>
-            <p className="text-muted">{yoCargador.telefono || "Sin teléfono"} · {yoCargador.nivel}</p>
+          <section className="mb-4 rounded-xl border border-line bg-surface px-3 py-3 text-sm">
+            <div className="flex items-center gap-3">
+              {yoCargador.foto ? <img src={yoCargador.foto} alt="" className="size-12 rounded-full object-cover" /> : null}
+              <div>
+                <p className="font-medium">{yoCargador.nombre}</p>
+                <p className="text-muted">{yoCargador.telefono || "Sin teléfono"} · {yoCargador.nivel}</p>
+              </div>
+            </div>
             <p className="mt-1">
               {yoCargador.calificacion == null ? "Sin calificaciones" : `${yoCargador.calificacion} de 5 · ${yoCargador.calificaciones} calificaciones`}
             </p>
@@ -969,7 +991,7 @@ function MercadoPage() {
 
   if (identidad === "pendiente" || identidad === "rechazada") {
     return (
-      <PuertaLegal modo="mercado" token={token}>
+      <PuertaLegal modo="mercado" token={token} onSalir={salir}>
       <Marco titulo="Documentación" onSalir={salir}>
         <p className="text-sm text-muted">Cargá el documento y una selfie. Eso no los marca como verificados.</p>
         <form
@@ -1003,7 +1025,7 @@ function MercadoPage() {
   }
 
   return (
-    <PuertaLegal modo="mercado" token={token}>
+    <PuertaLegal modo="mercado" token={token} onSalir={salir}>
     <Marco titulo="Mercado al Toque" onSalir={salir}>
       <div className="grid grid-cols-4 gap-2">
         <Button variant={panel === "puestos" ? "primary" : "secondary"} onClick={() => setPanel("puestos")}>
@@ -1029,6 +1051,17 @@ function MercadoPage() {
       {aviso ? <p className="mt-3 text-sm text-muted">{aviso}</p> : null}
       {panel === "puestos" && !puesto ? (
         <div className="mt-4 space-y-3">
+          {token ? (
+            <CompraInteligente
+              token={token}
+              onUsar={(lineas) => {
+                if (lineas.length === 0) return;
+                setCarrito(lineas);
+                setPuesto({ id: lineas[0].tenantId, nombre: lineas[0].tenantNombre });
+                setAviso("Revisá el pedido y confirmá el pago. Todavía no se envió.");
+              }}
+            />
+          ) : null}
           {puestos.length === 0 ? <p className="text-sm text-muted">Ningún puesto está publicado en Mercado al Toque.</p> : null}
           {avisos.map((aviso) => (
             <article key={aviso.id} className="rounded-md border border-line bg-surface px-3 py-2 text-sm">
@@ -1040,9 +1073,10 @@ function MercadoPage() {
             </article>
           ))}
           {puestos.map((item) => (
-            <button key={item.id} type="button" className="block w-full rounded-md border border-line bg-surface px-3 py-3 text-left" onClick={() => void abrirPuesto(item)}>
+            <button key={item.id} type="button" className="block w-full rounded-xl border border-line border-l-4 border-l-leaf bg-surface px-3 py-3 text-left" onClick={() => void abrirPuesto(item)}>
               <span className="font-medium">{item.nombre}</span>
               {item.bajada ? <span className="mt-0.5 block text-sm text-muted">{item.bajada}</span> : null}
+              <span className="mt-1 block text-xs text-leaf">Ver productos</span>
             </button>
           ))}
         </div>
@@ -1057,25 +1091,32 @@ function MercadoPage() {
             <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted" />
             <Input className="pl-10" placeholder="Buscar banana, papa, lechuga…" value={busca} onChange={(ev) => setBusca(ev.target.value)} />
           </div>
-          <ul className="mt-2 divide-y divide-line overflow-hidden rounded-lg border border-line bg-surface">
+          <ul className="mt-3 grid grid-cols-2 gap-2">
             {productos
               .filter((producto) => producto.nombre.toLowerCase().includes(busca.trim().toLowerCase()))
               .map((producto) => {
                 const n = carrito.find((linea) => linea.tenantId === puesto.id && linea.productoId === producto.id)?.cantidad ?? 0;
                 return (
-                  <li key={producto.id} className="flex items-center gap-2 px-2.5 py-1.5">
-                    <button type="button" className="min-w-0 flex-1 text-left" onClick={() => ajustar(producto, 1)}>
-                      <span className="block truncate font-medium leading-tight">{producto.nombre}</span>
-                      <span className="text-sm text-muted">
-                        {money(producto.precio)} / {producto.unidadLabel}
-                        <span className="ml-2 tabular-nums">{producto.disponible} {producto.unidadLabel}</span>
+                  <li key={producto.id} className="flex flex-col overflow-hidden rounded-xl border border-line bg-surface">
+                    <button type="button" className="text-left" onClick={() => ajustar(producto, 1)}>
+                      <span className="block aspect-square bg-paper-2">
+                        {producto.tieneFoto ? (
+                          <img src={`/api/mercado/v1/productos/${producto.id}/foto`} alt="" className="h-full w-full object-cover" />
+                        ) : (
+                          <span className="grid h-full place-items-center px-2 text-center text-xs text-muted">Sin foto</span>
+                        )}
+                      </span>
+                      <span className="block px-2 pt-2">
+                        <span className="block truncate text-sm font-medium leading-tight">{producto.nombre}</span>
+                        <span className="text-sm font-medium text-leaf tabular-nums">{money(producto.precio)}</span>
+                        <span className="block text-[11px] text-muted">{producto.disponible} {producto.unidadLabel}</span>
                       </span>
                     </button>
-                    <div className="flex shrink-0 items-center gap-1">
+                    <div className="mt-auto flex items-center justify-between px-2 pt-1 pb-2">
                       <Button variant="secondary" size="icon" className="size-9" disabled={n === 0 || ocupado} aria-label="Quitar" onClick={() => ajustar(producto, -1)}>
                         <Minus className="size-4" />
                       </Button>
-                      <span className="w-7 text-center font-medium tabular-nums">{n || ""}</span>
+                      <span className="text-sm font-medium tabular-nums">{n || 0}</span>
                       <Button size="icon" className="size-9" disabled={ocupado} aria-label="Agregar" onClick={() => ajustar(producto, 1)}>
                         <Plus className="size-4" />
                       </Button>
@@ -1084,7 +1125,7 @@ function MercadoPage() {
                 );
               })}
             {productos.filter((producto) => producto.nombre.toLowerCase().includes(busca.trim().toLowerCase())).length === 0 ? (
-              <li className="px-3 py-6 text-sm text-muted">Ningún producto con ese nombre.</li>
+              <li className="col-span-2 px-3 py-6 text-sm text-muted">Ningún producto con ese nombre.</li>
             ) : null}
           </ul>
           <aside className="fixed inset-x-0 bottom-0 z-20 mx-auto flex max-h-[52vh] max-w-md flex-col overflow-hidden border-t border-line bg-surface px-3 pt-2.5 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-6px_20px_rgba(26,22,18,0.06)]">
@@ -1358,6 +1399,7 @@ function MercadoPage() {
       ) : null}
       {panel === "perfil" && ficha ? (
         <section className="mt-4 space-y-1 text-sm">
+          {ficha.foto ? <img src={ficha.foto} alt="" className="mb-2 size-16 rounded-full object-cover" /> : null}
           <p className="font-medium">{ficha.nombre}</p>
           <p className="text-muted">{ficha.telefono || "Sin teléfono"}</p>
           <p className="text-muted">

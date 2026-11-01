@@ -1,13 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 import { Field, SelectField, TorreShell } from "@/components/torre-shell";
 import { Button } from "@/components/ui/button";
 import { listApps, listClients, listExpenses, listPayments, listSubscriptions, saveExpense, savePayment } from "@/lib/torre-fn";
 import { listLineas } from "@/lib/torre/control-fn";
 import { numerosDeNegocios } from "@/lib/torre/numeros-fn";
-import { usoMaterialesYa, type LecturaMaterialesYa } from "@/lib/torre/materiales-ya-fn";
 import { money } from "@/lib/money";
 
 export const Route = createFileRoute("/torre/finanzas")({ component: Page });
@@ -22,23 +21,6 @@ const CATS = [
   { value: "other", label: "Otros" },
 ];
 
-const MESSES = [
-  { value: 1, label: "Enero" },
-  { value: 2, label: "Febrero" },
-  { value: 3, label: "Marzo" },
-  { value: 4, label: "Abril" },
-  { value: 5, label: "Mayo" },
-  { value: 6, label: "Junio" },
-  { value: 7, label: "Julio" },
-  { value: 8, label: "Agosto" },
-  { value: 9, label: "Septiembre" },
-  { value: 10, label: "Octubre" },
-  { value: 11, label: "Noviembre" },
-  { value: 12, label: "Diciembre" },
-];
-
-const ANIOS = Array.from({ length: 6 }, (_, i) => new Date().getFullYear() - 2 + i);
-
 function Page() {
   const qc = useQueryClient();
   const pagos = useQuery({ queryKey: ["torre-pagos"], queryFn: () => listPayments() });
@@ -47,17 +29,7 @@ function Page() {
   const subs = useQuery({ queryKey: ["torre-subs"], queryFn: () => listSubscriptions() });
   const apps = useQuery({ queryKey: ["torre-apps"], queryFn: () => listApps() });
   const lineas = useQuery({ queryKey: ["torre-lineas"], queryFn: () => listLineas() });
-  const now = new Date();
-  const [mes, setMes] = useState(now.getMonth() + 1);
-  const [anio, setAnio] = useState(now.getFullYear());
-  const numeros = useQuery({
-    queryKey: ["torre-numeros", mes, anio],
-    queryFn: () => numerosDeNegocios({ data: { mes, anio } }),
-  });
-  const materialesYa = useQuery({
-    queryKey: ["torre-materiales-ya"],
-    queryFn: () => usoMaterialesYa(),
-  });
+  const numeros = useQuery({ queryKey: ["torre-numeros"], queryFn: () => numerosDeNegocios() });
   const [pago, setPago] = useState(false);
   const [gasto, setGasto] = useState(false);
   const hoy = new Date().toISOString().slice(0, 10);
@@ -131,50 +103,23 @@ function Page() {
         </section>
       </div>
       <section className="mt-6">
-        <div className="mb-3 flex flex-wrap items-end gap-3">
-          <h2 className="font-medium">Numeros por negocio</h2>
-          <label className="text-sm">
-            <span className="mr-1 text-muted">Mes</span>
-            <select
-              className="rounded border border-line bg-surface px-2 py-1 text-sm"
-              value={mes}
-              onChange={(e) => setMes(Number(e.target.value))}
-            >
-              {MESSES.map((m) => (
-                <option key={m.value} value={m.value}>{m.label}</option>
-              ))}
-            </select>
-          </label>
-          <label className="text-sm">
-            <span className="mr-1 text-muted">Anio</span>
-            <select
-              className="rounded border border-line bg-surface px-2 py-1 text-sm"
-              value={anio}
-              onChange={(e) => setAnio(Number(e.target.value))}
-            >
-              {ANIOS.map((a) => (
-                <option key={a} value={a}>{a}</option>
-              ))}
-            </select>
-          </label>
-        </div>
-        <p className="mb-3 text-sm text-muted">Ventas y egresos de la matriz y de cada sucursal. No incluye stock.</p>
-        <NumerosTabla
-          filas={numeros.data ?? []}
-          loading={numeros.isLoading}
-        />
-      </section>
-      <section className="mt-6">
-        <h2 className="mb-2 font-medium">Materiales Ya</h2>
-        <p className="mb-3 text-sm text-muted">
-          Uso del corralón, leído por HTTP de servidor a servidor. No sigue el mes elegido arriba: la
-          app siempre devuelve su mes en curso.
-        </p>
-        {materialesYa.isPending ? (
-          <p className="text-sm text-muted">Cargando…</p>
-        ) : (
-          <MaterialesYaPanel lectura={materialesYa.data} />
-        )}
+        <h2 className="font-medium">Números de cada negocio</h2>
+        <p className="mt-1 mb-3 text-sm text-muted">Este mes. Ventas y egresos de la matriz y de cada sucursal. No incluye stock.</p>
+        <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-surface text-sm">
+          {(numeros.data ?? []).length === 0 ? <li className="px-3 py-3 text-muted">Todavía no hay un puesto vinculado.</li> : null}
+          {(numeros.data ?? []).map((fila) => (
+            <li key={`${fila.negocio}-${fila.sucursal}`} className="grid gap-1 px-3 py-2 sm:grid-cols-[minmax(0,1.4fr)_repeat(4,minmax(0,1fr))]">
+              <span>
+                <span className="block font-medium">{fila.negocio}</span>
+                <span className="text-xs text-muted">{fila.esMatriz ? "Matriz" : "Sucursal"} · {fila.sucursal}</span>
+              </span>
+              <span className="tabular-nums">{fila.tickets} ventas</span>
+              <span className="tabular-nums">{money(fila.ventas)}</span>
+              <span className="tabular-nums text-muted">− {money(fila.egresos)}</span>
+              <span className="tabular-nums font-medium">{money(fila.resultado)}</span>
+            </li>
+          ))}
+        </ul>
       </section>
     </TorreShell>
   );
@@ -288,129 +233,5 @@ function GastoForm({
       <Field label="Fecha" value={form.expenseDate} onChange={(expenseDate) => setForm({ ...form, expenseDate })} type="date" />
       <Button type="submit" className="mt-3 w-full">Guardar gasto</Button>
     </form>
-  );
-}
-
-type NumeroFila = {
-  negocio: string;
-  sucursal: string;
-  esMatriz: boolean;
-  ventas: number;
-  tickets: number;
-  egresos: number;
-  mercaderia: number;
-  resultado: number;
-};
-
-function NumerosTabla({ filas, loading }: { filas: NumeroFila[]; loading: boolean }) {
-  const totales = useMemo(() => {
-    let ventas = 0;
-    let tickets = 0;
-    let egresos = 0;
-    let mercaderia = 0;
-    let resultado = 0;
-    for (const f of filas) {
-      ventas += f.ventas;
-      tickets += f.tickets;
-      egresos += f.egresos;
-      mercaderia += f.mercaderia;
-      resultado += f.resultado;
-    }
-    return {
-      ventas: Math.round(ventas * 100) / 100,
-      tickets,
-      egresos: Math.round(egresos * 100) / 100,
-      mercaderia: Math.round(mercaderia * 100) / 100,
-      resultado: Math.round(resultado * 100) / 100,
-    };
-  }, [filas]);
-
-  if (loading) {
-    return <p className="py-4 text-sm text-muted">Cargando...</p>;
-  }
-
-  if (filas.length === 0) {
-    return <p className="py-4 text-sm text-muted">Todavia no hay un puesto vinculado.</p>;
-  }
-
-  return (
-    <div className="overflow-x-auto rounded-lg border border-line">
-      <table className="w-full text-left text-sm">
-        <thead className="border-b border-line bg-surface text-xs text-muted">
-          <tr>
-            <th className="px-3 py-2 font-medium">Negocio</th>
-            <th className="px-3 py-2 font-medium">Sucursales</th>
-            <th className="px-3 py-2 text-right font-medium">Ventas</th>
-            <th className="px-3 py-2 text-right font-medium">Tickets</th>
-            <th className="px-3 py-2 text-right font-medium">Egresos</th>
-            <th className="px-3 py-2 text-right font-medium">Mercaderia</th>
-            <th className="px-3 py-2 text-right font-medium">Resultado</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-line">
-          {filas.map((fila) => (
-            <tr key={`${fila.negocio}-${fila.sucursal}`} className="bg-surface">
-              <td className="px-3 py-2 font-medium">{fila.negocio}</td>
-              <td className="px-3 py-2">
-                <span className="text-xs text-muted">{fila.esMatriz ? "Matriz" : "Sucursal"}</span>
-                <br />
-                {fila.sucursal}
-              </td>
-              <td className="px-3 py-2 text-right tabular-nums">{money(fila.ventas)}</td>
-              <td className="px-3 py-2 text-right tabular-nums">{fila.tickets}</td>
-              <td className="px-3 py-2 text-right tabular-nums text-muted">- {money(fila.egresos)}</td>
-              <td className="px-3 py-2 text-right tabular-nums text-muted">{money(fila.mercaderia)}</td>
-              <td className={`px-3 py-2 text-right tabular-nums font-medium ${fila.resultado >= 0 ? "text-green-700" : "text-red-700"}`}>
-                {money(fila.resultado)}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-        <tfoot className="border-t border-line bg-surface text-sm font-medium">
-          <tr>
-            <td className="px-3 py-2" colSpan={2}>Total</td>
-            <td className="px-3 py-2 text-right tabular-nums">{money(totales.ventas)}</td>
-            <td className="px-3 py-2 text-right tabular-nums">{totales.tickets}</td>
-            <td className="px-3 py-2 text-right tabular-nums text-muted">- {money(totales.egresos)}</td>
-            <td className="px-3 py-2 text-right tabular-nums text-muted">{money(totales.mercaderia)}</td>
-            <td className={`px-3 py-2 text-right tabular-nums ${totales.resultado >= 0 ? "text-green-700" : "text-red-700"}`}>
-              {money(totales.resultado)}
-            </td>
-          </tr>
-        </tfoot>
-      </table>
-    </div>
-  );
-}
-
-function MaterialesYaPanel({ lectura }: { lectura: LecturaMaterialesYa | undefined }) {
-  if (!lectura) return <p className="text-sm text-muted">Cargando…</p>;
-  if (!lectura.disponible) return <p className="text-sm text-muted">{lectura.motivo}</p>;
-  const { uso } = lectura;
-  return (
-    <>
-      <p className="mb-2 text-xs text-muted">Mes del corralón: {uso.mes}</p>
-      <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
-        <Kpi label="Ventas del mes" value={money(uso.ventas)} hint="pesos" />
-        <Kpi label="Tickets del mes" value={String(uso.tickets)} />
-        <Kpi label="Operadores" value={String(uso.operadores)} hint="cajeros que vendieron" />
-        <Kpi label="Clientes con venta" value={String(uso.clientes_con_venta)} />
-      </div>
-      <div className="mt-2 grid grid-cols-2 gap-2 lg:grid-cols-3">
-        <Kpi label="Cajas abiertas" value={String(uso.cajas_abiertas)} hint="turnos sin cerrar" />
-        <Kpi label="Sucursales" value={String(uso.sucursales)} />
-        <Kpi label="Moneda" value={uso.moneda} hint="enteros de pesos" />
-      </div>
-    </>
-  );
-}
-
-function Kpi({ label, value, hint }: { label: string; value: string; hint?: string }) {
-  return (
-    <div className="rounded-lg border border-line bg-surface p-3">
-      <p className="text-xs text-muted">{label}</p>
-      <p className="mt-1 font-display text-xl font-semibold tabular-nums">{value}</p>
-      {hint ? <p className="mt-1 text-xs text-muted">{hint}</p> : null}
-    </div>
   );
 }

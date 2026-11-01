@@ -52,7 +52,9 @@ function UsuariosPage() {
       <div className="grid items-start justify-start gap-4 lg:grid-cols-[minmax(0,36rem)_18rem]">
         <div className="overflow-hidden rounded-lg border border-line bg-surface text-sm">
           <p className="border-b border-line px-3 py-2 text-xs text-muted">
-            Eliminar da de baja el acceso. Los pedidos que ya cargó quedan. No se borra el historial.
+            {yo.data?.tipo === "staff" && yo.data.staff.sucursalNombre
+              ? `Estás en ${yo.data.staff.sucursalNombre}. El usuario nuevo entra directo a este puesto.`
+              : "El usuario nuevo entra a la casa matriz. Desde una sucursal, queda en esa sucursal."}
           </p>
           <div className="hidden bg-paper-2 font-medium text-muted md:grid md:grid-cols-[minmax(0,1.4fr)_6.5rem_5.5rem_7.5rem]">
             <div className="px-3 py-2">Nombre</div>

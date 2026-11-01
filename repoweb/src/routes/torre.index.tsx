@@ -1,31 +1,21 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
-import { toast } from "sonner";
+import { useQuery } from "@tanstack/react-query";
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { TorreShell } from "@/components/torre-shell";
+import { PendientesAddon, TorreShell } from "@/components/torre-shell";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { dashboardTorre } from "@/lib/torre-fn";
-import { comprobantePago, habilitarPedidoAddon, listAudit, pedidosAddon, resumenComercial } from "@/lib/torre/control-fn";
+import { pedidosAddon, resumenComercial, listAudit } from "@/lib/torre/control-fn";
 
 export const Route = createFileRoute("/torre/")({ component: TorreHome });
 
 const ESTADO: Record<string, string> = { active: "Activa", paused: "Pausada", archived: "Archivada" };
 const TIPO: Record<string, string> = { version: "Versión", pago: "Pago", app: "App", deploy: "Deploy", abono: "Abono" };
 
-function hora(iso: string) {
-  return iso ? iso.slice(0, 16).replace("T", " ") : "";
-}
-
 function TorreHome() {
   const data = useQuery({ queryKey: ["torre-dash"], queryFn: () => dashboardTorre() });
   const comercial = useQuery({ queryKey: ["torre-comercial"], queryFn: () => resumenComercial() });
   const auditoria = useQuery({ queryKey: ["torre-audit"], queryFn: () => listAudit() });
   const pedidos = useQuery({ queryKey: ["torre-pedidos-addon"], queryFn: () => pedidosAddon() });
-  const qc = useQueryClient();
-  const [ocupado, setOcupado] = useState<string | null>(null);
-  const [comprobante, setComprobante] = useState<{ nombre: string; data: string } | null>(null);
   const d = data.data;
   const c = comercial.data;
   const mrr = c ? Object.entries(c.mrr).map(([moneda, valor]) => `${moneda} ${valor}`).join(" · ") || "0" : "…";
@@ -40,6 +30,7 @@ function TorreHome() {
 
   return (
     <TorreShell title="Tablero">
+      <PendientesAddon detalle />
       <div className="mx-auto grid w-full max-w-6xl items-start gap-4 xl:grid-cols-[16rem_minmax(0,34rem)_16rem]">
         <aside className="order-2 space-y-4 xl:order-1">
           <section className="rounded-lg border border-line bg-surface p-3">
@@ -106,69 +97,6 @@ function TorreHome() {
                 </dd>
               </div>
             </dl>
-          </section>
-
-          <section className="rounded-lg border border-line bg-surface p-3">
-            <h2 className="font-medium">Pedidos para habilitar</h2>
-            <p className="mt-1 text-sm text-muted">El dueño contrata. El servicio no se prende hasta acá.</p>
-            {(pedidos.data ?? []).length === 0 ? <p className="mt-2 text-sm text-muted">No hay pedidos nuevos.</p> : null}
-            <ul className="mt-2 space-y-2">
-              {(pedidos.data ?? []).map((pedido) => (
-                <li key={pedido.id} className="rounded-md border border-line bg-paper px-3 py-2 text-sm">
-                  <div className="flex items-baseline justify-between gap-2">
-                    <p className="font-medium">{pedido.tenant}</p>
-                    <p className="text-[11px] text-muted">{hora(pedido.at)}</p>
-                  </div>
-                  <p className="text-muted">{pedido.product}</p>
-                  <p className="mt-1 tabular-nums">
-                    {pedido.currency} {pedido.amount}
-                    <span className="text-muted"> · {pedido.medio === "cuenta" ? "a cargo en cuenta" : "transferencia"}</span>
-                  </p>
-                  {pedido.notes ? <p className="mt-1 text-xs text-muted">{pedido.notes}</p> : null}
-                  {pedido.comprobanteNombre ? <p className="text-xs text-muted">{pedido.comprobanteNombre}</p> : null}
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {pedido.tieneComprobante ? (
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => {
-                          void comprobantePago({ data: pedido.id })
-                            .then((archivo) => setComprobante(archivo))
-                            .catch((err: Error) => toast.error(err.message));
-                        }}
-                      >
-                        Ver comprobante
-                      </Button>
-                    ) : null}
-                    <Button
-                      size="sm"
-                      disabled={ocupado === pedido.id}
-                      onClick={() => {
-                        setOcupado(pedido.id);
-                        void habilitarPedidoAddon({ data: pedido.id })
-                          .then(async () => {
-                            toast.success("Add-on habilitado");
-                            await qc.invalidateQueries({ queryKey: ["torre-pedidos-addon"] });
-                            await qc.invalidateQueries({ queryKey: ["torre-comercial"] });
-                          })
-                          .catch((err: Error) => toast.error(err.message))
-                          .finally(() => setOcupado(null));
-                      }}
-                    >
-                      Habilitar
-                    </Button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-            {comprobante?.data.startsWith("data:image/") ? (
-              <img src={comprobante.data} alt={comprobante.nombre} className="mt-3 max-h-80 rounded-md border border-line" />
-            ) : null}
-            {comprobante && !comprobante.data.startsWith("data:image/") ? (
-              <a className="mt-3 inline-block text-sm text-leaf" href={comprobante.data} download={comprobante.nombre}>
-                Bajar {comprobante.nombre}
-              </a>
-            ) : null}
           </section>
 
           <section>

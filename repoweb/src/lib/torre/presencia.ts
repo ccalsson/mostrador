@@ -3,12 +3,12 @@ import { TENANT_ID } from "@/lib/catalog";
 import { num } from "@/lib/money";
 import {
   apareceEnMercado,
+  cupoMercado,
   permiteCuentaCorriente,
   resolverComision,
   tierContratado,
   type LineaMercado,
 } from "@/lib/torre/condiciones";
-import { cupoMercadoFromLines } from "@/lib/torre/reglas";
 import { armarBanner, leerBanners, type PlantillaId } from "@/lib/mercado/plantillas";
 
 function configText(value: unknown, key: string) {
@@ -46,6 +46,8 @@ export async function lineasPorPuesto() {
     join torre.saas_tenants t on t.id = s.tenant_id
     join torre.saas_products p on p.id = l.product_id
     where t.operational_tenant_ref is not null and t.status = 'active'
+      and l.charge='recurring' and s.start_date<=current_date
+      and l.starts_on<=current_date and (l.ends_on is null or l.ends_on>=current_date)
   `;
   const mapa = new Map<string, LineaMercado[]>();
   for (const row of rows) {
@@ -153,9 +155,47 @@ async function asegurarProDePrueba(operationalTenantId: string) {
   invalidarLineas();
 }
 
+export async function casaDeLibros(tenantId: string) {
+  const sql = await getSql();
+  const fila = await sql<{ tenant_id: string }>`
+    select tenant_id from sucursales
+    where libros_tenant_id = ${tenantId} and activa = true
+    limit 1
+  `;
+  return fila[0]?.tenant_id ?? tenantId;
+}
+
 export async function tierDePuesto(operationalTenantId: string) {
+  const casa = await casaDeLibros(operationalTenantId);
   const mapa = await lineasPorPuesto();
-  return tierContratado(mapa.get(operationalTenantId) ?? []);
+  return tierContratado(mapa.get(casa) ?? []);
+}
+
+/** Localidades con Mercado prendido que entran en lo contratado. La matriz va primero. */
+export async function localidadesPublicadas() {
+  const sql = await getSql();
+  const mapa = await lineasPorPuesto();
+  const filas = await sql<{ id: string; casa: string }>`
+    select t.id, coalesce(s.tenant_id, t.id) as casa
+    from tenants t
+    left join sucursales s on s.libros_tenant_id = t.id and s.activa = true
+    where coalesce(t.config, '{}'::jsonb)->>'mercadoAlToque' = 'true'
+    order by coalesce(s.es_matriz, true) desc, lower(t.nombre)
+  `;
+  const porCasa = new Map<string, string[]>();
+  for (const fila of filas) {
+    const lista = porCasa.get(fila.casa) ?? [];
+    lista.push(fila.id);
+    porCasa.set(fila.casa, lista);
+  }
+  const publicadas = new Map<string, "presencia" | "pro">();
+  for (const [casa, ids] of porCasa) {
+    const lineas = mapa.get(casa) ?? [];
+    const tier = tierContratado(lineas);
+    if (!tier) continue;
+    for (const id of ids.slice(0, cupoMercado(lineas))) publicadas.set(id, tier);
+  }
+  return publicadas;
 }
 
 export async function comisionDePuesto(operationalTenantId: string) {
@@ -316,89 +356,4 @@ export function publicadoEnMercado(config: unknown) {
 export async function puedeAparecer(operationalTenantId: string, config: unknown) {
   const tier = await tierDePuesto(operationalTenantId);
   return { tier, visible: apareceEnMercado(publicadoEnMercado(config), tier) };
-}
-
-function configRecord(value: unknown): Record<string, unknown> {
-  if (value && typeof value === "object") return value as Record<string, unknown>;
-  if (typeof value === "string" && value.trim()) {
-    try {
-      return JSON.parse(value) as Record<string, unknown>;
-    } catch {
-      return {};
-    }
-  }
-  return {};
-}
-
-/** Cuántos puestos de esa casa pueden publicar en Mercado. */
-export async function cupoMercado(tenantId: string): Promise<number> {
-  const sql = await getSql();
-  const rows = await sql<{ config: unknown; line_status: string }>`
-    select p.config, l.status as line_status
-    from torre.saas_subscription_lines l
-    join torre.saas_subscriptions s on s.id = l.subscription_id
-    join torre.saas_products p on p.id = l.product_id
-    where s.tenant_id = ${tenantId}
-      and l.status = 'active'
-  `;
-  return cupoMercadoFromLines(
-    rows.map((row) => {
-      const config = configRecord(row.config);
-      return {
-        family: typeof config.family === "string" ? config.family : null,
-        lineStatus: row.line_status,
-        includedBranches: Number(config.includedBranches ?? 1),
-      };
-    }),
-  );
-}
-
-export type LocalidadPublicada = {
-  id: string;
-  name: string;
-  slug: string;
-};
-
-/** Qué sucursales de esa casa se ven en Mercado, hasta el cupo contratado. */
-export async function localidadesPublicadas(tenantId: string): Promise<LocalidadPublicada[]> {
-  const cupo = await cupoMercado(tenantId);
-  if (cupo <= 0) return [];
-  const sql = await getSql();
-  const rows = await sql<{ id: string; name: string; slug: string }>`
-    select id, name, slug
-    from torre.saas_branches
-    where tenant_id = ${tenantId}
-      and status = 'active'
-      and coalesce(metadata->>'canalMercado', 'false') = 'true'
-    order by opened_on, created_at, id
-    limit ${cupo}
-  `;
-  return rows.map((row) => ({ id: row.id, name: row.name, slug: row.slug }));
-}
-
-export type CasaDeLibros = {
-  id: string;
-  name: string;
-  slug: string;
-  operationalTenantRef: string;
-};
-
-/** Dado el tenant operativo de una sucursal (libros_tenant_id), devuelve la casa (negocio en Torre). */
-export async function casaDeLibros(librosTenantId: string): Promise<CasaDeLibros | null> {
-  const sql = await getSql();
-  const rows = await sql<{ id: string; name: string; slug: string; operational_tenant_ref: string }>`
-    select st.id, st.name, st.slug, st.operational_tenant_ref
-    from sucursales s
-    join torre.saas_tenants st on st.operational_tenant_ref = s.tenant_id
-    where s.libros_tenant_id = ${librosTenantId}
-      and st.status = 'active'
-    limit 1
-  `;
-  if (!rows[0]) return null;
-  return {
-    id: rows[0].id,
-    name: rows[0].name,
-    slug: rows[0].slug,
-    operationalTenantRef: rows[0].operational_tenant_ref,
-  };
 }

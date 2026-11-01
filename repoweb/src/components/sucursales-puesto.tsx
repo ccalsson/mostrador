@@ -63,9 +63,12 @@ export function SucursalesPuesto() {
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="font-medium">Sucursales</h2>
         <p className="text-xs text-muted">
-          {data.usadas} de {data.cupo} · {data.incluidas} en el plan{data.extras > 0 ? ` · ${data.extras} extra` : ""}
+          {data.usadas} de {data.cupo} · el plan es el de la casa{data.extras > 0 ? ` · ${data.extras} sucursal extra` : ""}
         </p>
       </div>
+      <p className="mt-3 text-sm text-muted">
+        Cada sucursal es otro puesto, con su dirección. No paga otro plan. Caja, stock y Premium, si lo tiene la casa, valen ahí. Mercado y el QR salen de la dirección que escribas.
+      </p>
       <ul className="mt-3 grid gap-2 sm:grid-cols-2">
         {data.sucursales.map((item) => (
           <li key={item.id} className="rounded-md border border-line bg-paper px-3 py-3">
@@ -93,8 +96,8 @@ export function SucursalesPuesto() {
           }}
         >
           <input className="h-11 rounded-md border border-line bg-paper px-3 text-sm" value={nombre} onChange={(event) => setNombre(event.target.value)} placeholder="Nombre de la sucursal" />
-          <input className="h-11 rounded-md border border-line bg-paper px-3 text-sm" value={referencia} onChange={(event) => setReferencia(event.target.value)} placeholder="Nave, puesto, calle" />
-          <Button type="submit" disabled={crear.isPending}>Crear</Button>
+          <input className="h-11 rounded-md border border-line bg-paper px-3 text-sm" value={referencia} onChange={(event) => setReferencia(event.target.value)} placeholder="Dirección o mercado, la escribís vos" />
+          <Button type="submit" disabled={crear.isPending || referencia.trim().length < 4}>Crear</Button>
         </form>
       ) : (
         <p className="mt-3 text-xs text-muted">Para otra sucursal, Torre tiene que habilitar el lugar.</p>

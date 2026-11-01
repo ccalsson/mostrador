@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { torreGuard } from "@/lib/torre-fn";
+import { requireTorre, torreGuard } from "@/lib/torre-fn";
 
 // Materiales Ya (punto de venta y logística para corralones) es otro proyecto desplegado aparte:
 // la Torre no toca su base, lee su uso por HTTP con un token de servicio compartido en el header
@@ -68,7 +68,16 @@ async function pedirUso(): Promise<LecturaMaterialesYa> {
   return { disponible: true, uso: body.usage };
 }
 
-// Uso de Materiales Ya para el panel de Finanzas.
+// Uso de Materiales Ya para el panel de Finanzas. El email ya llegó validado (Torre en la
+// web, sesión Bearer + saas_access en el teléfono) y no interviene en la lectura: el token
+// de servicio de Materiales Ya es el que habla con esa app.
+export async function usoMaterialesYaCore(_email: string): Promise<LecturaMaterialesYa> {
+  return pedirUso();
+}
+
 export const usoMaterialesYa = createServerFn({ method: "GET" })
   .middleware([torreGuard])
-  .handler(async () => pedirUso());
+  .handler(async ({ context }) => {
+    const email = await requireTorre(context.userId);
+    return usoMaterialesYaCore(email);
+  });

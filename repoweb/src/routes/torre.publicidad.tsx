@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { toast } from "sonner";
 import { TorreShell } from "@/components/torre-shell";
 import { Badge } from "@/components/ui/badge";
@@ -35,7 +36,7 @@ function Page() {
             <span className="font-medium">{p.name}</span>
             <span className="ml-2 text-xs text-muted">{p.kind} · {p.status} · {p.billing} · {p.frequency}</span>
             <p className="text-xs text-muted">{p.description}</p>
-            <p className="text-xs text-muted">{p.configJson}</p>
+            <p className="text-xs text-muted">{describir(p.configJson)}</p>
           </li>
         ))}
         {catalogo.length === 0 ? <li className="px-3 py-3 text-muted">No hay productos de publicidad ni de envío en el catálogo.</li> : null}
@@ -78,23 +79,48 @@ function Page() {
               <span className="text-xs text-muted">{pack.consumed} usados · {pack.remaining} restantes de {pack.quantity} · {pack.status}</span>
               <span className="block text-xs text-muted">comprado {pack.purchasedOn}{pack.expiresOn ? ` · vence ${pack.expiresOn}` : ""}</span>
             </span>
-            <button
-              type="button"
-              className="text-xs text-leaf"
-              onClick={() => {
-                const raw = window.prompt("Consumo administrativo a descontar", "1");
-                const amount = Number(raw);
-                if (!amount) return;
-                void registrarConsumo({ data: { id: pack.id, amount } })
-                  .then(() => qc.invalidateQueries({ queryKey: ["torre-packs"] }))
-                  .catch((err: Error) => toast.error(err.message));
-              }}
-            >
-              Anotar consumo
-            </button>
+            <Consumo id={pack.id} onHecho={() => void qc.invalidateQueries({ queryKey: ["torre-packs"] })} />
           </li>
         ))}
       </ul>
     </TorreShell>
+  );
+}
+
+function describir(configJson: string) {
+  try {
+    const cfg = JSON.parse(configJson) as Record<string, unknown>;
+    return [
+      cfg.placement ? `lugar ${cfg.placement}` : "",
+      cfg.days ? `${cfg.days} días` : "",
+      cfg.sends ? `${cfg.sends} envíos` : "",
+      cfg.credits ? `${cfg.credits} créditos` : "",
+      cfg.tier ? String(cfg.tier) : "",
+    ].filter(Boolean).join(" · ");
+  } catch {
+    return "";
+  }
+}
+
+function Consumo({ id, onHecho }: { id: string; onHecho: () => void }) {
+  const [n, setN] = useState("1");
+  const [ocupado, setOcupado] = useState(false);
+  return (
+    <form
+      className="flex items-center gap-2"
+      onSubmit={(event) => {
+        event.preventDefault();
+        const amount = Number(n);
+        if (!amount) return;
+        setOcupado(true);
+        void registrarConsumo({ data: { id, amount } })
+          .then(onHecho)
+          .catch((err: Error) => toast.error(err.message))
+          .finally(() => setOcupado(false));
+      }}
+    >
+      <input className="h-10 w-16 rounded-md border border-line bg-paper px-2 text-sm" type="number" min={1} value={n} onChange={(event) => setN(event.target.value)} />
+      <Button type="submit" size="sm" disabled={ocupado}>Anotar</Button>
+    </form>
   );
 }
