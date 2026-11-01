@@ -31,7 +31,6 @@
  */
 import { betterAuth } from "better-auth";
 import { bearer, genericOAuth } from "better-auth/plugins";
-import { google } from "@better-auth/core/social-providers";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
 import { getCookie } from "@tanstack/react-start/server";
 import { randomBytes } from "node:crypto";
@@ -224,6 +223,17 @@ export const auth = betterAuth({
   // local loopback variants, or clients get "Invalid origin".
   trustedOrigins,
 
+  // Google directo, con nuestra propia app de Google Cloud (sin broker). Better
+  // Auth sólo expone `signIn.social({ provider: "google" })` cuando el provider
+  // está acá — registrarlo como plugin no lo publica.
+  ...(googleClientId && googleClientSecret
+    ? {
+        socialProviders: {
+          google: { clientId: googleClientId, clientSecret: googleClientSecret },
+        },
+      }
+    : {}),
+
   // Encrypt broker-issued OAuth tokens at rest, and treat the broker's upstreams
   // as trusted first-party identities. The broker owns identity and X emails are
   // synthetic/unverified, so WITHOUT this a login can fail with
@@ -235,6 +245,7 @@ export const auth = betterAuth({
     accountLinking: {
       enabled: true,
       trustedProviders: [
+        "google",
         ...GROK_PROVIDERS.map((p) => p.providerId),
         GATE_PROVIDER_ID,
       ],
@@ -277,11 +288,6 @@ export const auth = betterAuth({
     // One genericOAuth provider per upstream (when auth is on), all federating
     // to the broker with the SAME client and differing only by the `idp` hint.
     ...(grokOAuthPlugin ? [grokOAuthPlugin] : []),
-
-    // Google OAuth directo (desarrollo local o producción sin broker).
-    ...(googleClientId && googleClientSecret
-      ? [google({ clientId: googleClientId, clientSecret: googleClientSecret })]
-      : []),
 
     // Accept `Authorization: Bearer <session-token>` as an alternative to the
     // cookie. Needed for the LIVE PREVIEW: the app runs in an embedded iframe
