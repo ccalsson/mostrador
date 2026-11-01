@@ -1,6 +1,14 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { GROK_PROVIDERS, authClient, authEnabled, signIn } from "@/lib/auth/client";
+import {
+  GROK_PROVIDERS,
+  GOOGLE_PROVIDER,
+  authClient,
+  authEnabled,
+  googleDirectEnabled,
+  grokBrokerEnabled,
+  signIn,
+} from "@/lib/auth/client";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { prepareDemo } from "@/lib/fn";
 import { Button } from "@/components/ui/button";
@@ -24,6 +32,17 @@ function Login() {
   useEffect(() => {
     if (!isPending && user) nav({ to: "/" });
   }, [isPending, user, nav]);
+
+  async function withProvider(providerId: string, key: string) {
+    setError(null);
+    setBusy(key);
+    try {
+      await signIn(providerId, { callbackURL: "/" });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudo iniciar sesión.");
+      setBusy(null);
+    }
+  }
 
   async function withEmail(nextEmail: string, nextPassword: string, key: string) {
     setError(null);
@@ -127,18 +146,31 @@ function Login() {
               Mercado al Toque
             </a>
           </p>
-          {authEnabled ? (
+          {authEnabled && (googleDirectEnabled || grokBrokerEnabled) ? (
             <div className="mt-5 space-y-2 border-t border-line pt-5">
-              {GROK_PROVIDERS.map((p) => (
+              {googleDirectEnabled ? (
                 <Button
-                  key={p.providerId}
                   variant="secondary"
                   className="w-full"
-                  onClick={() => void signIn(p.providerId, { callbackURL: "/" })}
+                  disabled={busy !== null}
+                  onClick={() => void withProvider(GOOGLE_PROVIDER.providerId, "google")}
                 >
-                  Continuar con {p.label}
+                  {busy === "google" ? "Redirigiendo…" : `Continuar con ${GOOGLE_PROVIDER.label}`}
                 </Button>
-              ))}
+              ) : null}
+              {grokBrokerEnabled
+                ? GROK_PROVIDERS.map((p) => (
+                    <Button
+                      key={p.providerId}
+                      variant="secondary"
+                      className="w-full"
+                      disabled={busy !== null}
+                      onClick={() => void withProvider(p.providerId, p.providerId)}
+                    >
+                      Continuar con {p.label}
+                    </Button>
+                  ))
+                : null}
             </div>
           ) : null}
         </section>

@@ -97,9 +97,10 @@ export const authConfigured =
 // preview allowlist, which makes the OAuth `redirect_uri` the concrete preview URL
 // the broker's preview client accepts.
 const vercelProductionHost = env("VERCEL_PROJECT_PRODUCTION_URL");
-const explicitBaseURL =
-  env("BETTER_AUTH_URL") ??
-  (process.env.VERCEL === "1" && vercelProductionHost ? `https://${vercelProductionHost}` : undefined);
+const vercelDeploymentHost = env("VERCEL_URL");
+const productionOrigin = vercelProductionHost ? `https://${vercelProductionHost}` : undefined;
+const deploymentOrigin = vercelDeploymentHost ? `https://${vercelDeploymentHost}` : undefined;
+const explicitBaseURL = env("BETTER_AUTH_URL") ?? productionOrigin;
 // Explicit `string[]` (not a readonly tuple) — Better Auth's DynamicBaseURLConfig
 // requires a mutable `allowedHosts: string[]`.
 const previewAllowedHosts: string[] = [...PREVIEW_ALLOWED_HOSTS];
@@ -122,9 +123,17 @@ const baseURL = explicitBaseURL ?? {
 };
 
 // Origins Better Auth accepts on credentialed POSTs (sign-up/sign-in, etc.).
-// Missing entries here surface as FORBIDDEN "Invalid origin".
-const trustedOrigins: string[] = explicitBaseURL
-  ? [explicitBaseURL, ...LOCAL_DEV_ORIGINS]
+// Missing entries here surface as FORBIDDEN "Invalid origin". Include the
+// production domain and the current deployment host too, not only
+// BETTER_AUTH_URL: a stale value in that env var must not lock the live site out.
+const configuredOrigins: string[] = explicitBaseURL
+  ? [
+      ...new Set(
+        [explicitBaseURL, productionOrigin, deploymentOrigin, ...LOCAL_DEV_ORIGINS].filter(
+          (origin): origin is string => Boolean(origin),
+        ),
+      ),
+    ]
   : [
       // Host wildcards (matched against Origin's host)
       ...previewAllowedHosts,
@@ -132,6 +141,20 @@ const trustedOrigins: string[] = explicitBaseURL
       ...previewAllowedHosts.flatMap((host) => [`https://${host}`, `http://${host}`]),
       ...LOCAL_DEV_ORIGINS,
     ];
+
+// Also trust the origin the request actually arrived on (custom domain, alias,
+// deployment URL). This stays safe: a cross-site forged POST carries the
+// ATTACKER's origin, which is never echoed back here — so the check still
+// rejects it. Meanwhile a domain the deployer forgot to list can't lock the site.
+const trustedOrigins = (request?: Request): string[] => {
+  const origins = [...configuredOrigins];
+  try {
+    if (request?.url) origins.push(new URL(request.url).origin);
+  } catch {
+    /* URL malformada: nos quedamos con la lista configurada */
+  }
+  return origins;
+};
 
 const databaseUrl = env("DATABASE_URL");
 if (process.env.VERCEL === "1" && !databaseUrl) {

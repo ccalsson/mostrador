@@ -1,7 +1,7 @@
 import { useState, useSyncExternalStore, type ReactNode } from "react";
 import { Navigate } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { GROK_PROVIDERS, authEnabled, signIn, signOut } from "./client";
+import { GROK_PROVIDERS, GOOGLE_PROVIDER, authEnabled, googleDirectEnabled, grokBrokerEnabled, signIn, signOut } from "./client";
 import { hasGateSessionMarker } from "./gate-session-marker";
 import { resolveSignInGateState } from "./sign-in-gate";
 import { useCurrentUser, useCurrentUserState } from "./use-current-user";
@@ -65,18 +65,32 @@ export function SignInGate({
 }
 
 export function SignInButtons() {
+  const btn =
+    "w-full cursor-pointer rounded-md border border-neutral-300 px-4 py-2 hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-900";
+  if (!googleDirectEnabled && !grokBrokerEnabled) return null;
   return (
     <div className="flex w-full max-w-sm flex-col gap-2">
-      {GROK_PROVIDERS.map((p) => (
+      {googleDirectEnabled ? (
         <button
-          key={p.providerId}
           type="button"
-          onClick={() => signIn(p.providerId, { callbackURL: "/" })}
-          className="w-full cursor-pointer rounded-md border border-neutral-300 px-4 py-2 hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-900"
+          onClick={() => signIn(GOOGLE_PROVIDER.providerId, { callbackURL: "/" })}
+          className={btn}
         >
-          Continue with {p.label}
+          Continue with {GOOGLE_PROVIDER.label}
         </button>
-      ))}
+      ) : null}
+      {grokBrokerEnabled
+        ? GROK_PROVIDERS.map((p) => (
+            <button
+              key={p.providerId}
+              type="button"
+              onClick={() => signIn(p.providerId, { callbackURL: "/" })}
+              className={btn}
+            >
+              Continue with {p.label}
+            </button>
+          ))
+        : null}
     </div>
   );
 }

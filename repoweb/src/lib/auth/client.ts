@@ -1,7 +1,7 @@
 import { genericOAuthClient } from "better-auth/client/plugins";
 import { createAuthClient } from "better-auth/react";
 import { runPreSignInSignOut, runSignOut } from "../../../scripts/sign-out-plan.mjs";
-import { GROK_PROVIDERS } from "./providers";
+import { GROK_PROVIDERS, GOOGLE_PROVIDER } from "./providers";
 
 /**
  * Better Auth client for this React SPA (browser-side).
@@ -37,8 +37,18 @@ export const authClient = createAuthClient({
  */
 export const authEnabled = import.meta.env.VITE_AUTH_ENABLED !== "false";
 
+/** True when our own Google OAuth client is configured (no broker). */
+export const googleDirectEnabled = import.meta.env.VITE_GOOGLE_DIRECT === "true";
+
+/**
+ * True only when the Grok auth broker buttons are explicitly enabled. The broker
+ * federates to grok.me's own upstreams, so its "Google" goes through xAI's OAuth
+ * client — never show it by default in this app.
+ */
+export const grokBrokerEnabled = import.meta.env.VITE_GROK_BROKER === "true";
+
 /** The upstream providers to render sign-in buttons for. */
-export { GROK_PROVIDERS };
+export { GROK_PROVIDERS, GOOGLE_PROVIDER };
 
 // ── Live-preview bearer token ────────────────────────────────────────────────
 // The embedded preview iframe has partitioned cookies, so we keep the session's
@@ -141,6 +151,24 @@ export async function signIn(
       }
     }
     return;
+  }
+
+  if (providerId === GOOGLE_PROVIDER.providerId) {
+    if (!googleDirectEnabled) throw new Error("Google no está configurado en este sitio.");
+    // Direct Google (our own GCP client). Unlike the genericOAuth path below,
+    // `signIn.social` navigates the browser itself once the server returns the
+    // upstream URL, so there is no `data.url` to assign here.
+    const { error } = await authClient.signIn.social({
+      provider: "google",
+      callbackURL,
+      errorCallbackURL,
+    });
+    if (error) throw new Error(error.message ?? "No se pudo iniciar sesión con Google.");
+    return;
+  }
+
+  if (!GROK_PROVIDERS.some((p) => p.providerId === providerId)) {
+    throw new Error("Ese proveedor no está configurado.");
   }
 
   const { data, error } = await authClient.signIn.oauth2({
