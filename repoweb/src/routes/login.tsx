@@ -1,12 +1,11 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import {
-  GROK_PROVIDERS,
   GOOGLE_PROVIDER,
   authClient,
   authEnabled,
   googleDirectEnabled,
-  grokBrokerEnabled,
+  setBearerToken,
   signIn,
 } from "@/lib/auth/client";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
@@ -49,11 +48,7 @@ function Login() {
     setBusy(key);
     try {
       await prepareDemo();
-      try {
-        sessionStorage.removeItem("grok-auth.bearer-token");
-      } catch {
-        /* el navegador puede bloquear el almacenamiento */
-      }
+      setBearerToken(null);
       const { data, error: err } = await authClient.signIn.email({
         email: nextEmail,
         password: nextPassword,
@@ -64,13 +59,7 @@ function Login() {
         throw new Error(mensaje);
       }
       const token = (data as { token?: string } | null)?.token;
-      if (token) {
-        try {
-          sessionStorage.setItem("grok-auth.bearer-token", token);
-        } catch {
-          /* ignore */
-        }
-      }
+      if (token) setBearerToken(token);
       await authClient.getSession();
       nav({ to: "/" });
     } catch (e) {
@@ -146,31 +135,16 @@ function Login() {
               Mercado al Toque
             </a>
           </p>
-          {authEnabled && (googleDirectEnabled || grokBrokerEnabled) ? (
+          {authEnabled && googleDirectEnabled ? (
             <div className="mt-5 space-y-2 border-t border-line pt-5">
-              {googleDirectEnabled ? (
-                <Button
-                  variant="secondary"
-                  className="w-full"
-                  disabled={busy !== null}
-                  onClick={() => void withProvider(GOOGLE_PROVIDER.providerId, "google")}
-                >
-                  {busy === "google" ? "Redirigiendo…" : `Continuar con ${GOOGLE_PROVIDER.label}`}
-                </Button>
-              ) : null}
-              {grokBrokerEnabled
-                ? GROK_PROVIDERS.map((p) => (
-                    <Button
-                      key={p.providerId}
-                      variant="secondary"
-                      className="w-full"
-                      disabled={busy !== null}
-                      onClick={() => void withProvider(p.providerId, p.providerId)}
-                    >
-                      Continuar con {p.label}
-                    </Button>
-                  ))
-                : null}
+              <Button
+                variant="secondary"
+                className="w-full"
+                disabled={busy !== null}
+                onClick={() => void withProvider(GOOGLE_PROVIDER.providerId, "google")}
+              >
+                {busy === "google" ? "Redirigiendo…" : `Continuar con ${GOOGLE_PROVIDER.label}`}
+              </Button>
             </div>
           ) : null}
         </section>

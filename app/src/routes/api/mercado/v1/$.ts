@@ -174,8 +174,8 @@ async function startGoogle(request: Request, body: Record<string, unknown>) {
   if (body.destino !== undefined && body.destino !== "app" && body.destino !== "web") {
     throw new RouteError(400, "invalid_request", "destino inválido.");
   }
-  const clientId = process.env.GROK_AUTH_CLIENT_ID?.trim();
-  const clientSecret = process.env.GROK_AUTH_CLIENT_SECRET?.trim();
+  const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim();
   if (!clientId || !clientSecret) {
     throw new RouteError(
       503,
@@ -221,8 +221,8 @@ async function finishGoogle(request: Request, url: URL) {
       "google_state_expired",
       "El acceso con Google venció. Volvé a intentarlo.",
     );
-  const clientId = process.env.GROK_AUTH_CLIENT_ID?.trim();
-  const clientSecret = process.env.GROK_AUTH_CLIENT_SECRET?.trim();
+  const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim();
   if (!clientId || !clientSecret) {
     throw new RouteError(
       503,

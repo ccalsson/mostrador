@@ -42,18 +42,21 @@ export async function leerRemitoFotoForStaff(
   if (bytes.length < 8 || bytes.length > 8_000_000) {
     throw new RemitoVisionError(400, "invalid_request", "La imagen excede el tamaño permitido (máx. 8 MB).");
   }
-  const apiKey = process.env.XAI_API_KEY;
+  const apiKey = process.env.QWEN_API_KEY?.trim();
   if (!apiKey) {
     throw new RemitoVisionError(503, "ocr_unavailable", "El lector de fotos no está disponible en este entorno.");
   }
-  const res = await fetch("https://api.x.ai/v1/chat/completions", {
+  const url =
+    process.env.QWEN_VISION_URL?.trim() ||
+    "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions";
+  const res = await fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: "grok-4.5",
+      model: process.env.QWEN_VISION_MODEL?.trim() || "qwen-vl-max",
       max_tokens: 800,
       messages: [
         {

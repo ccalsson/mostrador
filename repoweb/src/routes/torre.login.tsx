@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState, type FormEvent } from "react";
-import { authClient } from "@/lib/auth/client";
+import { authClient, setBearerToken } from "@/lib/auth/client";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { torreYo } from "@/lib/torre-fn";
 import { Button } from "@/components/ui/button";
@@ -10,19 +10,14 @@ import { Input } from "@/components/ui/input";
 export const Route = createFileRoute("/torre/login")({ component: TorreLogin });
 
 const TORRE_EMAIL = "calssonclaudio@gmail.com";
-const BEARER_KEY = "grok-auth.bearer-token";
 
 function clearBearer() {
-  try {
-    sessionStorage.removeItem(BEARER_KEY);
-  } catch {
-    /* el navegador puede bloquear el almacenamiento */
-  }
+  setBearerToken(null);
 }
 
 function mensajeDeEntrada(raw: string) {
   if (/invalid email or password/i.test(raw)) {
-    return "Esa clave no es la de este sitio. En mostrador.grok.me la cuenta ya existía con otra.";
+    return "Usuario o clave incorrectos.";
   }
   return raw || "No se pudo entrar.";
 }
@@ -69,7 +64,7 @@ function TorreLogin() {
             const token = headerToken || bodyToken;
             if (token) {
               try {
-                sessionStorage.setItem(BEARER_KEY, token);
+                setBearerToken(token);
               } catch {
                 /* se reintenta abajo */
               }
@@ -80,7 +75,7 @@ function TorreLogin() {
       if (first.error) throw new Error(mensajeDeEntrada(first.error.message ?? ""));
       const token = headerToken || (first.data as { token?: string } | null)?.token || null;
       if (!token) throw new Error("La sesión no se guardó. Probá de nuevo.");
-      sessionStorage.setItem(BEARER_KEY, token);
+      setBearerToken(token);
       window.location.assign("/torre");
     } catch (err) {
       setError(err instanceof Error ? mensajeDeEntrada(err.message) : "No se pudo entrar.");

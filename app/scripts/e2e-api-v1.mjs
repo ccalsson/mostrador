@@ -6,7 +6,7 @@
 //
 // Cubre autenticación Bearer, matriz de permisos por rol, aislamiento de
 // tenant, idempotencia (client_uuid), cobros y anulaciones, cuenta corriente,
-// remitos (incluido OCR por foto con 503 controlado sin XAI_API_KEY),
+// remitos (incluido OCR por foto con 503 controlado sin QWEN_API_KEY),
 // proveedores, caja, auditoría, suscripción/contratos + legal del
 // canal (torre), facturación ARCA (config/emisión sin credenciales reales),
 // mensajería del pedido, portal de clientes (registro con confirmación de
@@ -2729,7 +2729,7 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
     }
   });
 
-  it("24. remitos: OCR por foto con validaciones y 503 controlado sin XAI_API_KEY (M9h)", async () => {
+  it("24. remitos: OCR por foto con validaciones y 503 controlado sin QWEN_API_KEY (M9h)", async () => {
     // PNG 1x1 transparente, suficiente para pasar la validación de tamaño.
     const png1x1 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 
@@ -2767,13 +2767,13 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
     });
     expectError(chica, 400, /tamaño/i);
 
-    if (process.env.XAI_API_KEY) {
+    if (process.env.QWEN_API_KEY) {
       // Con key configurada no se dispara una llamada de pago desde el test;
-      // el flujo completo contra xAI se valida manualmente.
+      // el flujo completo contra Qwen se valida manualmente.
       return;
     }
 
-    // Sin XAI_API_KEY el servicio falla cerrado con 503 controlado.
+    // Sin QWEN_API_KEY el servicio falla cerrado con 503 controlado.
     const sinKey = await api("POST", "/remitos/ocr", {
       token: state.tokens.admin,
       body: { imageBase64: png1x1, mimeType: "image/png" },

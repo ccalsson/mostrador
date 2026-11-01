@@ -1,5 +1,4 @@
 import { getRequest } from "@tanstack/react-start/server";
-import { gateIdentityEnabled } from "./gate-identity.server";
 import { auth, authConfigured } from "./server";
 
 /**
@@ -49,15 +48,14 @@ export type VerifiedUser = { id: string; email: string | null };
  * configured / nobody is signed in. Safe to call from server functions and SSR
  * loaders.
  *
- * `bearerToken` is for the LIVE PREVIEW: the app runs in a partitioned iframe
- * whose cookies don't reach the server, so `authMiddleware` forwards the session
- * as a bearer token, which we present as `Authorization: Bearer …` (the `bearer`
- * plugin resolves it). When deployed no token is passed and the cookie is used.
+ * `bearerToken` permite autenticar clientes que no mandan cookie (móvil o
+ * server-to-server): se presenta como `Authorization: Bearer …` y el plugin
+ * `bearer()` lo resuelve. En navegador no se pasa y se usa la cookie.
  */
 export async function getSessionUser(
   bearerToken?: string,
 ): Promise<VerifiedUser | null> {
-  if (!authConfigured && !gateIdentityEnabled()) return null;
+  if (!authConfigured) return null;
   const request = getRequest();
   if (!request) return null;
   let headers = request.headers;
@@ -82,7 +80,7 @@ export async function getSessionUser(
  * - Auth disabled + no database -> the shared dev user id.
  */
 export async function requireUserId(bearerToken?: string): Promise<string> {
-  if (!authConfigured && !gateIdentityEnabled()) {
+  if (!authConfigured) {
     if (databaseConfigured) {
       throw new Error(
         "Auth is disabled (VITE_AUTH_ENABLED=false) but DATABASE_URL is set — " +

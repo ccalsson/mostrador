@@ -2,13 +2,14 @@ import { createHash } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 import type { Socket } from "node:net";
 import { getSql } from "@/lib/db";
+import { SESSION_TOKEN_COOKIE } from "@/lib/auth/server";
 import { ensureBootstrapped } from "@/lib/server/bootstrap";
 import { loadStaffByUserId } from "@/lib/server/context";
 import { suscribirCanal, type AvisoMensaje } from "@/lib/server/mensajes-vivo";
 
 const GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 const MAX = 8 * 1024;
-const COOKIE = "__Host-grok-auth.session_token";
+const COOKIE = SESSION_TOKEN_COOKIE;
 
 type Frame = { opcode: number; data: Buffer };
 

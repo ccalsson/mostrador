@@ -1,20 +1,15 @@
-import { useState, useSyncExternalStore, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Navigate } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { GROK_PROVIDERS, GOOGLE_PROVIDER, authEnabled, googleDirectEnabled, grokBrokerEnabled, signIn, signOut } from "./client";
-import { hasGateSessionMarker } from "./gate-session-marker";
+import { GOOGLE_PROVIDER, authEnabled, googleDirectEnabled, signIn, signOut } from "./client";
 import { resolveSignInGateState } from "./sign-in-gate";
 import { useCurrentUser, useCurrentUserState } from "./use-current-user";
-
-const subscribeToNothing = () => () => {};
-const noGateSessionOnServer = () => false;
 
 /**
  * Auth state components — plain wrappers around `useCurrentUserState()`.
  *
- * With auth on, visitors are signed out until they authenticate — in the sandbox
- * live preview too, which does real sign-in. The shared dev user appears only
- * when auth is disabled (`VITE_AUTH_ENABLED=false`, the shipped default).
+ * With auth on, visitors are signed out until they authenticate. The shared dev
+ * user appears only when auth is disabled (`VITE_AUTH_ENABLED=false`).
  * While the session is still resolving, gates that care about signed-out state
  * render nothing so there's no signed-out flash on hard reload.
  */
@@ -67,30 +62,16 @@ export function SignInGate({
 export function SignInButtons() {
   const btn =
     "w-full cursor-pointer rounded-md border border-neutral-300 px-4 py-2 hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-900";
-  if (!googleDirectEnabled && !grokBrokerEnabled) return null;
+  if (!googleDirectEnabled) return null;
   return (
     <div className="flex w-full max-w-sm flex-col gap-2">
-      {googleDirectEnabled ? (
-        <button
-          type="button"
-          onClick={() => signIn(GOOGLE_PROVIDER.providerId, { callbackURL: "/" })}
-          className={btn}
-        >
-          Continue with {GOOGLE_PROVIDER.label}
-        </button>
-      ) : null}
-      {grokBrokerEnabled
-        ? GROK_PROVIDERS.map((p) => (
-            <button
-              key={p.providerId}
-              type="button"
-              onClick={() => signIn(p.providerId, { callbackURL: "/" })}
-              className={btn}
-            >
-              Continue with {p.label}
-            </button>
-          ))
-        : null}
+      <button
+        type="button"
+        onClick={() => signIn(GOOGLE_PROVIDER.providerId, { callbackURL: "/" })}
+        className={btn}
+      >
+        Continue with {GOOGLE_PROVIDER.label}
+      </button>
     </div>
   );
 }
@@ -107,11 +88,6 @@ export function UserButton() {
   // Sign-out can take a moment (and can fail when deployed), so the control
   // shows it is working and cannot be fired twice.
   const [signingOut, setSigningOut] = useState(false);
-  const gateSession = useSyncExternalStore(
-    subscribeToNothing,
-    hasGateSessionMarker,
-    noGateSessionOnServer,
-  );
   if (!user) return null;
   const label = user.displayName ?? user.primaryEmail ?? "Account";
   return (
@@ -128,7 +104,7 @@ export function UserButton() {
         </span>
       )}
       <span className="hidden text-sm font-medium sm:inline">{label}</span>
-      {authEnabled && !gateSession && (
+      {authEnabled && (
         <button
           type="button"
           disabled={signingOut}

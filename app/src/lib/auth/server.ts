@@ -21,7 +21,7 @@
  * `@/lib/auth/middleware`.
  */
 import { betterAuth } from "better-auth";
-import { bearer, genericOAuth } from "better-auth/plugins";
+import { bearer } from "better-auth/plugins";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
 import { randomBytes } from "node:crypto";
 import { Pool } from "pg";
@@ -29,7 +29,6 @@ import { correoRecuperacion, enviarPorResend } from "@/lib/correo/recuperacion";
 import { ensureDbReady, getPglite } from "../db";
 import { emailAndPasswordEnabled } from "./email-password";
 import { pgliteDialect } from "./pglite-dialect";
-import { GROK_PROVIDERS } from "./providers";
 
 // Kick (and share) PGLite bootstrap as soon as the auth server module loads.
 void ensureDbReady();
@@ -90,24 +89,6 @@ const trustedOrigins: string[] = explicitBaseURL
   : LOCAL_DEV_ORIGINS;
 
 const databaseUrl = env("DATABASE_URL");
-const grokIssuer = (env("GROK_AUTH_ISSUER") ?? "https://auth.grok.me").replace(/\/+$/, "");
-const grokClientId = env("GROK_AUTH_CLIENT_ID");
-const grokClientSecret = env("GROK_AUTH_CLIENT_SECRET");
-const grokOAuthPlugin =
-  grokClientId && grokClientSecret
-    ? genericOAuth({
-        config: GROK_PROVIDERS.map(({ providerId, idp }) => ({
-          providerId,
-          clientId: grokClientId,
-          clientSecret: grokClientSecret,
-          authorizationUrl: `${grokIssuer}/api/auth/oauth2/authorize`,
-          tokenUrl: `${grokIssuer}/api/auth/oauth2/token`,
-          userInfoUrl: `${grokIssuer}/api/auth/oauth2/userinfo`,
-          scopes: ["openid", "profile", "email"],
-          authorizationUrlParams: { idp, prompt: "login" },
-        })),
-      })
-    : null;
 
 // Real Postgres when `DATABASE_URL` is set, else the app's embedded PGLite via a
 // Kysely dialect — so Better Auth persists to the SAME DB as app data. Both use
@@ -119,8 +100,8 @@ const authPool = databaseUrl ? new Pool({ connectionString: databaseUrl }) : und
 authPool?.on("error", (err) => console.error("[auth] idle client error:", err.message));
 const database = authPool ?? { dialect: pgliteDialect(() => getPglite()), type: "postgres" as const };
 
-/** Shared with repoweb so existing sessions and its Torre reader keep working. */
-export const SESSION_TOKEN_COOKIE = "__Host-grok-auth.session_token";
+/** Cookie name shared with the web app (same host family, same session shape). */
+export const SESSION_TOKEN_COOKIE = "__Host-mostrador-auth.session_token";
 
 export const auth = betterAuth({
   baseURL,
@@ -133,7 +114,7 @@ export const auth = betterAuth({
     encryptOAuthTokens: true,
     accountLinking: {
       enabled: true,
-      trustedProviders: GROK_PROVIDERS.map((provider) => provider.providerId),
+      trustedProviders: ["google"],
       requireLocalEmailVerified: false,
     },
   },
@@ -171,14 +152,13 @@ export const auth = betterAuth({
     defaultCookieAttributes: { secure: true, sameSite: "lax", path: "/" },
     cookies: {
       session_token: { name: SESSION_TOKEN_COOKIE },
-      session_data: { name: "__Host-grok-auth.session_data" },
-      account_data: { name: "__Host-grok-auth.account_data" },
-      dont_remember: { name: "__Host-grok-auth.dont_remember" },
+      session_data: { name: "__Host-mostrador-auth.session_data" },
+      account_data: { name: "__Host-mostrador-auth.account_data" },
+      dont_remember: { name: "__Host-mostrador-auth.dont_remember" },
     },
   },
 
   plugins: [
-    ...(grokOAuthPlugin ? [grokOAuthPlugin] : []),
     // Accept `Authorization: Bearer <session-token>` as an alternative to the
     // cookie — the mobile (Flutter) auth contract. The hook only fires when an
     // Authorization header is present, so the cookie path is unaffected.
