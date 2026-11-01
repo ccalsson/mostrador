@@ -85,6 +85,9 @@ const grokClientSecret = env("GROK_AUTH_CLIENT_SECRET") ?? PREVIEW_CLIENT_SECRET
 const googleClientId = env("GOOGLE_CLIENT_ID");
 const googleClientSecret = env("GOOGLE_CLIENT_SECRET");
 
+/** True cuando hay cliente de Google propio: el sign-in NO debe pasar por el broker. */
+export const googleDirecto = Boolean(googleClientId && googleClientSecret);
+
 /** True when federated sign-in is active (real auth is enforced). */
 export const authConfigured =
   !authDisabled && Boolean(grokClientId && grokClientSecret);

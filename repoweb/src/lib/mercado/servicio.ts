@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { verifyPassword } from "better-auth/crypto";
-import { auth } from "@/lib/auth/server";
+import { auth, googleDirecto } from "@/lib/auth/server";
 import { getSql, withTransaction, type Sql } from "@/lib/db";
 import { newId } from "@/lib/ids";
 import { num } from "@/lib/money";
@@ -373,15 +373,27 @@ export async function iniciarGoogle(request: Request, perfil: Perfil, web = fals
   const headers = new Headers(request.headers);
   headers.delete("content-length");
   headers.delete("content-type");
-  const respuesta = await auth.api.signInWithOAuth2({
-    body: {
-      providerId: "grok-google",
-      callbackURL,
-    },
-    headers,
-    asResponse: true,
-  });
-  const data = (await respuesta.json().catch(() => null)) as { url?: string } | null;
+  // Con cliente de Google propio se va directo a Google. El provider `grok-google`
+  // es el broker de Grok, que federa a xAI: pedirle "Google" ahí muestra el
+  // consentimiento de xAI en vez de nuestra app.
+  const respuesta = googleDirecto
+    ? await auth.api.signInSocial({
+        body: { provider: "google", callbackURL },
+        headers,
+        asResponse: true,
+      })
+    : await auth.api.signInWithOAuth2({
+        body: {
+          providerId: "grok-google",
+          callbackURL,
+        },
+        headers,
+        asResponse: true,
+      });
+  const location = respuesta.headers.get("location");
+  const data = location
+    ? { url: location }
+    : ((await respuesta.json().catch(() => null)) as { url?: string } | null);
   if (!respuesta.ok || !data?.url) {
     throw new MercadoError("Google no pudo iniciarse con el ingreso que ya usa Mostrador.", 502);
   }
