@@ -90,7 +90,7 @@ function TorreLogin() {
   }
 
   return (
-    <main className="grid min-h-dvh place-items-center bg-ink px-4 text-leaf-fg">
+    <main className="grid min-h-dvh place-items-center bg-ink px-4 text-paper">
       <form onSubmit={(e) => void entrar(e)} className="w-full max-w-sm rounded-xl bg-paper p-5 text-ink">
         <p className="text-xs tracking-wide text-terra uppercase">Interna</p>
         <h1 className="font-display text-2xl font-semibold">Torre de Control</h1>
