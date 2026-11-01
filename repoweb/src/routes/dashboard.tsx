@@ -443,6 +443,17 @@ function Vitrina({
       },
     );
   }
+  if (laminas.length === 0) {
+    laminas.push({
+      id: "sin-ventas",
+      kicker: "Tu puesto",
+      titulo: "Todavía no hay ventas",
+      texto: "Cuando cobres, acá vas a ver los productos que más salieron y el movimiento del día.",
+      fondo: TINTES[3].fondo,
+      tinta: TINTES[3].tinta,
+      imagen: FOTOS[3],
+    });
+  }
   const scroller = useRef<HTMLDivElement>(null);
   const [pagina, setPagina] = useState(0);
   const [pausa, setPausa] = useState(false);
