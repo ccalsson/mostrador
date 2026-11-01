@@ -397,7 +397,7 @@ async function handle(method: "GET" | "POST", request: Request, splat?: string) 
       return json({ aviso: "Si ese correo está pendiente, le llega otro enlace." });
     }
     if (method === "POST" && ruta === "auth/google") {
-      return startGoogle(request, await bodyOf(request));
+      return await startGoogle(request, await bodyOf(request));
     }
     if (method === "GET" && ruta === "auth/google/callback") {
       return await finishGoogle(request, url);
