@@ -9,7 +9,7 @@ const output = resolve(process.env.DELIVERY_DIRECTORY || join(process.env.USERPR
 if (!existsSync(output)) throw new Error('Crear previamente DELIVERY_DIRECTORY.');
 const apps = [
   { name: 'mostrador', folder: 'puesto_flutter', version: '0.2.1', code: 3, id: 'com.frutasroman.puesto_flutter', api: 'https://mostrador-api.vercel.app' },
-  { name: 'mercado', folder: 'mercado_flutter', version: '1.0.1', code: 2, id: 'ar.grok.mostrador.mercado_al_toque', api: 'https://mostrador-api.vercel.app/api/mercado/v1' },
+  { name: 'mercado', folder: 'mercado_flutter', version: '1.0.1', code: 2, id: 'ar.com.mostrador.mercado_al_toque', api: 'https://mostrador-api.vercel.app/api/mercado/v1' },
 ];
 const requested = process.argv[2];
 const selected = requested ? apps.filter(app => app.name === requested) : apps;

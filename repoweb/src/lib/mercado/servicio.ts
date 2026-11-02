@@ -431,7 +431,7 @@ export async function volverDeGoogle(request: Request) {
   if (url.searchParams.get("destino") === "web") {
     return Response.redirect(`${url.origin}/mercado?token=${encodeURIComponent(token)}`, 302);
   }
-  const destino = `intent://auth?token=${token}#Intent;scheme=mercadoaltoque;package=ar.com.mostrador.mercado;end`;
+  const destino = `intent://auth?token=${token}#Intent;scheme=mercadoaltoque;end`;
   const html = `<!doctype html>
 <html lang="es">
 <meta charset="utf-8">

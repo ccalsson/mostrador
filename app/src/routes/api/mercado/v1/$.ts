@@ -166,6 +166,13 @@ function mercadoWebBaseUrl(request: Request) {
   );
 }
 
+// El callback lo atiende esta misma API, así que su origen no puede salir de la
+// base web: con MERCADO_WEB_URL/BETTER_AUTH_URL apuntando a repoweb el
+// redirect_uri registrado en Google caería en una ruta inexistente.
+function googleCallbackBaseUrl(request: Request) {
+  return new URL(request.url).origin;
+}
+
 async function startGoogle(request: Request, body: Record<string, unknown>) {
   const perfil = body.perfil;
   if (perfil !== "comprador" && perfil !== "cargador") {
@@ -183,7 +190,7 @@ async function startGoogle(request: Request, body: Record<string, unknown>) {
       "El acceso con Google no está configurado en este servidor.",
     );
   }
-  const callback = new URL("/api/mercado/v1/auth/google/callback", mercadoWebBaseUrl(request));
+  const callback = new URL("/api/mercado/v1/auth/google/callback", googleCallbackBaseUrl(request));
   const state = newGoogleState();
   const destino = body.destino === "web" ? "web" : "app";
   const sql = await getSql();
@@ -230,7 +237,7 @@ async function finishGoogle(request: Request, url: URL) {
       "El acceso con Google no está configurado en este servidor.",
     );
   }
-  const callbackBaseUrl = mercadoWebBaseUrl(request);
+  const callbackBaseUrl = googleCallbackBaseUrl(request);
   const redirectUri = new URL("/api/mercado/v1/auth/google/callback", callbackBaseUrl).toString();
   const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
@@ -279,7 +286,7 @@ async function finishGoogle(request: Request, url: URL) {
     profile.phone_number?.trim() || "",
   );
   const token = await createOAuthSession(actor);
-  const webBaseUrl = callbackBaseUrl;
+  const webBaseUrl = mercadoWebBaseUrl(request);
   let destination: URL;
   try {
     destination =

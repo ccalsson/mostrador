@@ -1,6 +1,6 @@
 # Ficha · Mercado al Toque
 
-`ar.grok.mostrador.mercado_al_toque` · 1.0.1 (código 2) · targetSdk 36 · minSdk 24
+`ar.com.mostrador.mercado_al_toque` · 1.0.1 (código 2) · targetSdk 36 · minSdk 24
 
 ## Campos de Play Console
 

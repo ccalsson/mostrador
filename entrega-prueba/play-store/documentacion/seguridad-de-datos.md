@@ -32,7 +32,7 @@ Fuente: `lib/features/auth/login_screen.dart:100-134` (correo y contraseña),
 `lib/services/remito_imagen.dart:10-16` + `android/app/src/main/AndroidManifest.xml:2-4`
 (permiso `CAMERA`), `app/migrations/0001_auth.sql:29-38` (`ipAddress`, `userAgent` por sesión).
 
-## Mercado al Toque (`ar.grok.mostrador.mercado_al_toque`)
+## Mercado al Toque (`ar.com.mostrador.mercado_al_toque`)
 
 | Tipo de dato | ¿Se recoge? | Finalidad | Se comparte | Cifrado en tránsito | Cifrado en reposo | Se borra con la cuenta |
 |---|---|---|---|---|---|---|

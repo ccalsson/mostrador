@@ -5,7 +5,7 @@ cargadores arman y completan recorridos de entrega. Un solo binario con dos
 perfiles (comprador y cargador); la preparación de pedidos queda en la app del
 puesto (`clients/puesto_flutter`).
 
-Versión: 1.0.0+1 · Package: `ar.grok.mostrador.mercado_al_toque`
+Versión: 1.0.0+1 · Package: `ar.com.mostrador.mercado_al_toque`
 
 ## Requisitos
 

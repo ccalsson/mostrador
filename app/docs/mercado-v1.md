@@ -60,14 +60,16 @@ contains an authorization `url`. The callback is
 `GET /auth/google/callback`; it validates the one-time state and redirects to
 the app deep link or web Mercado page.
 
-Configure `GROK_AUTH_CLIENT_ID` and `GROK_AUTH_CLIENT_SECRET` with credentials
-for a Google OAuth web client whose authorized redirect URI is
-`<MERCADO_WEB_URL>/api/mercado/v1/auth/google/callback` when `MERCADO_WEB_URL`
-is set, otherwise `<BETTER_AUTH_URL>/api/mercado/v1/auth/google/callback`.
-Google sign-in is unavailable until those credentials and redirect URI are
-configured. When repoweb and `app/` have different public origins, set
-`MERCADO_WEB_URL` to the public repoweb origin; this keeps the OAuth state
-cookie, callback proxy, and `/mercado` return on the same origin.
+Configure `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` with credentials for a
+Google OAuth web client whose authorized redirect URI is
+`<this API's own origin>/api/mercado/v1/auth/google/callback`, e.g.
+`https://mostrador-api.vercel.app/api/mercado/v1/auth/google/callback`. The
+callback is always resolved against the request origin, never against
+`MERCADO_WEB_URL`/`BETTER_AUTH_URL`, so registering one URI per public API host
+is enough. Google sign-in is unavailable until those credentials and redirect
+URI are configured. `MERCADO_WEB_URL` (fallback `BETTER_AUTH_URL`) only decides
+where `destino: "web"` lands, so set it to the public repoweb origin when the
+two apps are on different hosts.
 
 ### Upload buyer identity documents
 

@@ -101,7 +101,7 @@ el 2026-10-18: las doce rutas responden **200**, sin 307 a login.
 
 - **`applicationId` antes de la primera subida, no después.** En Play el nombre de paquete es
   la identidad permanente de la app: no se puede editar nunca, ni migrar. Los valores actuales
-  son `ar.grok.mostrador.mercado_al_toque` y `com.frutasroman.puesto_flutter`
+  son `ar.com.mostrador.mercado_al_toque` y `com.frutasroman.puesto_flutter`
   ([build.gradle.kts:30](file:///C:/Users/claud/Desktop/claudio/personal/mostrador/clients/mercado_flutter/android/app/build.gradle.kts#L30)).
   El primero lleva la marca de un tercero que no es el titular del puesto y el segundo es un
   apellido con sufijo de andamiaje. Cambiarlos ahora es un `applicationId` nuevo + rebuild;
