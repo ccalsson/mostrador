@@ -211,8 +211,7 @@ async function startGoogle(request: Request, body: Record<string, unknown>) {
 async function finishGoogle(request: Request, url: URL) {
   const state = url.searchParams.get("state");
   const code = url.searchParams.get("code");
-  const stateCookie = cookieValue(request, "mercado_google_state");
-  if (!state || !stateCookie || state !== stateCookie || !code) {
+  if (!state || !code) {
     throw new RouteError(400, "google_state_invalid", "No se pudo validar el regreso de Google.");
   }
   const sql = await getSql();
