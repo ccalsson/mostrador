@@ -34,6 +34,8 @@ test("el cupo base nunca baja de 1 (la matriz)", () => {
 
 test("cada base activa suma sus sucursales incluidas y los extras por línea", () => {
   assert.deepEqual(cupoDeLineas([linea({ includedBranches: 2 })]), { incluidas: 2, extras: 0, cupo: 2 });
+  assert.deepEqual(cupoDeLineas([linea({ kind: "addon", includedBranches: 2 })]), { incluidas: 2, extras: 0, cupo: 2 });
+  assert.deepEqual(cupoDeLineas([linea({ kind: "addon" })]), { incluidas: 1, extras: 0, cupo: 1 });
   assert.deepEqual(
     cupoDeLineas([linea({}), linea({ kind: "branch", slug: "sucursal-extra", quantity: 2 })]),
     { incluidas: 1, extras: 2, cupo: 3 },

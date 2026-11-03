@@ -1,4 +1,11 @@
 {
+  "scripts": {
+    "dev": "npm --prefix 85BJWVrrzbWQTYb9-grok-workspace run dev",
+    "build": "npm --prefix 85BJWVrrzbWQTYb9-grok-workspace run build",
+    "test": "npm --prefix 85BJWVrrzbWQTYb9-grok-workspace test",
+    "typecheck": "npm --prefix 85BJWVrrzbWQTYb9-grok-workspace run typecheck",
+    "clients:build": "powershell -NoProfile -File platforms/build.ps1"
+  },
   "dependencies": {
     "@neon/config": "^1.8.3",
     "@neon/env": "^1.4.8"

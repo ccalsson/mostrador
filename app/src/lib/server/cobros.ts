@@ -71,7 +71,13 @@ export async function cobrarPedidoForStaff(staff: Staff, input: CobrarPedidoInpu
     )
   `;
   await sql`
-    update pedidos set estado = 'cobrado', updated_at = now()
+    update pedidos
+    set estado = 'cobrado',
+        pago_estado = case
+          when origen = 'mercado_al_toque' and forma_pago in ('transferencia', 'efectivo') then 'habilitado'
+          else pago_estado
+        end,
+        updated_at = now()
     where id = ${pedido.id} and tenant_id = ${staff.tenantId}
   `;
   for (const item of pedido.items) {

@@ -182,11 +182,15 @@ async function resincronizarSucursales(sql: Awaited<ReturnType<typeof getSql>>, 
       and s.start_date<=current_date and l.starts_on<=current_date and (l.ends_on is null or l.ends_on>=current_date)
   `;
   const allowance = incluidasPorBase(
-    bases.map((row) => ({
-      status: row.status,
-      kind: row.kind,
-      includedBranches: Number(configOf(row.config).includedBranches ?? 1),
-    })),
+    bases.map((row) => {
+      const config = configOf(row.config);
+      const incluidas = config.includedBranches;
+      return {
+        status: row.status,
+        kind: row.kind,
+        includedBranches: typeof incluidas === "number" ? incluidas : undefined,
+      };
+    }),
   );
   const branches = await sql<{ id: string }>`
     select id from torre.saas_branches

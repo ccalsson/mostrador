@@ -19,8 +19,10 @@ export function contextoSucursalCoincide(
 export function incluidasPorBase(lines: LineaCupo[]): number {
   let n = 0;
   for (const line of lines) {
-    if (line.status !== "active" || line.kind !== "base_product") continue;
-    n += line.includedBranches ?? 1;
+    if (line.status !== "active") continue;
+    // Una línea de plan declara cuántas sucursales trae, sea base o add-on.
+    if (line.includedBranches != null) n += line.includedBranches;
+    else if (line.kind === "base_product") n += 1;
   }
   return n;
 }

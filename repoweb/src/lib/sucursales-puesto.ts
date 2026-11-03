@@ -26,11 +26,15 @@ async function cupoDe(sql: Sql, casaId: string) {
   const incluidas = Math.max(
     1,
     incluidasPorBase(
-      lineas.map((linea) => ({
-        status: linea.status,
-        kind: linea.kind,
-        includedBranches: Number((linea.config as { includedBranches?: number } | null)?.includedBranches ?? 1),
-      })),
+      lineas.map((linea) => {
+        const config = linea.config as { includedBranches?: unknown } | null;
+        const incluidas = config?.includedBranches;
+        return {
+          status: linea.status,
+          kind: linea.kind,
+          includedBranches: typeof incluidas === "number" ? incluidas : undefined,
+        };
+      }),
     ),
   );
   const limits = await limitesPlan(sql,casaId);

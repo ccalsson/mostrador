@@ -867,6 +867,17 @@ export const updatePedidoItems = createServerFn({ method: "POST" })
     if (pedido.estado === "cobrado" || pedido.estado === "anulado") {
       throw new Error("Este pedido ya no se puede editar.");
     }
+    const snapshotPrevio = new Map(
+      pedido.items.map((it) => [
+        it.productoId,
+        {
+          nombre: it.nombre,
+          precioUnitario: it.precioUnitario,
+          unidad: it.unidad,
+          unidadLabel: it.unidadLabel,
+        },
+      ]),
+    );
     const reservado = await hayReserva(staff.tenantId, data.id);
     if (reservado) await soltarReserva(staff.tenantId, data.id);
     await sql`delete from pedido_items where pedido_id = ${data.id}`;
@@ -885,12 +896,17 @@ export const updatePedidoItems = createServerFn({ method: "POST" })
     for (const line of data.items) {
       const prod = byId.get(line.productoId);
       if (!prod || line.cantidad <= 0) continue;
+      const previo = snapshotPrevio.get(line.productoId);
+      const nombre = previo?.nombre ?? prod.nombre;
+      const precioUnitario = previo?.precioUnitario ?? prod.precio;
+      const unidad = previo?.unidad ?? prod.unidad;
+      const unidadLabel = previo?.unidadLabel ?? prod.unidadLabel;
       await sql`
         insert into pedido_items (
           id, pedido_id, producto_id, nombre_snapshot, cantidad, precio_unitario, unidad, unidad_label
         ) values (
-          ${newId("itm")}, ${data.id}, ${prod.id}, ${prod.nombre}, ${line.cantidad},
-          ${prod.precio}, ${prod.unidad}, ${prod.unidadLabel}
+          ${newId("itm")}, ${data.id}, ${prod.id}, ${nombre}, ${line.cantidad},
+          ${precioUnitario}, ${unidad}, ${unidadLabel}
         )
       `;
     }

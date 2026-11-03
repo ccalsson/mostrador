@@ -933,6 +933,116 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
     approx(await stockOf(state.banana.id), antes + 5, "confirmar dos veces no debe duplicar stock");
   });
 
+  it("6b. editar ítems conserva el precio snapshot y sólo el producto nuevo toma el precio vigente", async () => {
+    const prodA = `prod-${randomUUID()}`;
+    const prodB = `prod-${randomUUID()}`;
+    const clientUuid = `e2e-${randomUUID()}`;
+    const insertar = (id, nombre, precio) =>
+      state.pool.query(
+        `insert into productos (id, tenant_id, nombre, unidad, unidad_label, precio, moneda, stock, stock_minimo, activo)
+         values ($1, $2, $3, 'bulto', 'bulto', $4, 'ARS', 50, 0, true)`,
+        [id, TENANT, nombre, precio],
+      );
+    await insertar(prodA, "Acelga E2E A", 1000);
+    await insertar(prodB, "Acelga E2E B", 500);
+    try {
+      const alta = await api("POST", "/pedidos", {
+        token: state.tokens.vendedor,
+        body: { clientUuid, clienteNombre: "Mostrador", items: [{ productoId: prodA, cantidad: 2 }] },
+      });
+      assert.equal(alta.status, 201, JSON.stringify(alta.data));
+      const pedidoId = alta.data.data.id;
+      approx(alta.data.data.items[0].precioUnitario, 1000, "snapshot inicial = precio de catálogo");
+      approx(alta.data.data.total, 2000);
+
+      // El catálogo cambia DESPUÉS de creado el pedido. Antes del fix, guardar los
+      // ítems desde Caja (updatePedidoItems) re-precio silencioso: cobraba 3 en vez de 1000.
+      await state.pool.query("update productos set precio = 3 where id = $1", [prodA]);
+      await state.pool.query("update productos set precio = 7 where id = $1", [prodB]);
+
+      const edit = await api("POST", `/pedidos/${pedidoId}/items`, {
+        token: state.tokens.cajero,
+        body: { items: [{ productoId: prodA, cantidad: 2 }, { productoId: prodB, cantidad: 1 }] },
+      });
+      assert.equal(edit.status, 200, JSON.stringify(edit.data));
+      const lineaA = edit.data.data.items.find((i) => i.productoId === prodA);
+      const lineaB = edit.data.data.items.find((i) => i.productoId === prodB);
+      approx(lineaA.precioUnitario, 1000, "la línea preexistente conserva el precio snapshot");
+      approx(lineaB.precioUnitario, 7, "el producto nuevo toma el precio vigente del catálogo");
+      approx(edit.data.data.total, 2007, "total = snapshot conservado + nuevo al precio actual");
+    } finally {
+      await state.pool.query(
+        "delete from pedido_items where pedido_id in (select id from pedidos where client_uuid = $1)",
+        [clientUuid],
+      );
+      await state.pool.query("delete from pedidos where client_uuid = $1", [clientUuid]);
+      await state.pool.query("delete from productos where id = any($1::text[])", [[prodA, prodB]]);
+    }
+  });
+
+  it("6c. preparar y cobrar un pedido de Mercado habilita el pago (paridad con la web)", async () => {
+    const prod = `prod-${randomUUID()}`;
+    await state.pool.query(
+      `insert into productos (id, tenant_id, nombre, unidad, unidad_label, precio, moneda, stock, stock_minimo, activo)
+       values ($1, $2, 'Palta E2E 6c', 'bulto', 'bulto', 1000, 'ARS', 100, 0, true)`,
+      [prod, TENANT],
+    );
+    // A: Mercado en efectivo, pendiente → preparar debe habilitar el pago.
+    const pedidoA = `ped-${randomUUID()}`;
+    // B: Mercado en efectivo, pendiente → el COBRO (no la preparación) debe habilitar el pago.
+    const pedidoB = `ped-${randomUUID()}`;
+    // C: pedido normal del puesto → el cobro NO debe tocar pago_estado (el guard por origen).
+    const pedidoC = `ped-${randomUUID()}`;
+    const insertarPedido = (id, origen, formaPago, pagoEstado, estado) =>
+      state.pool.query(
+        `insert into pedidos (id, tenant_id, client_uuid, cliente_nombre, estado, origen, forma_pago, pago_estado)
+         values ($1, $2, $3, 'E2E 6c', $4, $5, $6, $7)`,
+        [id, TENANT, `e2e-6c-${id}`, estado, origen, formaPago, pagoEstado],
+      );
+    const insertarItem = (id) =>
+      state.pool.query(
+        `insert into pedido_items (id, pedido_id, producto_id, nombre_snapshot, cantidad, precio_unitario, unidad, unidad_label)
+         values ($1, $2, $3, 'Palta E2E 6c', 2, 1000, 'bulto', 'bulto')`,
+        [`itm-${randomUUID()}`, id, prod],
+      );
+    const leerPago = async (id) =>
+      (await state.pool.query("select estado, pago_estado from pedidos where id = $1", [id])).rows[0];
+
+    try {
+      await insertarPedido(pedidoA, "mercado_al_toque", "efectivo", "pendiente", "enviado");
+      await insertarItem(pedidoA);
+      const prep = await api("POST", `/pedidos/${pedidoA}/estado`, {
+        token: state.tokens.cajero,
+        body: { estado: "en_preparacion" },
+      });
+      assert.equal(prep.status, 200, JSON.stringify(prep.data));
+      assert.equal((await leerPago(pedidoA)).pago_estado, "habilitado", "preparar un pedido de Mercado habilita el pago");
+
+      await insertarPedido(pedidoB, "mercado_al_toque", "efectivo", "pendiente", "listo");
+      await insertarItem(pedidoB);
+      const cobroB = await api("POST", `/pedidos/${pedidoB}/cobrar`, {
+        token: state.tokens.cajero,
+        body: { clientUuid: `e2e-6c-cobro-${randomUUID()}`, formaPago: "efectivo" },
+      });
+      assert.equal(cobroB.status, 200, JSON.stringify(cobroB.data));
+      const filaB = await leerPago(pedidoB);
+      assert.equal(filaB.estado, "cobrado");
+      assert.equal(filaB.pago_estado, "habilitado", "cobrar un pedido de Mercado habilita el pago");
+
+      await insertarPedido(pedidoC, "mostrador", "efectivo", "pendiente", "enviado");
+      await insertarItem(pedidoC);
+      const cobroC = await api("POST", `/pedidos/${pedidoC}/cobrar`, {
+        token: state.tokens.cajero,
+        body: { clientUuid: `e2e-6c-cobro-${randomUUID()}`, formaPago: "efectivo" },
+      });
+      assert.equal(cobroC.status, 200, JSON.stringify(cobroC.data));
+      assert.equal((await leerPago(pedidoC)).pago_estado, "pendiente", "cobrar un pedido que NO es de Mercado no habilita el pago");
+    } finally {
+      await state.pool.query("delete from pedidos where id = any($1::text[])", [[pedidoA, pedidoB, pedidoC]]);
+      await state.pool.query("delete from productos where id = $1", [prod]);
+    }
+  });
+
   it("12. aislamiento de tenant: pedidos y productos ajenos no son visibles", async () => {
     const foreignTenant = `e2e-tenant-${Date.now()}`;
     const foreignProducto = `prod-${randomUUID()}`;

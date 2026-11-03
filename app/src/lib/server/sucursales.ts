@@ -25,13 +25,14 @@ async function cupoDe(sql: Sql, casaId: string) {
   `;
   return cupoDeLineas(
     lineas.map((linea): LineaCupo => {
-      const config = linea.config && typeof linea.config === "object" ? (linea.config as { includedBranches?: number }) : null;
+      const config = linea.config && typeof linea.config === "object" ? (linea.config as { includedBranches?: unknown }) : null;
+      const incluidas = config?.includedBranches;
       return {
         status: linea.status,
         kind: linea.kind,
         slug: linea.slug,
         quantity: linea.quantity,
-        includedBranches: Number(config?.includedBranches ?? 1),
+        includedBranches: typeof incluidas === "number" ? incluidas : undefined,
       };
     }),
   );

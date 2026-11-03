@@ -18,6 +18,8 @@ test("la primera sucursal no se factura y la segunda suma una", () => {
   assert.equal(extrasFacturables(1, 1), 0);
   assert.equal(extrasFacturables(3, 1), 2);
   assert.equal(incluidasPorBase([{ status: "active", kind: "base_product", includedBranches: 1 }]), 1);
+  assert.equal(incluidasPorBase([{ status: "active", kind: "addon", includedBranches: 2 }]), 2);
+  assert.equal(incluidasPorBase([{ status: "active", kind: "addon" }]), 0);
   const marks = marcarIncluidas([{ id: "a" }, { id: "b" }], 1);
   assert.deepEqual(marks, [
     { id: "a", included: true },

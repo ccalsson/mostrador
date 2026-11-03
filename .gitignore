@@ -78,3 +78,6 @@ app/*.pglite/
 app/data/pglite/
 .pglite/
 .neon
+
+.vercel
+.env*

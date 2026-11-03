@@ -90,6 +90,14 @@ export async function updatePedidoEstadoForStaff(
     await sql`
       update pedidos
       set estado = ${input.estado},
+          pago_estado = case
+            when origen = 'mercado_al_toque'
+              and forma_pago in ('transferencia', 'efectivo')
+              and coalesce(pago_estado, 'pendiente') in ('pendiente', 'informado')
+              and ${input.estado} in ('en_preparacion', 'listo')
+            then 'habilitado'
+            else pago_estado
+          end,
           preparation_started_at = case
             when ${input.estado} = 'en_preparacion' then coalesce(preparation_started_at, now())
             else preparation_started_at
@@ -179,6 +187,17 @@ export async function updatePedidoItemsForStaff(
   if (pedido.estado === "cobrado" || pedido.estado === "anulado") {
     throw new Error("Este pedido ya no se puede editar.");
   }
+  const snapshotPrevio = new Map(
+    pedido.items.map((it) => [
+      it.productoId,
+      {
+        nombre: it.nombre,
+        precioUnitario: it.precioUnitario,
+        unidad: it.unidad,
+        unidadLabel: it.unidadLabel,
+      },
+    ]),
+  );
   const reservado = await hayReserva(staff.tenantId, input.id);
   if (reservado) await soltarReserva(staff.tenantId, input.id);
   await sql`delete from pedido_items where pedido_id = ${input.id}`;
@@ -199,13 +218,18 @@ export async function updatePedidoItemsForStaff(
   for (const line of input.items) {
     const prod = byId.get(line.productoId);
     if (!prod || line.cantidad <= 0) continue;
-    const precioArs = precioEnArs(prod.precio, prod.moneda, cotizacion);
+    const previo = snapshotPrevio.get(line.productoId);
+    const nombre = previo?.nombre ?? prod.nombre;
+    const precioUnitario =
+      previo?.precioUnitario ?? precioEnArs(prod.precio, prod.moneda, cotizacion);
+    const unidad = previo?.unidad ?? prod.unidad;
+    const unidadLabel = previo?.unidadLabel ?? prod.unidadLabel;
     await sql`
       insert into pedido_items (
         id, pedido_id, producto_id, nombre_snapshot, cantidad, precio_unitario, unidad, unidad_label
       ) values (
-        ${newId("itm")}, ${input.id}, ${prod.id}, ${prod.nombre}, ${line.cantidad},
-        ${precioArs}, ${prod.unidad}, ${prod.unidadLabel}
+        ${newId("itm")}, ${input.id}, ${prod.id}, ${nombre}, ${line.cantidad},
+        ${precioUnitario}, ${unidad}, ${unidadLabel}
       )
     `;
   }
