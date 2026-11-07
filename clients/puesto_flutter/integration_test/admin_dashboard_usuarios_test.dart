@@ -91,25 +91,23 @@ void main() {
 
     // El form es inline y persiste (solo se limpia): el snackbar confirma el alta.
     await _esperar(tester, find.text('Usuario creado.'));
-    // El subtítulo del tile es `email · rol`: buscar por contenido y scrollear
-    // hasta el tile, porque la lista ordena por nombre y puede quedar abajo.
-    await _esperar(tester, find.byKey(const Key('admin_usuarios_lista')));
-    final tileNuevo = find.ancestor(
-      of: find.textContaining(emailAleatorio),
-      matching: find.byType(ListTile),
-    );
-    await tester.scrollUntilVisible(
-      tileNuevo,
-      150,
-      scrollable: find.descendant(
-        of: find.byKey(const Key('admin_usuarios_lista')),
-        matching: find.byType(Scrollable),
-      ),
-    );
-
+    // Esperar a que la lista se actualice (el provider se invalida tras el alta).
+    // Múltiples pumps para asegurar que todas las operaciones async completen.
+    for (int i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 200));
+    }
+    // Buscar el nuevo usuario por nombre (más confiable que el email).
+    await _esperar(tester, find.text('Nuevo Vendedor'), timeout: const Duration(seconds: 10));
+    
     // 4. Toggle estado (desactivar)
+    // Buscar el Switch que está en la misma fila que el nombre "Nuevo Vendedor".
+    // La fila es un InkWell que contiene el nombre y el Switch como descendientes.
+    final filaNuevo = find.ancestor(
+      of: find.text('Nuevo Vendedor'),
+      matching: find.byType(InkWell),
+    ).first;
     final findToggle = find.descendant(
-      of: tileNuevo,
+      of: filaNuevo,
       matching: find.byType(Switch),
     );
     expect(tester.widget<Switch>(findToggle).value, true);
@@ -119,7 +117,7 @@ void main() {
     await _esperar(
       tester,
       find.descendant(
-        of: tileNuevo,
+        of: filaNuevo,
         matching: find.text('Baja'),
       ),
     );

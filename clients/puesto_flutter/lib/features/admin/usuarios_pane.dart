@@ -1,11 +1,18 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/errors/api_exceptions.dart';
+import '../../core/tema.dart';
+import '../../core/widgets/tabla_web.dart';
 import '../../models/staff_session.dart';
 import '../../models/usuario.dart';
 import '../../services/usuarios_service.dart';
 import 'usuario_form_controller.dart';
+
+/// A partir de este ancho la ficha queda al lado de la lista, como en la web.
+const _quiebreFicha = 1024.0;
 
 class UsuariosPane extends ConsumerStatefulWidget {
   const UsuariosPane({super.key});
@@ -15,6 +22,9 @@ class UsuariosPane extends ConsumerStatefulWidget {
 }
 
 class _UsuariosPaneState extends ConsumerState<UsuariosPane> {
+  Usuario? _seleccionado;
+  bool _modoNuevo = false;
+
   final _nombre = TextEditingController();
   final _email = TextEditingController();
   final _password = TextEditingController();
@@ -28,6 +38,45 @@ class _UsuariosPaneState extends ConsumerState<UsuariosPane> {
     _email.dispose();
     _password.dispose();
     super.dispose();
+  }
+
+  void _seleccionar(Usuario usuario, {required bool enRail}) {
+    setState(() {
+      _seleccionado = usuario;
+      _modoNuevo = false;
+      _validacion = null;
+    });
+    if (!enRail) _abrirFicha();
+  }
+
+  void _nuevo({required bool enRail}) {
+    setState(() {
+      _seleccionado = null;
+      _modoNuevo = true;
+      _limpiarForm();
+    });
+    if (!enRail) _abrirFicha();
+  }
+
+  void _cerrarFicha() {
+    setState(() {
+      _seleccionado = null;
+      _modoNuevo = false;
+      _validacion = null;
+    });
+  }
+
+  Future<void> _abrirFicha() async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogo) => Dialog(
+        insetPadding: const EdgeInsets.all(16),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420, maxHeight: 640),
+          child: _TarjetaFicha(child: _ficha(dialogo, enRail: false)),
+        ),
+      ),
+    );
   }
 
   void _limpiarForm() {
@@ -65,8 +114,11 @@ class _UsuariosPaneState extends ConsumerState<UsuariosPane> {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Usuario creado.')),
     );
-    ref.invalidate(usuariosProvider);
     _limpiarForm();
+    setState(() {
+      _modoNuevo = false;
+      _seleccionado = null;
+    });
   }
 
   Future<void> _toggle(Usuario usuario) async {
@@ -115,6 +167,8 @@ class _UsuariosPaneState extends ConsumerState<UsuariosPane> {
                       decoration: const InputDecoration(
                         labelText: 'Nueva contraseña',
                         hintText: 'Mínimo 8 caracteres',
+                        isDense: true,
+                        border: OutlineInputBorder(),
                       ),
                       validator: (value) {
                         if (value == null || value.length < 8) {
@@ -130,6 +184,8 @@ class _UsuariosPaneState extends ConsumerState<UsuariosPane> {
                       obscureText: true,
                       decoration: const InputDecoration(
                         labelText: 'Confirmar contraseña',
+                        isDense: true,
+                        border: OutlineInputBorder(),
                       ),
                       validator: (value) {
                         if (value != nuevaController.text) {
@@ -189,249 +245,673 @@ class _UsuariosPaneState extends ConsumerState<UsuariosPane> {
     }
   }
 
+  Widget _ficha(BuildContext contexto, {required bool enRail}) {
+    final estado = ref.watch(usuarioFormProvider);
+    void cerrar() {
+      if (!enRail) Navigator.of(contexto).pop();
+      _cerrarFicha();
+    }
+
+    if (_modoNuevo) {
+      return _FichaNuevo(
+        nombreController: _nombre,
+        emailController: _email,
+        passwordController: _password,
+        verPassword: _verPassword,
+        rol: _rol,
+        onVerPasswordChanged: (v) => setState(() => _verPassword = v),
+        onRolChanged: (v) => setState(() => _rol = v),
+        enviando: estado.enviando,
+        errorMensaje: _validacion ?? estado.errorMensaje,
+        onCrear: () async {
+          await _crear();
+          if (!enRail && contexto.mounted) {
+            Navigator.of(contexto).pop();
+          }
+        },
+        onCerrar: cerrar,
+      );
+    }
+    final usuario = _seleccionado;
+    if (usuario == null) {
+      return _FichaVacia(onCerrar: () {
+        if (!enRail && contexto.mounted) {
+          Navigator.of(contexto).pop();
+        }
+      });
+    }
+    return _FichaUsuario(
+      usuario: usuario,
+      onToggle: () => _toggle(usuario),
+      onCambiarClave: () => _cambiarClave(usuario),
+      onCerrar: cerrar,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final tokens = context.tokens;
     final usuarios = ref.watch(usuariosProvider);
-    final estado = ref.watch(usuarioFormProvider);
 
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-          child: Row(
-            children: [
-              const Expanded(
-                child: Text(
-                  'Usuarios',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-                ),
-              ),
-            ],
-          ),
-        ),
-        Expanded(
-          child: usuarios.when(
-            loading: () => const Center(child: CircularProgressIndicator()),
-            error: (error, _) => Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(error is ApiException
-                      ? error.message
-                      : 'No se pudieron cargar los usuarios.'),
-                  const SizedBox(height: 16),
-                  FilledButton.tonal(
-                    key: const Key('admin_usuarios_reintentar'),
-                    onPressed: () => ref.invalidate(usuariosProvider),
-                    child: const Text('Reintentar'),
-                  ),
-                ],
-              ),
-            ),
-            data: (lista) => Row(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final enRail = constraints.maxWidth >= _quiebreFicha;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
               children: [
                 Expanded(
-                  flex: 2,
-                  child: lista.isEmpty
-                      ? const Center(
-                          child: Text(
-                            'No hay usuarios.',
-                            key: Key('usuarios_vacia'),
-                          ),
-                        )
-                      : ListView.separated(
-                          key: const Key('admin_usuarios_lista'),
-                          itemCount: lista.length,
-                          separatorBuilder: (_, _) => const Divider(height: 1),
-                          itemBuilder: (context, index) {
-                            return _UsuarioTile(
-                              usuario: lista[index],
-                              onToggle: () => _toggle(lista[index]),
-                              onCambiarClave: () => _cambiarClave(lista[index]),
-                            );
-                          },
-                        ),
-                ),
-                Expanded(
-                  flex: 3,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.surfaceContainerLowest,
-                      border: Border(
-                        left: BorderSide(color: Theme.of(context).dividerColor),
-                      ),
-                    ),
-                    child: SingleChildScrollView(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Text(
-                            'Nuevo usuario',
-                            style: Theme.of(context).textTheme.titleMedium,
-                          ),
-                          const SizedBox(height: 16),
-                          TextField(
-                            key: const Key('admin_usuario_nombre'),
-                            controller: _nombre,
-                            textCapitalization: TextCapitalization.words,
-                            enabled: !estado.enviando,
-                            decoration: const InputDecoration(
-                              labelText: 'Nombre',
-                              isDense: true,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          TextField(
-                            key: const Key('admin_usuario_email'),
-                            controller: _email,
-                            keyboardType: TextInputType.emailAddress,
-                            enabled: !estado.enviando,
-                            decoration: const InputDecoration(
-                              labelText: 'Email',
-                              isDense: true,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          TextField(
-                            key: const Key('admin_usuario_password'),
-                            controller: _password,
-                            obscureText: !_verPassword,
-                            enabled: !estado.enviando,
-                            decoration: InputDecoration(
-                              labelText: 'Contraseña',
-                              isDense: true,
-                              suffixIcon: IconButton(
-                                icon: Icon(_verPassword
-                                    ? Icons.visibility_off
-                                    : Icons.visibility),
-                                onPressed: () =>
-                                    setState(() => _verPassword = !_verPassword),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          DropdownButtonFormField<Rol>(
-                            key: const Key('admin_usuario_rol'),
-                            initialValue: _rol,
-                            isExpanded: true,
-                            decoration: const InputDecoration(
-                              labelText: 'Rol',
-                              isDense: true,
-                            ),
-                            items: const [
-                              DropdownMenuItem(
-                                value: Rol.vendedor,
-                                child: Text('Vendedor'),
-                              ),
-                              DropdownMenuItem(
-                                value: Rol.cajero,
-                                child: Text('Cajero'),
-                              ),
-                              DropdownMenuItem(
-                                value: Rol.admin,
-                                child: Text('Dueño / Admin'),
-                              ),
-                            ],
-                            onChanged: estado.enviando
-                                ? null
-                                : (valor) =>
-                                    setState(() => _rol = valor ?? Rol.vendedor),
-                          ),
-                          if (_validacion != null || estado.errorMensaje != null) ...[
-                            const SizedBox(height: 8),
-                            Text(
-                              _validacion ?? estado.errorMensaje!,
-                              key: const Key('admin_usuario_error'),
-                              style: TextStyle(
-                                color: Theme.of(context).colorScheme.error,
-                              ),
-                            ),
-                          ],
-                          const SizedBox(height: 16),
-                          FilledButton(
-                            key: const Key('admin_usuario_guardar'),
-                            onPressed: estado.enviando ? null : _crear,
-                            child: estado.enviando
-                                ? const SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(strokeWidth: 2),
-                                  )
-                                : const Text('Crear'),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.only(top: 16),
-                            child: Text(
-                              '${lista.length} usuario${lista.length == 1 ? '' : 's'}',
-                              textAlign: TextAlign.center,
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+                  child: Text(
+                    'Activa o desactiva usuarios. Cambiá la contraseña desde la ficha.',
+                    style: TextStyle(fontSize: 12.5, color: tokens.muted),
                   ),
+                ),
+                const SizedBox(width: 12),
+                FilledButton.icon(
+                  key: const Key('admin_nuevo_usuario'),
+                  onPressed: () => _nuevo(enRail: enRail),
+                  icon: const Icon(Icons.person_add_outlined, size: 18),
+                  label: const Text('Nuevo usuario'),
                 ),
               ],
             ),
-          ),
-        ),
-      ],
+            const SizedBox(height: 12),
+            Expanded(
+              child: usuarios.when(
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (error, _) => Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        error is ApiException
+                            ? error.message
+                            : 'No se pudieron cargar los usuarios.',
+                        style: TextStyle(fontSize: 13, color: tokens.terra),
+                      ),
+                      const SizedBox(height: 16),
+                      FilledButton.tonal(
+                        key: const Key('admin_usuarios_reintentar'),
+                        onPressed: () => ref.invalidate(usuariosProvider),
+                        child: const Text('Reintentar'),
+                      ),
+                    ],
+                  ),
+                ),
+                data: (lista) {
+                  final elegido = lista
+                      .where((u) => u.id == _seleccionado?.id)
+                      .firstOrNull;
+                  final listado = _Listado(
+                    usuarios: lista,
+                    seleccion: _seleccionado?.id,
+                    onTap: (u) => _seleccionar(u, enRail: enRail),
+                    onToggle: _toggle,
+                    onCambiarClave: _cambiarClave,
+                  );
+
+                  if (!enRail) return listado;
+
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(child: listado),
+                      const SizedBox(width: 16),
+                      SizedBox(
+                        width: 340,
+                        child: elegido == null && !_modoNuevo
+                            ? Text(
+                                'Elegí un usuario para ver su ficha.',
+                                style: TextStyle(
+                                  fontSize: 12.5,
+                                  color: tokens.muted,
+                                ),
+                              )
+                            : _TarjetaFicha(child: _ficha(context, enRail: true)),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }
 
-class _UsuarioTile extends StatelessWidget {
-  const _UsuarioTile({
+// ---------------------------------------------------------------------------
+// Listado
+// ---------------------------------------------------------------------------
+
+class _Listado extends StatelessWidget {
+  const _Listado({
+    required this.usuarios,
+    required this.seleccion,
+    required this.onTap,
+    required this.onToggle,
+    required this.onCambiarClave,
+  });
+
+  final List<Usuario> usuarios;
+  final String? seleccion;
+  final ValueChanged<Usuario> onTap;
+  final ValueChanged<Usuario> onToggle;
+  final ValueChanged<Usuario> onCambiarClave;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+
+    if (usuarios.isEmpty) {
+      return Tarjeta(
+        padding: EdgeInsets.zero,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 24),
+          child: Text(
+            'No hay usuarios.',
+            key: const Key('usuarios_vacia'),
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 13, color: tokens.muted),
+          ),
+        ),
+      );
+    }
+
+    return Tarjeta(
+      padding: EdgeInsets.zero,
+      child: ListView.separated(
+        key: const Key('admin_usuarios_lista'),
+        padding: EdgeInsets.zero,
+        itemCount: usuarios.length,
+        separatorBuilder: (_, _) =>
+            Divider(height: 1, thickness: 1, color: tokens.line),
+        itemBuilder: (context, index) {
+          final usuario = usuarios[index];
+          return _FilaUsuario(
+            key: Key('admin_usuario_${usuario.id}'),
+            usuario: usuario,
+            seleccionado: seleccion == usuario.id,
+            onTap: () => onTap(usuario),
+            onToggle: () => onToggle(usuario),
+            onCambiarClave: () => onCambiarClave(usuario),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _FilaUsuario extends StatefulWidget {
+  const _FilaUsuario({
+    super.key,
     required this.usuario,
+    required this.seleccionado,
+    required this.onTap,
     required this.onToggle,
     required this.onCambiarClave,
   });
 
   final Usuario usuario;
+  final bool seleccionado;
+  final VoidCallback onTap;
   final VoidCallback onToggle;
   final VoidCallback onCambiarClave;
 
   @override
+  State<_FilaUsuario> createState() => _FilaUsuarioState();
+}
+
+class _FilaUsuarioState extends State<_FilaUsuario> {
+  bool _encima = false;
+
+  @override
   Widget build(BuildContext context) {
-    final rolColors = switch (usuario.rol) {
-      Rol.admin => Colors.deepPurple,
-      Rol.cajero => Colors.blue,
-      Rol.vendedor => Colors.teal,
-    };
-    return ListTile(
-      key: Key('admin_usuario_${usuario.id}'),
-      leading: CircleAvatar(
-        backgroundColor: rolColors.withValues(alpha: 0.12),
-        child: Text(
-          usuario.nombre.isNotEmpty ? usuario.nombre[0].toUpperCase() : '?',
-          style: TextStyle(color: rolColors),
+    final tokens = context.tokens;
+    final usuario = widget.usuario;
+
+    final fondo = widget.seleccionado
+        ? tokens.okBg
+        : (_encima ? tokens.paper : null);
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _encima = true),
+      onExit: (_) => setState(() => _encima = false),
+      child: InkWell(
+        onTap: widget.onTap,
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 40),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          color: fondo,
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      usuario.nombre,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        color: tokens.ink,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${usuario.email} · ${usuario.rol.label}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 11.5, color: tokens.muted),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Pildora(
+                usuario.activo ? 'Activo' : 'Baja',
+                color: usuario.activo ? tokens.ok : tokens.muted,
+              ),
+              const SizedBox(width: 6),
+              IconButton(
+                key: Key('admin_usuario_clave_${usuario.id}'),
+                tooltip: 'Cambiar contraseña',
+                icon: const Icon(Icons.key_outlined),
+                iconSize: 16,
+                color: tokens.inkSoft,
+                visualDensity: VisualDensity.compact,
+                style: IconButton.styleFrom(
+                  minimumSize: const Size(30, 30),
+                  padding: EdgeInsets.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                onPressed: widget.onCambiarClave,
+              ),
+              const SizedBox(width: 4),
+              Switch(
+                key: Key('admin_usuario_toggle_${usuario.id}'),
+                value: usuario.activo,
+                onChanged: (_) => widget.onToggle(),
+              ),
+            ],
+          ),
         ),
       ),
-      title: Text(usuario.nombre),
-      subtitle: Text('${usuario.email} · ${usuario.rol.label}'),
-      trailing: Row(
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Tarjeta ficha (borde superior naranja)
+// ---------------------------------------------------------------------------
+
+class _TarjetaFicha extends StatelessWidget {
+  const _TarjetaFicha({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    return Container(
+      decoration: BoxDecoration(
+        color: tokens.surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: tokens.line),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (!usuario.activo)
-            Chip(
-              label: const Text('Baja'),
-              visualDensity: VisualDensity.compact,
-              backgroundColor: Theme.of(context).colorScheme.errorContainer,
-            ),
-          IconButton(
-            key: Key('admin_usuario_clave_${usuario.id}'),
-            tooltip: 'Cambiar contraseña',
-            icon: const Icon(Icons.key_outlined),
-            onPressed: onCambiarClave,
+          Container(height: 2, color: tokens.naranja),
+          Flexible(child: child),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Ficha: vacío, nuevo usuario, detalle de usuario
+// ---------------------------------------------------------------------------
+
+class _FichaVacia extends StatelessWidget {
+  const _FichaVacia({required this.onCerrar});
+
+  final VoidCallback onCerrar;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Ficha',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: 'Fraunces',
+                    fontSize: 17,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed: onCerrar,
+                style: TextButton.styleFrom(
+                  minimumSize: const Size(0, 28),
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  foregroundColor: tokens.muted,
+                  textStyle: const TextStyle(fontSize: 12),
+                ),
+                child: const Text('Cerrar'),
+              ),
+            ],
           ),
-          Switch(
-            key: Key('admin_usuario_toggle_${usuario.id}'),
-            value: usuario.activo,
-            onChanged: (_) => onToggle(),
+          const SizedBox(height: 8),
+          Text(
+            'Elegí un usuario para ver su ficha.',
+            style: TextStyle(fontSize: 12.5, color: tokens.muted),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FichaNuevo extends StatelessWidget {
+  const _FichaNuevo({
+    required this.nombreController,
+    required this.emailController,
+    required this.passwordController,
+    required this.verPassword,
+    required this.rol,
+    required this.onVerPasswordChanged,
+    required this.onRolChanged,
+    required this.enviando,
+    required this.errorMensaje,
+    required this.onCrear,
+    required this.onCerrar,
+  });
+
+  final TextEditingController nombreController;
+  final TextEditingController emailController;
+  final TextEditingController passwordController;
+  final bool verPassword;
+  final Rol rol;
+  final ValueChanged<bool> onVerPasswordChanged;
+  final ValueChanged<Rol> onRolChanged;
+  final bool enviando;
+  final String? errorMensaje;
+  final FutureOr<void> Function() onCrear;
+  final VoidCallback onCerrar;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Nuevo usuario',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: 'Fraunces',
+                    fontSize: 17,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed: enviando ? null : onCerrar,
+                style: TextButton.styleFrom(
+                  minimumSize: const Size(0, 28),
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  foregroundColor: tokens.muted,
+                  textStyle: const TextStyle(fontSize: 12),
+                ),
+                child: const Text('Cerrar'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          _campo(
+            key: const Key('admin_usuario_nombre'),
+            controller: nombreController,
+            label: 'Nombre',
+            requerido: true,
+            capitalization: TextCapitalization.words,
+          ),
+          _campo(
+            key: const Key('admin_usuario_email'),
+            controller: emailController,
+            label: 'Email',
+            keyboardType: TextInputType.emailAddress,
+          ),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: TextField(
+              key: const Key('admin_usuario_password'),
+              controller: passwordController,
+              obscureText: !verPassword,
+              enabled: !enviando,
+              style: const TextStyle(fontSize: 13),
+              decoration: InputDecoration(
+                labelText: 'Contraseña',
+                isDense: true,
+                border: const OutlineInputBorder(),
+                suffixIcon: IconButton(
+                  icon: Icon(verPassword
+                      ? Icons.visibility_off
+                      : Icons.visibility),
+                  onPressed: () => onVerPasswordChanged(!verPassword),
+                ),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: DropdownButtonFormField<Rol>(
+              key: const Key('admin_usuario_rol'),
+              initialValue: rol,
+              isExpanded: true,
+              decoration: const InputDecoration(
+                labelText: 'Rol',
+                isDense: true,
+                border: OutlineInputBorder(),
+              ),
+              items: const [
+                DropdownMenuItem(
+                  value: Rol.vendedor,
+                  child: Text('Vendedor'),
+                ),
+                DropdownMenuItem(
+                  value: Rol.cajero,
+                  child: Text('Cajero'),
+                ),
+                DropdownMenuItem(
+                  value: Rol.admin,
+                  child: Text('Dueño / Admin'),
+                ),
+              ],
+              onChanged: enviando ? null : (valor) {
+                if (valor != null) onRolChanged(valor);
+              },
+            ),
+          ),
+          if (errorMensaje != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              errorMensaje!,
+              key: const Key('admin_usuario_error'),
+              style: TextStyle(fontSize: 12.5, color: tokens.terra),
+            ),
+          ],
+          const SizedBox(height: 12),
+          FilledButton(
+            key: const Key('admin_usuario_guardar'),
+            onPressed: enviando ? null : () => onCrear(),
+            style: ButtonStyle(
+              minimumSize: WidgetStateProperty.all(const Size.fromHeight(38)),
+            ),
+            child: enviando
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('Crear'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _campo({
+    required Key key,
+    required TextEditingController controller,
+    required String label,
+    bool requerido = false,
+    TextInputType? keyboardType,
+    TextCapitalization capitalization = TextCapitalization.none,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: TextField(
+        key: key,
+        controller: controller,
+        keyboardType: keyboardType,
+        textCapitalization: capitalization,
+        enabled: !enviando,
+        style: const TextStyle(fontSize: 13),
+        decoration: InputDecoration(
+          labelText: requerido ? '$label *' : label,
+          isDense: true,
+          border: const OutlineInputBorder(),
+        ),
+      ),
+    );
+  }
+}
+
+class _FichaUsuario extends StatelessWidget {
+  const _FichaUsuario({
+    required this.usuario,
+    required this.onToggle,
+    required this.onCambiarClave,
+    required this.onCerrar,
+  });
+
+  final Usuario usuario;
+  final VoidCallback onToggle;
+  final VoidCallback onCambiarClave;
+  final VoidCallback onCerrar;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Ficha',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontFamily: 'Fraunces',
+                    fontSize: 17,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed: onCerrar,
+                style: TextButton.styleFrom(
+                  minimumSize: const Size(0, 28),
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  foregroundColor: tokens.muted,
+                  textStyle: const TextStyle(fontSize: 12),
+                ),
+                child: const Text('Cerrar'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            usuario.nombre,
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            usuario.email,
+            style: TextStyle(fontSize: 12.5, color: tokens.muted),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Pildora(
+                usuario.rol.label,
+                color: tokens.inkSoft,
+              ),
+              const SizedBox(width: 6),
+              Pildora(
+                usuario.activo ? 'Activo' : 'Baja',
+                color: usuario.activo ? tokens.ok : tokens.muted,
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          FilledButton.icon(
+            onPressed: onCambiarClave,
+            icon: const Icon(Icons.key_outlined, size: 16),
+            label: const Text('Cambiar contraseña'),
+            style: ButtonStyle(
+              minimumSize: WidgetStateProperty.all(const Size.fromHeight(38)),
+            ),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton(
+            onPressed: onToggle,
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size.fromHeight(38),
+              side: BorderSide(color: tokens.line),
+              foregroundColor: usuario.activo ? tokens.terra : tokens.ok,
+              textStyle: const TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            child: Text(usuario.activo ? 'Desactivar' : 'Activar'),
           ),
         ],
       ),

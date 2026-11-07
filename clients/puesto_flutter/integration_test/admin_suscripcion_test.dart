@@ -56,23 +56,8 @@ Future<void> _esperar(
 /// El menú de secciones es una fila horizontal de píldoras: en pantallas
 /// angostas las últimas quedan fuera del viewport. Desplaza el menú hasta la
 /// píldora y recién ahí toca.
-Future<void> _tocarPildora(WidgetTester tester, String etiqueta) async {
-  final pildora = find.text(etiqueta);
-  await tester.scrollUntilVisible(
-    pildora,
-    100,
-    scrollable: find
-        .byWidgetPredicate(
-          (widget) =>
-              widget is Scrollable && widget.axisDirection == AxisDirection.right,
-        )
-        .first,
-  );
-  await tester.ensureVisible(pildora);
-  await tester.pump(const Duration(milliseconds: 300));
-  await tester.tap(pildora);
-  await tester.pump();
-}
+Future<void> _tocarPildora(WidgetTester tester, String etiqueta) =>
+    irASeccion(tester, etiqueta);
 
 Future<void> _login(WidgetTester tester, String email) async {
   await _esperar(tester, find.byKey(const Key('login_email')));
@@ -81,7 +66,8 @@ Future<void> _login(WidgetTester tester, String email) async {
   if (email == _emailDueno) {
     await tocaLoginHasta(tester, find.byKey(const Key('dashboard_lista')));
   } else {
-    await tocaLoginHasta(tester, find.byKey(const Key('catalogo_lista')));
+    // Vendedor cae en Puesto (carrito vacío por defecto).
+    await tocaLoginHasta(tester, find.byKey(const Key('carrito_vacio')));
   }
 }
 
@@ -112,6 +98,8 @@ void main() {
     await tester.tap(find.byKey(const Key('logout_button')));
     await tester.pump();
     await _esperar(tester, find.byKey(const Key('login_email')));
+    // Dar tiempo para que el estado de auth se resetee completamente.
+    await tester.pumpAndSettle();
     await _login(tester, _emailVenta);
     expect(find.text('Suscripción'), findsNothing);
 
