@@ -45,6 +45,9 @@ class _MostradorAppState extends ConsumerState<MostradorApp> {
   Widget build(BuildContext context) {
     final modo = ref.watch(temaControllerProvider);
     final auth = ref.watch(authControllerProvider);
+    ref.listen(sessionNoticeProvider, (_, aviso) {
+      if (aviso != null) setState(() => _aviso = aviso);
+    });
     return MaterialApp.router(
       title: 'Mostrador',
       theme: temaClaro(),

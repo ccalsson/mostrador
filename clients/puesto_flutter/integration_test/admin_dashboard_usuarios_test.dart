@@ -40,20 +40,6 @@ Future<void> _esperar(
   fail('No apareció en pantalla: $finder');
 }
 
-Future<void> _esperarSin(
-  WidgetTester tester,
-  Finder finder, {
-  Duration timeout = const Duration(seconds: 30),
-  String? reason,
-}) async {
-  final fin = DateTime.now().add(timeout);
-  while (DateTime.now().isBefore(fin)) {
-    await tester.pump(const Duration(milliseconds: 250));
-    if (finder.evaluate().isEmpty) return;
-  }
-  fail('Sigue en pantalla: $finder${reason == null ? '' : ' ($reason)'}');
-}
-
 Future<void> _login(WidgetTester tester, String email) async {
   await _esperar(tester, find.byKey(const Key('login_email')));
   await tester.enterText(find.byKey(const Key('login_email')), email);
@@ -65,23 +51,8 @@ Future<void> _login(WidgetTester tester, String email) async {
 /// El menú de secciones es una fila horizontal de píldoras: en pantallas
 /// angostas las últimas quedan fuera del viewport. Desplaza el menú hasta la
 /// píldora y recién ahí toca.
-Future<void> _tocarPildora(WidgetTester tester, String etiqueta) async {
-  final pildora = find.text(etiqueta);
-  await tester.scrollUntilVisible(
-    pildora,
-    100,
-    scrollable: find
-        .byWidgetPredicate(
-          (widget) =>
-              widget is Scrollable && widget.axisDirection == AxisDirection.right,
-        )
-        .first,
-  );
-  await tester.ensureVisible(pildora);
-  await tester.pump(const Duration(milliseconds: 300));
-  await tester.tap(pildora);
-  await tester.pump();
-}
+Future<void> _tocarPildora(WidgetTester tester, String etiqueta) =>
+    irASeccion(tester, etiqueta);
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -97,7 +68,7 @@ void main() {
     await _login(tester, _emailDueno);
 
     // 1. Verificar Dashboard
-    await tester.tap(find.text('30d')); // Cambiar periodo
+    await tester.tap(find.text('30 días')); // Cambiar periodo
     await tester.pump();
     await _esperar(tester, find.byKey(const Key('dashboard_total_ventas')));
     await _esperar(tester, find.text('Datos de los últimos 30 días'));
@@ -106,11 +77,11 @@ void main() {
     await _tocarPildora(tester, 'Usuarios');
     await _esperar(tester, find.byKey(const Key('admin_usuarios_lista')));
 
-    // 3. Crear usuario
+    // 3. Crear usuario: el formulario se abre con "Nuevo usuario" (rail en
+    // pantallas anchas, diálogo en angostas).
     final emailAleatorio =
         'test${DateTime.now().microsecondsSinceEpoch}@frutasroman.com';
     await tester.tap(find.byKey(const Key('admin_nuevo_usuario')));
-    await tester.pump();
     await _esperar(tester, find.byKey(const Key('admin_usuario_email')));
     
     await tester.enterText(find.byKey(const Key('admin_usuario_nombre')), 'Nuevo Vendedor');
@@ -118,7 +89,8 @@ void main() {
     await tester.enterText(find.byKey(const Key('admin_usuario_password')), 'secreta123');
     await tester.tap(find.byKey(const Key('admin_usuario_guardar')));
 
-    await _esperarSin(tester, find.byKey(const Key('admin_usuario_email')));
+    // El form es inline y persiste (solo se limpia): el snackbar confirma el alta.
+    await _esperar(tester, find.text('Usuario creado.'));
     // El subtítulo del tile es `email · rol`: buscar por contenido y scrollear
     // hasta el tile, porque la lista ordena por nombre y puede quedar abajo.
     await _esperar(tester, find.byKey(const Key('admin_usuarios_lista')));
@@ -148,7 +120,7 @@ void main() {
       tester,
       find.descendant(
         of: tileNuevo,
-        matching: find.text('Inactivo'),
+        matching: find.text('Baja'),
       ),
     );
   });

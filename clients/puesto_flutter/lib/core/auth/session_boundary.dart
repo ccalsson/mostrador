@@ -15,6 +15,9 @@ final sessionResetProvider = NotifierProvider<SessionResetController, String?>(
 
 final sessionNoticeProvider = Provider<String?>((ref) => null);
 
+/// Publica el aviso del último reinicio de sesión sin recrear el
+/// `ProviderScope`: el reinicio lo hace `AuthController` invalidando el
+/// cliente, que arrastra a todos los servicios y datos.
 class SessionBoundary extends StatefulWidget {
   const SessionBoundary({
     super.key,
@@ -30,25 +33,18 @@ class SessionBoundary extends StatefulWidget {
 }
 
 class _SessionBoundaryState extends State<SessionBoundary> {
-  int _generacion = 0;
   String? _mensaje;
 
-  void _reiniciar(String mensaje) {
-    setState(() {
-      _generacion++;
-      _mensaje = mensaje;
-    });
-  }
+  void _avisar(String mensaje) => setState(() => _mensaje = mensaje);
 
   @override
   Widget build(BuildContext context) => ProviderScope(
-    key: ValueKey(_generacion),
     retry: (_, _) => null,
     overrides: [
       ...widget.overrides,
       sessionNoticeProvider.overrideWithValue(_mensaje),
     ],
-    child: _ResetListener(onReset: _reiniciar, child: widget.child),
+    child: _ResetListener(onReset: _avisar, child: widget.child),
   );
 }
 

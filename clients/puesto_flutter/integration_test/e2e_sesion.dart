@@ -56,3 +56,53 @@ Future<void> tocaLoginHasta(
   }
   fail('Login no alcanzó el destino tras $_intentosMax intentos: $destino');
 }
+
+/// Sección → grupo del header (shell tipo web: dropdowns por grupo,
+/// claves `nav_grupo_<grupo>` y `nav_item_<etiqueta>`).
+const Map<String, String> grupoDeSeccion = {
+  'Caja': 'operacion',
+  'Puesto': 'operacion',
+  'Pedidos': 'operacion',
+  'Remitos': 'operacion',
+  'ARCA': 'operacion',
+  'Catálogo': 'catalogo',
+  'Productos': 'catalogo',
+  'Proveedores': 'catalogo',
+  'Clientes': 'catalogo',
+  'Clientes app': 'catalogo',
+  'Sucursales': 'administracion',
+  'Identidad': 'administracion',
+  'Usuarios': 'administracion',
+  'Alertas': 'administracion',
+  'Suscripción': 'administracion',
+  'Marketing': 'marketing',
+  'QR del puesto': 'marketing',
+  'Escritorio': 'informes',
+  'Dashboard': 'informes',
+  'Reportes': 'informes',
+  'Reposición': 'informes',
+  'Auditoría': 'informes',
+};
+
+/// Abre el grupo del header y toca la sección (reemplaza a las antiguas
+/// píldoras del menú horizontal).
+Future<void> irASeccion(WidgetTester tester, String etiqueta) async {
+  final grupo = grupoDeSeccion[etiqueta];
+  if (grupo == null) fail('Sección sin grupo en el shell: $etiqueta');
+  await tester.tap(find.byKey(Key('nav_grupo_$grupo')));
+  final item = find.byKey(Key('nav_item_$etiqueta'));
+  final fin = DateTime.now().add(const Duration(seconds: 10));
+  while (DateTime.now().isBefore(fin)) {
+    await tester.pump(const Duration(milliseconds: 200));
+    if (item.evaluate().isNotEmpty) break;
+  }
+  if (item.evaluate().isEmpty) {
+    fail('El grupo $grupo no mostró el ítem $etiqueta');
+  }
+  // El popup entra con una transición: mientras dura, el ítem existe en el
+  // árbol pero no es hit-testable y el tap cae en la barrera, que cierra el
+  // menú sin seleccionar nada.
+  await tester.pump(const Duration(milliseconds: 600));
+  await tester.tap(item);
+  await tester.pump();
+}
