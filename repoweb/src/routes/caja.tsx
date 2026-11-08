@@ -29,6 +29,7 @@ import {
 } from "@/lib/fn";
 import { cn } from "@/lib/cn";
 import { clock, money } from "@/lib/money";
+import { getCotizacionFn, precioEnArs } from "@/lib/moneda";
 import { verComprobante } from "@/lib/portal-fn";
 import { imprimirEnTermica, type TicketContenido } from "@/lib/termica";
 import { PAGO_LABEL, type FormaPago, type Pedido, type Producto } from "@/lib/types";
@@ -679,6 +680,13 @@ function VentaDirecta({
   const [clienteNombre, setClienteNombre] = useState("Mostrador");
   const [forma, setForma] = useState<FormaPago>("efectivo");
   const [recibido, setRecibido] = useState("");
+  const cotizacion = useQuery({
+    queryKey: ["cotizacion"],
+    queryFn: () => getCotizacionFn(),
+    staleTime: 5 * 60_000,
+  });
+  const fx = cotizacion.data ?? 1600;
+  const precioArs = (p: Producto) => precioEnArs(p.precio, p.moneda, fx);
   const filtered = useMemo(() => {
     const n = q.toLowerCase();
     return productos.filter((p) => p.activo && p.nombre.toLowerCase().includes(n)).slice(0, 12);
@@ -689,7 +697,7 @@ function VentaDirecta({
       return p && n > 0 ? { p, n } : null;
     })
     .filter(Boolean) as { p: Producto; n: number }[];
-  const total = lines.reduce((a, l) => a + l.p.precio * l.n, 0);
+  const total = lines.reduce((a, l) => a + precioArs(l.p) * l.n, 0);
 
   const pay = useMutation({
     mutationFn: async () => {
@@ -727,7 +735,7 @@ function VentaDirecta({
               <div>
                 <div className="font-medium">{p.nombre}</div>
                 <div className="text-sm text-muted">
-                  {money(p.precio)} / {p.unidadLabel}
+                  {money(precioArs(p))} / {p.unidadLabel}
                 </div>
               </div>
               <Button size="sm" onClick={() => setCart((c) => ({ ...c, [p.id]: (c[p.id] ?? 0) + 1 }))}>
@@ -750,7 +758,7 @@ function VentaDirecta({
               <span>
                 {n} {p.unidadLabel} {p.nombre}
               </span>
-              <span className="tabular-nums">{money(p.precio * n)}</span>
+              <span className="tabular-nums">{money(precioArs(p) * n)}</span>
             </li>
           ))}
         </ul>

@@ -16,6 +16,7 @@ const GRUPOS = [
     items: [
       { to: "/torre/tenants", label: "Negocios" },
       { to: "/torre/clientes", label: "Clientes" },
+      { to: "/torre/clientes-360", label: "Clientes 360°" },
       { to: "/torre/planes", label: "Planes" },
       { to: "/torre/productos", label: "Add-ons y precios" },
       { to: "/torre/servicios", label: "Servicios" },
@@ -23,12 +24,19 @@ const GRUPOS = [
       { to: "/torre/sucursales", label: "Sucursales" },
       { to: "/torre/promociones", label: "Promociones" },
       { to: "/torre/publicidad", label: "Publicidad" },
+      { to: "/torre/marketing-auto", label: "Marketing Automation" },
+      { to: "/torre/grupos-empresariales", label: "Grupos Empresariales" },
       { to: "/torre/finanzas", label: "Finanzas" },
+      { to: "/torre/financiero-consolidado", label: "Control Financiero" },
     ],
   },
   {
     label: "Operación",
-    items: [{ to: "/torre/mercado", label: "Mostrador y Mercado" }],
+    items: [
+      { to: "/torre/mercado", label: "Mostrador y Mercado" },
+      { to: "/torre/catalogo-unificado", label: "Catálogo Unificado" },
+      { to: "/torre/inventario", label: "Inventario" },
+    ],
   },
   {
     label: "Legal",
@@ -40,6 +48,13 @@ const GRUPOS = [
   {
     label: "Plataforma",
     items: [
+      { to: "/torre/ejecutivo", label: "Dashboard Ejecutivo" },
+      { to: "/torre/usuarios", label: "Usuarios" },
+      { to: "/torre/reglas-auto", label: "Reglas Automaticas" },
+      { to: "/torre/bi-forecast", label: "BI & Forecasting" },
+      { to: "/torre/api-marketplace", label: "API Marketplace" },
+      { to: "/torre/white-label", label: "White-Label" },
+      { to: "/torre/sire", label: "SIRE · Instituciones" },
       { to: "/torre/apps", label: "Aplicaciones" },
       { to: "/torre/versiones", label: "Versiones" },
       { to: "/torre/deployments", label: "Deployments" },
@@ -243,8 +258,15 @@ export function PendientesAddon({ detalle = false }: { detalle?: boolean }) {
 
 function claveDe(path: string) {
   const tabla: [string, string][] = [
+    ["/torre/ejecutivo", "ejecutivo"],
+    ["/torre/usuarios", "usuarios"],
+    ["/torre/reglas-auto", "reglas-auto"],
+    ["/torre/bi-forecast", "bi-forecast"],
+    ["/torre/api-marketplace", "api-marketplace"],
+    ["/torre/white-label", "white-label"],
     ["/torre/tenants", "negocios"],
     ["/torre/clientes", "clientes"],
+    ["/torre/clientes-360", "clientes-360"],
     ["/torre/planes", "planes"],
     ["/torre/productos", "precios"],
     ["/torre/servicios", "servicios"],
@@ -252,8 +274,13 @@ function claveDe(path: string) {
     ["/torre/sucursales", "sucursales"],
     ["/torre/promociones", "promociones"],
     ["/torre/publicidad", "publicidad"],
+    ["/torre/marketing-auto", "marketing-auto"],
+    ["/torre/grupos-empresariales", "grupos-empresariales"],
     ["/torre/finanzas", "finanzas"],
+    ["/torre/financiero-consolidado", "financiero-consolidado"],
     ["/torre/mercado", "operacion"],
+    ["/torre/catalogo-unificado", "catalogo-unificado"],
+    ["/torre/inventario", "inventario"],
     ["/torre/legal", "legal"],
     ["/torre/procesadores", "procesadores"],
     ["/torre/apps", "apps"],

@@ -162,6 +162,7 @@ export const listProductos = createServerFn({ method: "GET" })
       unidad: Producto["unidad"];
       unidad_label: string;
       precio: unknown;
+      moneda: unknown;
       stock: unknown;
       stock_minimo: unknown;
       alias: unknown;
@@ -170,7 +171,7 @@ export const listProductos = createServerFn({ method: "GET" })
       publicado_online: boolean | null;
       foto_id: string | null;
     }>`
-      select id, nombre, unidad, unidad_label, precio, costo, margen_pct, stock, stock_minimo, alias, activo, orden, publicado_online, foto_id
+      select id, nombre, unidad, unidad_label, precio, moneda, costo, margen_pct, stock, stock_minimo, alias, activo, orden, publicado_online, foto_id
       from productos
       where tenant_id = ${staff.tenantId}
       order by orden nulls last, lower(nombre)
@@ -416,6 +417,7 @@ export const saveProducto = createServerFn({ method: "POST" })
     unidad: Producto["unidad"];
     unidadLabel: string;
     precio: number;
+    moneda?: string;
     stockMinimo: number;
     alias: string[];
     activo: boolean;
@@ -438,7 +440,7 @@ export const saveProducto = createServerFn({ method: "POST" })
       await sql.query(
         `update productos
          set nombre=$1, unidad=$2, unidad_label=$3, precio=$4, stock_minimo=$5, alias=$6::jsonb, activo=$7,
-             publicado_online = coalesce($8, publicado_online), updated_at=now()
+             publicado_online = coalesce($8, publicado_online), moneda=$11, updated_at=now()
          where id=$9 and tenant_id=$10`,
         [
           data.nombre.trim(),
@@ -451,6 +453,7 @@ export const saveProducto = createServerFn({ method: "POST" })
           data.publicadoOnline ?? null,
           data.id,
           staff.tenantId,
+          data.moneda === "USD" ? "USD" : "ARS",
         ],
       );
       if (prev[0] && num(prev[0].precio) !== data.precio) {
@@ -462,8 +465,8 @@ export const saveProducto = createServerFn({ method: "POST" })
       }
     } else {
       await sql.query(
-        `insert into productos (id, tenant_id, nombre, unidad, unidad_label, precio, stock, stock_minimo, alias, activo, publicado_online)
-         values ($1,$2,$3,$4,$5,$6,0,$7,$8::jsonb,$9,$10)`,
+        `insert into productos (id, tenant_id, nombre, unidad, unidad_label, precio, moneda, stock, stock_minimo, alias, activo, publicado_online)
+         values ($1,$2,$3,$4,$5,$6,$11,0,$7,$8::jsonb,$9,$10)`,
         [
           id,
           staff.tenantId,
@@ -475,6 +478,7 @@ export const saveProducto = createServerFn({ method: "POST" })
           JSON.stringify(data.alias),
           data.activo,
           data.publicadoOnline ?? false,
+          data.moneda === "USD" ? "USD" : "ARS",
         ],
       );
       await audit(staff.tenantId, staff, "alta_producto", "producto", { id, nombre: data.nombre });
@@ -625,12 +629,13 @@ async function insertPedido(opts: {
     unidad: Producto["unidad"];
     unidad_label: string;
     precio: unknown;
+    moneda: unknown;
     stock: unknown;
     stock_minimo: unknown;
     alias: unknown;
     activo: boolean;
   }>`
-    select id, nombre, unidad, unidad_label, precio, stock, stock_minimo, alias, activo
+    select id, nombre, unidad, unidad_label, precio, moneda, stock, stock_minimo, alias, activo
     from productos where tenant_id = ${opts.staff.tenantId}
   `;
   const byId = new Map(productos.map((p) => [p.id, mapProducto(p)]));
@@ -887,11 +892,12 @@ export const updatePedidoItems = createServerFn({ method: "POST" })
       unidad: Producto["unidad"];
       unidad_label: string;
       precio: unknown;
+      moneda: unknown;
       stock: unknown;
       stock_minimo: unknown;
       alias: unknown;
       activo: boolean;
-    }>`select id, nombre, unidad, unidad_label, precio, stock, stock_minimo, alias, activo from productos where tenant_id = ${staff.tenantId}`;
+    }>`select id, nombre, unidad, unidad_label, precio, moneda, stock, stock_minimo, alias, activo from productos where tenant_id = ${staff.tenantId}`;
     const byId = new Map(productos.map((p) => [p.id, mapProducto(p)]));
     for (const line of data.items) {
       const prod = byId.get(line.productoId);

@@ -102,6 +102,7 @@ export function mapProducto(r: {
   unidad: Producto["unidad"];
   unidad_label: string;
   precio: unknown;
+  moneda?: unknown;
   stock: unknown;
   stock_minimo: unknown;
   alias: unknown;
@@ -121,6 +122,7 @@ export function mapProducto(r: {
     unidad: r.unidad,
     unidadLabel: r.unidad_label,
     precio: num(r.precio),
+    moneda: r.moneda === "ARS" ? "ARS" : "USD",
     costo: r.costo == null ? null : num(r.costo),
     margenPct: r.margen_pct == null ? null : num(r.margen_pct),
     stock,

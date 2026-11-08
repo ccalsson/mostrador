@@ -243,7 +243,7 @@ export const catalogoCliente = createServerFn({ method: "GET" })
     await fichaPorUsuario(context.userId);
     const sql = await getSql();
     const rows = await sql<Parameters<typeof mapProducto>[0]>`
-      select id, nombre, unidad, unidad_label, precio, stock, stock_minimo, alias, activo, orden
+      select id, nombre, unidad, unidad_label, precio, moneda, stock, stock_minimo, alias, activo, orden
       from productos
       where tenant_id = ${TENANT_ID} and activo = true
       order by orden nulls last, lower(nombre)

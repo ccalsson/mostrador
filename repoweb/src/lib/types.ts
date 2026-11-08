@@ -50,6 +50,7 @@ export type Producto = {
   unidad: Unidad;
   unidadLabel: string;
   precio: number;
+  moneda: Moneda;
   costo: number | null;
   margenPct: number | null;
   stock: number;

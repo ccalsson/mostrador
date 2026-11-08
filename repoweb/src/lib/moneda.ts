@@ -1,3 +1,5 @@
+import { createServerFn } from "@tanstack/react-start";
+import { authMiddleware } from "@/lib/auth/middleware";
 import { getSql } from "@/lib/db";
 import { num } from "@/lib/money";
 import type { Moneda } from "@/lib/types";
@@ -33,3 +35,7 @@ export function precioEnArs(precio: number, moneda: Moneda, cotizacion: number):
   const raw = precio * cotizacion * FACTOR;
   return Math.ceil(raw / 100) * 100;
 }
+
+export const getCotizacionFn = createServerFn({ method: "GET" })
+  .middleware([authMiddleware])
+  .handler(async (): Promise<number> => getCotizacion());

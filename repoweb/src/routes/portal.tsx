@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/cn";
 import { clock, dayLabel, money } from "@/lib/money";
+import { getCotizacionFn, precioEnArs } from "@/lib/moneda";
 import {
   catalogoCliente,
   guardarMiFicha,
@@ -76,18 +77,26 @@ function Catalogo({ cuenta, onListo }: { cuenta: boolean; onListo: (id: string) 
     queryFn: () => catalogoCliente(),
     staleTime: 60_000,
   });
+  const cotizacion = useQuery({
+    queryKey: ["cotizacion"],
+    queryFn: () => getCotizacionFn(),
+    staleTime: 5 * 60_000,
+  });
   const [q, setQ] = useState("");
   const [cart, setCart] = useState<Record<string, number>>({});
   const [forma, setForma] = useState<FormaPago>("efectivo");
   const [nota, setNota] = useState("");
   const [archivo, setArchivo] = useState<{ nombre: string; data: string } | null>(null);
 
+  const fx = cotizacion.data ?? 1600;
+  const precioArs = (p: { precio: number; moneda: string }) => precioEnArs(p.precio, p.moneda as "USD" | "ARS", fx);
+
   const lista = useMemo(() => {
     const text = q.trim().toLowerCase();
     return (productos.data ?? []).filter((p) => !text || p.nombre.toLowerCase().includes(text) || p.alias.some((a) => a.includes(text)));
   }, [productos.data, q]);
   const elegidos = (productos.data ?? []).flatMap((p) => (cart[p.id] ? [{ p, n: cart[p.id] }] : []));
-  const total = elegidos.reduce((acc, l) => acc + l.p.precio * l.n, 0);
+  const total = elegidos.reduce((acc, l) => acc + precioArs(l.p) * l.n, 0);
 
   const pedir = useMutation({
     mutationFn: () =>
@@ -122,7 +131,7 @@ function Catalogo({ cuenta, onListo }: { cuenta: boolean; onListo: (id: string) 
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">{p.nombre}</p>
                 <p className="text-xs text-muted">
-                  {money(p.precio)} / {p.unidadLabel} · {p.stock} en stock
+                  {money(precioArs(p))} / {p.unidadLabel} · {p.stock} en stock
                 </p>
               </div>
               <Cantidad n={cart[p.id] ?? 0} max={p.stock} onChange={(n) => setCart((c) => ({ ...c, [p.id]: n }))} />
@@ -139,7 +148,7 @@ function Catalogo({ cuenta, onListo }: { cuenta: boolean; onListo: (id: string) 
               <span>
                 {n} {p.unidadLabel} {p.nombre}
               </span>
-              <span className="tabular-nums">{money(p.precio * n)}</span>
+              <span className="tabular-nums">{money(precioArs(p) * n)}</span>
             </li>
           ))}
         </ul>

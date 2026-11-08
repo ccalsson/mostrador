@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { calificarCompradorMercado, crearPedido, createCliente, listClientes, listPedidos, listProductos } from "@/lib/fn";
 import { enqueuePedido, readQueue, removeQueued } from "@/lib/offline-queue";
 import { money } from "@/lib/money";
+import { getCotizacionFn, precioEnArs } from "@/lib/moneda";
 import { cn } from "@/lib/cn";
 import { ESTADO_LABEL, type Pedido, type Producto } from "@/lib/types";
 
@@ -20,6 +21,11 @@ function VendedorPage() {
   const qc = useQueryClient();
   const productos = useQuery({ queryKey: ["productos"], queryFn: () => listProductos() });
   const clientes = useQuery({ queryKey: ["clientes"], queryFn: () => listClientes() });
+  const cotizacion = useQuery({
+    queryKey: ["cotizacion"],
+    queryFn: () => getCotizacionFn(),
+    staleTime: 5 * 60_000,
+  });
   const pedidos = useQuery({
     queryKey: ["mis-pedidos"],
     queryFn: () => listPedidos({ data: { mine: true } }),
@@ -65,7 +71,9 @@ function VendedorPage() {
       return p ? { p, n } : null;
     })
     .filter(Boolean) as { p: Producto; n: number }[];
-  const total = lines.reduce((acc, l) => acc + l.p.precio * l.n, 0);
+  const fx = cotizacion.data ?? 1600;
+  const precioArs = (p: Producto) => precioEnArs(p.precio, p.moneda, fx);
+  const total = lines.reduce((acc, l) => acc + precioArs(l.p) * l.n, 0);
 
   function add(id: string, delta: number) {
     setCart((c) => {
@@ -211,7 +219,7 @@ function VendedorPage() {
                     <button type="button" className="min-w-0 flex-1 text-left" onClick={() => add(p.id, 1)}>
                       <span className="block truncate font-medium leading-tight">{p.nombre}</span>
                       <span className="mt-0.5 flex flex-wrap items-center gap-2 text-sm text-muted">
-                        {money(p.precio)} / {p.unidadLabel}
+                        {money(precioArs(p))} / {p.unidadLabel}
                         {p.stockBajo ? (
                           <Badge tone="terra">
                             <AlertTriangle className="mr-1 size-3" />
@@ -268,7 +276,7 @@ function VendedorPage() {
                     <div className="min-w-0">
                       <div className="truncate font-medium">{p.nombre}</div>
                       <div className="text-muted tabular-nums">
-                        {n} {p.unidadLabel} · {money(p.precio * n)}
+                        {n} {p.unidadLabel} · {money(precioArs(p) * n)}
                       </div>
                     </div>
                     <button type="button" className="text-muted hover:text-terra" onClick={() => add(p.id, -n)}>

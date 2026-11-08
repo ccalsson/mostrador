@@ -1,3 +1,4 @@
+import { consultarSireCore, modificarSireCore } from "@/lib/torre/sire-fn";
 import type { TorreFnMovil } from "@/lib/torre/movil-tipos";
 import {
   grantPromotionCore,
@@ -33,4 +34,6 @@ export const restoMovil: Record<string, TorreFnMovil> = {
   numerosDeNegocios: (email, data) => numerosDeNegociosCore(email, data),
   kpisSuperAlToque: (email, data) => kpisSuperAlToqueCore(email, data),
   usoMaterialesYa: (email) => usoMaterialesYaCore(email),
+  consultarInstitucionesSire: (email) => consultarSireCore(email),
+  modificarInstitucionSire: (email, data) => modificarSireCore(email, data),
 };

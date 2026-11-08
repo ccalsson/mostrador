@@ -41,14 +41,23 @@ import { Route as FacturaIdRouteImport } from './routes/factura.$id'
 import { Route as RemitosIdRouteImport } from './routes/remitos.$id'
 import { Route as TicketCobroIdRouteImport } from './routes/ticket.$cobroId'
 import { Route as TorreIndexRouteImport } from './routes/torre.index'
+import { Route as TorreApiMarketplaceRouteImport } from './routes/torre.api-marketplace'
 import { Route as TorreAppsRouteImport } from './routes/torre.apps'
 import { Route as TorreAuditoriaRouteImport } from './routes/torre.auditoria'
+import { Route as TorreBiForecastRouteImport } from './routes/torre.bi-forecast'
+import { Route as TorreCatalogoUnificadoRouteImport } from './routes/torre.catalogo-unificado'
 import { Route as TorreClientesRouteImport } from './routes/torre.clientes'
+import { Route as TorreClientes360RouteImport } from './routes/torre.clientes-360'
 import { Route as TorreConfiguracionRouteImport } from './routes/torre.configuracion'
 import { Route as TorreDeploymentsRouteImport } from './routes/torre.deployments'
+import { Route as TorreEjecutivoRouteImport } from './routes/torre.ejecutivo'
+import { Route as TorreFinancieroConsolidadoRouteImport } from './routes/torre.financiero-consolidado'
 import { Route as TorreFinanzasRouteImport } from './routes/torre.finanzas'
+import { Route as TorreGruposEmpresarialesRouteImport } from './routes/torre.grupos-empresariales'
+import { Route as TorreInventarioRouteImport } from './routes/torre.inventario'
 import { Route as TorreLegalRouteImport } from './routes/torre.legal'
 import { Route as TorreLoginRouteImport } from './routes/torre.login'
+import { Route as TorreMarketingAutoRouteImport } from './routes/torre.marketing-auto'
 import { Route as TorreMercadoRouteImport } from './routes/torre.mercado'
 import { Route as TorrePlanesRouteImport } from './routes/torre.planes'
 import { Route as TorreProcesadoresRouteImport } from './routes/torre.procesadores'
@@ -56,13 +65,18 @@ import { Route as TorreProductosRouteImport } from './routes/torre.productos'
 import { Route as TorrePromocionesRouteImport } from './routes/torre.promociones'
 import { Route as TorrePublicidadRouteImport } from './routes/torre.publicidad'
 import { Route as TorrePuestoRouteImport } from './routes/torre.puesto'
+import { Route as TorreReglasAutoRouteImport } from './routes/torre.reglas-auto'
 import { Route as TorreServiciosRouteImport } from './routes/torre.servicios'
+import { Route as TorreSireRouteImport } from './routes/torre.sire'
 import { Route as TorreSucursalesRouteImport } from './routes/torre.sucursales'
 import { Route as TorreSuperAlToqueRouteImport } from './routes/torre.super-al-toque'
 import { Route as TorreSuscripcionesRouteImport } from './routes/torre.suscripciones'
 import { Route as TorreTenantsRouteImport } from './routes/torre.tenants'
+import { Route as TorreUsuariosRouteImport } from './routes/torre.usuarios'
 import { Route as TorreVersionesRouteImport } from './routes/torre.versiones'
+import { Route as TorreWhiteLabelRouteImport } from './routes/torre.white-label'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as TorreClientes360IdRouteImport } from './routes/torre.clientes-360.$id'
 import { Route as ApiCentralV1SplatRouteImport } from './routes/api/central/v1/$'
 import { Route as ApiMercadoV1SplatRouteImport } from './routes/api/mercado/v1/$'
 import { Route as ApiTorreV1SplatRouteImport } from './routes/api/torre/v1/$'
@@ -228,6 +242,11 @@ const TorreIndexRoute = TorreIndexRouteImport.update({
   path: '/',
   getParentRoute: () => TorreRoute,
 } as any)
+const TorreApiMarketplaceRoute = TorreApiMarketplaceRouteImport.update({
+  id: '/api-marketplace',
+  path: '/api-marketplace',
+  getParentRoute: () => TorreRoute,
+} as any)
 const TorreAppsRoute = TorreAppsRouteImport.update({
   id: '/apps',
   path: '/apps',
@@ -238,9 +257,24 @@ const TorreAuditoriaRoute = TorreAuditoriaRouteImport.update({
   path: '/auditoria',
   getParentRoute: () => TorreRoute,
 } as any)
+const TorreBiForecastRoute = TorreBiForecastRouteImport.update({
+  id: '/bi-forecast',
+  path: '/bi-forecast',
+  getParentRoute: () => TorreRoute,
+} as any)
+const TorreCatalogoUnificadoRoute = TorreCatalogoUnificadoRouteImport.update({
+  id: '/catalogo-unificado',
+  path: '/catalogo-unificado',
+  getParentRoute: () => TorreRoute,
+} as any)
 const TorreClientesRoute = TorreClientesRouteImport.update({
   id: '/clientes',
   path: '/clientes',
+  getParentRoute: () => TorreRoute,
+} as any)
+const TorreClientes360Route = TorreClientes360RouteImport.update({
+  id: '/clientes-360',
+  path: '/clientes-360',
   getParentRoute: () => TorreRoute,
 } as any)
 const TorreConfiguracionRoute = TorreConfiguracionRouteImport.update({
@@ -253,9 +287,31 @@ const TorreDeploymentsRoute = TorreDeploymentsRouteImport.update({
   path: '/deployments',
   getParentRoute: () => TorreRoute,
 } as any)
+const TorreEjecutivoRoute = TorreEjecutivoRouteImport.update({
+  id: '/ejecutivo',
+  path: '/ejecutivo',
+  getParentRoute: () => TorreRoute,
+} as any)
+const TorreFinancieroConsolidadoRoute =
+  TorreFinancieroConsolidadoRouteImport.update({
+    id: '/financiero-consolidado',
+    path: '/financiero-consolidado',
+    getParentRoute: () => TorreRoute,
+  } as any)
 const TorreFinanzasRoute = TorreFinanzasRouteImport.update({
   id: '/finanzas',
   path: '/finanzas',
+  getParentRoute: () => TorreRoute,
+} as any)
+const TorreGruposEmpresarialesRoute =
+  TorreGruposEmpresarialesRouteImport.update({
+    id: '/grupos-empresariales',
+    path: '/grupos-empresariales',
+    getParentRoute: () => TorreRoute,
+  } as any)
+const TorreInventarioRoute = TorreInventarioRouteImport.update({
+  id: '/inventario',
+  path: '/inventario',
   getParentRoute: () => TorreRoute,
 } as any)
 const TorreLegalRoute = TorreLegalRouteImport.update({
@@ -266,6 +322,11 @@ const TorreLegalRoute = TorreLegalRouteImport.update({
 const TorreLoginRoute = TorreLoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => TorreRoute,
+} as any)
+const TorreMarketingAutoRoute = TorreMarketingAutoRouteImport.update({
+  id: '/marketing-auto',
+  path: '/marketing-auto',
   getParentRoute: () => TorreRoute,
 } as any)
 const TorreMercadoRoute = TorreMercadoRouteImport.update({
@@ -303,9 +364,19 @@ const TorrePuestoRoute = TorrePuestoRouteImport.update({
   path: '/puesto',
   getParentRoute: () => TorreRoute,
 } as any)
+const TorreReglasAutoRoute = TorreReglasAutoRouteImport.update({
+  id: '/reglas-auto',
+  path: '/reglas-auto',
+  getParentRoute: () => TorreRoute,
+} as any)
 const TorreServiciosRoute = TorreServiciosRouteImport.update({
   id: '/servicios',
   path: '/servicios',
+  getParentRoute: () => TorreRoute,
+} as any)
+const TorreSireRoute = TorreSireRouteImport.update({
+  id: '/sire',
+  path: '/sire',
   getParentRoute: () => TorreRoute,
 } as any)
 const TorreSucursalesRoute = TorreSucursalesRouteImport.update({
@@ -328,15 +399,30 @@ const TorreTenantsRoute = TorreTenantsRouteImport.update({
   path: '/tenants',
   getParentRoute: () => TorreRoute,
 } as any)
+const TorreUsuariosRoute = TorreUsuariosRouteImport.update({
+  id: '/usuarios',
+  path: '/usuarios',
+  getParentRoute: () => TorreRoute,
+} as any)
 const TorreVersionesRoute = TorreVersionesRouteImport.update({
   id: '/versiones',
   path: '/versiones',
+  getParentRoute: () => TorreRoute,
+} as any)
+const TorreWhiteLabelRoute = TorreWhiteLabelRouteImport.update({
+  id: '/white-label',
+  path: '/white-label',
   getParentRoute: () => TorreRoute,
 } as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
+} as any)
+const TorreClientes360IdRoute = TorreClientes360IdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => TorreClientes360Route,
 } as any)
 const ApiCentralV1SplatRoute = ApiCentralV1SplatRouteImport.update({
   id: '/api/central/v1/$',
@@ -392,14 +478,23 @@ export interface FileRoutesByFullPath {
   '/factura/$id': typeof FacturaIdRoute
   '/remitos/$id': typeof RemitosIdRoute
   '/ticket/$cobroId': typeof TicketCobroIdRoute
+  '/torre/api-marketplace': typeof TorreApiMarketplaceRoute
   '/torre/apps': typeof TorreAppsRoute
   '/torre/auditoria': typeof TorreAuditoriaRoute
+  '/torre/bi-forecast': typeof TorreBiForecastRoute
+  '/torre/catalogo-unificado': typeof TorreCatalogoUnificadoRoute
   '/torre/clientes': typeof TorreClientesRoute
+  '/torre/clientes-360': typeof TorreClientes360RouteWithChildren
   '/torre/configuracion': typeof TorreConfiguracionRoute
   '/torre/deployments': typeof TorreDeploymentsRoute
+  '/torre/ejecutivo': typeof TorreEjecutivoRoute
+  '/torre/financiero-consolidado': typeof TorreFinancieroConsolidadoRoute
   '/torre/finanzas': typeof TorreFinanzasRoute
+  '/torre/grupos-empresariales': typeof TorreGruposEmpresarialesRoute
+  '/torre/inventario': typeof TorreInventarioRoute
   '/torre/legal': typeof TorreLegalRoute
   '/torre/login': typeof TorreLoginRoute
+  '/torre/marketing-auto': typeof TorreMarketingAutoRoute
   '/torre/mercado': typeof TorreMercadoRoute
   '/torre/planes': typeof TorrePlanesRoute
   '/torre/procesadores': typeof TorreProcesadoresRoute
@@ -407,14 +502,19 @@ export interface FileRoutesByFullPath {
   '/torre/promociones': typeof TorrePromocionesRoute
   '/torre/publicidad': typeof TorrePublicidadRoute
   '/torre/puesto': typeof TorrePuestoRoute
+  '/torre/reglas-auto': typeof TorreReglasAutoRoute
   '/torre/servicios': typeof TorreServiciosRoute
+  '/torre/sire': typeof TorreSireRoute
   '/torre/sucursales': typeof TorreSucursalesRoute
   '/torre/super-al-toque': typeof TorreSuperAlToqueRoute
   '/torre/suscripciones': typeof TorreSuscripcionesRoute
   '/torre/tenants': typeof TorreTenantsRoute
+  '/torre/usuarios': typeof TorreUsuariosRoute
   '/torre/versiones': typeof TorreVersionesRoute
+  '/torre/white-label': typeof TorreWhiteLabelRoute
   '/torre/': typeof TorreIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/torre/clientes-360/$id': typeof TorreClientes360IdRoute
   '/api/central/v1/$': typeof ApiCentralV1SplatRoute
   '/api/mercado/v1/$': typeof ApiMercadoV1SplatRoute
   '/api/torre/v1/$': typeof ApiTorreV1SplatRoute
@@ -451,14 +551,23 @@ export interface FileRoutesByTo {
   '/factura/$id': typeof FacturaIdRoute
   '/remitos/$id': typeof RemitosIdRoute
   '/ticket/$cobroId': typeof TicketCobroIdRoute
+  '/torre/api-marketplace': typeof TorreApiMarketplaceRoute
   '/torre/apps': typeof TorreAppsRoute
   '/torre/auditoria': typeof TorreAuditoriaRoute
+  '/torre/bi-forecast': typeof TorreBiForecastRoute
+  '/torre/catalogo-unificado': typeof TorreCatalogoUnificadoRoute
   '/torre/clientes': typeof TorreClientesRoute
+  '/torre/clientes-360': typeof TorreClientes360RouteWithChildren
   '/torre/configuracion': typeof TorreConfiguracionRoute
   '/torre/deployments': typeof TorreDeploymentsRoute
+  '/torre/ejecutivo': typeof TorreEjecutivoRoute
+  '/torre/financiero-consolidado': typeof TorreFinancieroConsolidadoRoute
   '/torre/finanzas': typeof TorreFinanzasRoute
+  '/torre/grupos-empresariales': typeof TorreGruposEmpresarialesRoute
+  '/torre/inventario': typeof TorreInventarioRoute
   '/torre/legal': typeof TorreLegalRoute
   '/torre/login': typeof TorreLoginRoute
+  '/torre/marketing-auto': typeof TorreMarketingAutoRoute
   '/torre/mercado': typeof TorreMercadoRoute
   '/torre/planes': typeof TorrePlanesRoute
   '/torre/procesadores': typeof TorreProcesadoresRoute
@@ -466,14 +575,19 @@ export interface FileRoutesByTo {
   '/torre/promociones': typeof TorrePromocionesRoute
   '/torre/publicidad': typeof TorrePublicidadRoute
   '/torre/puesto': typeof TorrePuestoRoute
+  '/torre/reglas-auto': typeof TorreReglasAutoRoute
   '/torre/servicios': typeof TorreServiciosRoute
+  '/torre/sire': typeof TorreSireRoute
   '/torre/sucursales': typeof TorreSucursalesRoute
   '/torre/super-al-toque': typeof TorreSuperAlToqueRoute
   '/torre/suscripciones': typeof TorreSuscripcionesRoute
   '/torre/tenants': typeof TorreTenantsRoute
+  '/torre/usuarios': typeof TorreUsuariosRoute
   '/torre/versiones': typeof TorreVersionesRoute
+  '/torre/white-label': typeof TorreWhiteLabelRoute
   '/torre': typeof TorreIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/torre/clientes-360/$id': typeof TorreClientes360IdRoute
   '/api/central/v1/$': typeof ApiCentralV1SplatRoute
   '/api/mercado/v1/$': typeof ApiMercadoV1SplatRoute
   '/api/torre/v1/$': typeof ApiTorreV1SplatRoute
@@ -512,14 +626,23 @@ export interface FileRoutesById {
   '/factura/$id': typeof FacturaIdRoute
   '/remitos/$id': typeof RemitosIdRoute
   '/ticket/$cobroId': typeof TicketCobroIdRoute
+  '/torre/api-marketplace': typeof TorreApiMarketplaceRoute
   '/torre/apps': typeof TorreAppsRoute
   '/torre/auditoria': typeof TorreAuditoriaRoute
+  '/torre/bi-forecast': typeof TorreBiForecastRoute
+  '/torre/catalogo-unificado': typeof TorreCatalogoUnificadoRoute
   '/torre/clientes': typeof TorreClientesRoute
+  '/torre/clientes-360': typeof TorreClientes360RouteWithChildren
   '/torre/configuracion': typeof TorreConfiguracionRoute
   '/torre/deployments': typeof TorreDeploymentsRoute
+  '/torre/ejecutivo': typeof TorreEjecutivoRoute
+  '/torre/financiero-consolidado': typeof TorreFinancieroConsolidadoRoute
   '/torre/finanzas': typeof TorreFinanzasRoute
+  '/torre/grupos-empresariales': typeof TorreGruposEmpresarialesRoute
+  '/torre/inventario': typeof TorreInventarioRoute
   '/torre/legal': typeof TorreLegalRoute
   '/torre/login': typeof TorreLoginRoute
+  '/torre/marketing-auto': typeof TorreMarketingAutoRoute
   '/torre/mercado': typeof TorreMercadoRoute
   '/torre/planes': typeof TorrePlanesRoute
   '/torre/procesadores': typeof TorreProcesadoresRoute
@@ -527,14 +650,19 @@ export interface FileRoutesById {
   '/torre/promociones': typeof TorrePromocionesRoute
   '/torre/publicidad': typeof TorrePublicidadRoute
   '/torre/puesto': typeof TorrePuestoRoute
+  '/torre/reglas-auto': typeof TorreReglasAutoRoute
   '/torre/servicios': typeof TorreServiciosRoute
+  '/torre/sire': typeof TorreSireRoute
   '/torre/sucursales': typeof TorreSucursalesRoute
   '/torre/super-al-toque': typeof TorreSuperAlToqueRoute
   '/torre/suscripciones': typeof TorreSuscripcionesRoute
   '/torre/tenants': typeof TorreTenantsRoute
+  '/torre/usuarios': typeof TorreUsuariosRoute
   '/torre/versiones': typeof TorreVersionesRoute
+  '/torre/white-label': typeof TorreWhiteLabelRoute
   '/torre/': typeof TorreIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/torre/clientes-360/$id': typeof TorreClientes360IdRoute
   '/api/central/v1/$': typeof ApiCentralV1SplatRoute
   '/api/mercado/v1/$': typeof ApiMercadoV1SplatRoute
   '/api/torre/v1/$': typeof ApiTorreV1SplatRoute
@@ -574,14 +702,23 @@ export interface FileRouteTypes {
     | '/factura/$id'
     | '/remitos/$id'
     | '/ticket/$cobroId'
+    | '/torre/api-marketplace'
     | '/torre/apps'
     | '/torre/auditoria'
+    | '/torre/bi-forecast'
+    | '/torre/catalogo-unificado'
     | '/torre/clientes'
+    | '/torre/clientes-360'
     | '/torre/configuracion'
     | '/torre/deployments'
+    | '/torre/ejecutivo'
+    | '/torre/financiero-consolidado'
     | '/torre/finanzas'
+    | '/torre/grupos-empresariales'
+    | '/torre/inventario'
     | '/torre/legal'
     | '/torre/login'
+    | '/torre/marketing-auto'
     | '/torre/mercado'
     | '/torre/planes'
     | '/torre/procesadores'
@@ -589,14 +726,19 @@ export interface FileRouteTypes {
     | '/torre/promociones'
     | '/torre/publicidad'
     | '/torre/puesto'
+    | '/torre/reglas-auto'
     | '/torre/servicios'
+    | '/torre/sire'
     | '/torre/sucursales'
     | '/torre/super-al-toque'
     | '/torre/suscripciones'
     | '/torre/tenants'
+    | '/torre/usuarios'
     | '/torre/versiones'
+    | '/torre/white-label'
     | '/torre/'
     | '/api/auth/$'
+    | '/torre/clientes-360/$id'
     | '/api/central/v1/$'
     | '/api/mercado/v1/$'
     | '/api/torre/v1/$'
@@ -633,14 +775,23 @@ export interface FileRouteTypes {
     | '/factura/$id'
     | '/remitos/$id'
     | '/ticket/$cobroId'
+    | '/torre/api-marketplace'
     | '/torre/apps'
     | '/torre/auditoria'
+    | '/torre/bi-forecast'
+    | '/torre/catalogo-unificado'
     | '/torre/clientes'
+    | '/torre/clientes-360'
     | '/torre/configuracion'
     | '/torre/deployments'
+    | '/torre/ejecutivo'
+    | '/torre/financiero-consolidado'
     | '/torre/finanzas'
+    | '/torre/grupos-empresariales'
+    | '/torre/inventario'
     | '/torre/legal'
     | '/torre/login'
+    | '/torre/marketing-auto'
     | '/torre/mercado'
     | '/torre/planes'
     | '/torre/procesadores'
@@ -648,14 +799,19 @@ export interface FileRouteTypes {
     | '/torre/promociones'
     | '/torre/publicidad'
     | '/torre/puesto'
+    | '/torre/reglas-auto'
     | '/torre/servicios'
+    | '/torre/sire'
     | '/torre/sucursales'
     | '/torre/super-al-toque'
     | '/torre/suscripciones'
     | '/torre/tenants'
+    | '/torre/usuarios'
     | '/torre/versiones'
+    | '/torre/white-label'
     | '/torre'
     | '/api/auth/$'
+    | '/torre/clientes-360/$id'
     | '/api/central/v1/$'
     | '/api/mercado/v1/$'
     | '/api/torre/v1/$'
@@ -693,14 +849,23 @@ export interface FileRouteTypes {
     | '/factura/$id'
     | '/remitos/$id'
     | '/ticket/$cobroId'
+    | '/torre/api-marketplace'
     | '/torre/apps'
     | '/torre/auditoria'
+    | '/torre/bi-forecast'
+    | '/torre/catalogo-unificado'
     | '/torre/clientes'
+    | '/torre/clientes-360'
     | '/torre/configuracion'
     | '/torre/deployments'
+    | '/torre/ejecutivo'
+    | '/torre/financiero-consolidado'
     | '/torre/finanzas'
+    | '/torre/grupos-empresariales'
+    | '/torre/inventario'
     | '/torre/legal'
     | '/torre/login'
+    | '/torre/marketing-auto'
     | '/torre/mercado'
     | '/torre/planes'
     | '/torre/procesadores'
@@ -708,14 +873,19 @@ export interface FileRouteTypes {
     | '/torre/promociones'
     | '/torre/publicidad'
     | '/torre/puesto'
+    | '/torre/reglas-auto'
     | '/torre/servicios'
+    | '/torre/sire'
     | '/torre/sucursales'
     | '/torre/super-al-toque'
     | '/torre/suscripciones'
     | '/torre/tenants'
+    | '/torre/usuarios'
     | '/torre/versiones'
+    | '/torre/white-label'
     | '/torre/'
     | '/api/auth/$'
+    | '/torre/clientes-360/$id'
     | '/api/central/v1/$'
     | '/api/mercado/v1/$'
     | '/api/torre/v1/$'
@@ -986,6 +1156,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TorreIndexRouteImport
       parentRoute: typeof TorreRoute
     }
+    '/torre/api-marketplace': {
+      id: '/torre/api-marketplace'
+      path: '/api-marketplace'
+      fullPath: '/torre/api-marketplace'
+      preLoaderRoute: typeof TorreApiMarketplaceRouteImport
+      parentRoute: typeof TorreRoute
+    }
     '/torre/apps': {
       id: '/torre/apps'
       path: '/apps'
@@ -1000,11 +1177,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TorreAuditoriaRouteImport
       parentRoute: typeof TorreRoute
     }
+    '/torre/bi-forecast': {
+      id: '/torre/bi-forecast'
+      path: '/bi-forecast'
+      fullPath: '/torre/bi-forecast'
+      preLoaderRoute: typeof TorreBiForecastRouteImport
+      parentRoute: typeof TorreRoute
+    }
+    '/torre/catalogo-unificado': {
+      id: '/torre/catalogo-unificado'
+      path: '/catalogo-unificado'
+      fullPath: '/torre/catalogo-unificado'
+      preLoaderRoute: typeof TorreCatalogoUnificadoRouteImport
+      parentRoute: typeof TorreRoute
+    }
     '/torre/clientes': {
       id: '/torre/clientes'
       path: '/clientes'
       fullPath: '/torre/clientes'
       preLoaderRoute: typeof TorreClientesRouteImport
+      parentRoute: typeof TorreRoute
+    }
+    '/torre/clientes-360': {
+      id: '/torre/clientes-360'
+      path: '/clientes-360'
+      fullPath: '/torre/clientes-360'
+      preLoaderRoute: typeof TorreClientes360RouteImport
       parentRoute: typeof TorreRoute
     }
     '/torre/configuracion': {
@@ -1021,11 +1219,39 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TorreDeploymentsRouteImport
       parentRoute: typeof TorreRoute
     }
+    '/torre/ejecutivo': {
+      id: '/torre/ejecutivo'
+      path: '/ejecutivo'
+      fullPath: '/torre/ejecutivo'
+      preLoaderRoute: typeof TorreEjecutivoRouteImport
+      parentRoute: typeof TorreRoute
+    }
+    '/torre/financiero-consolidado': {
+      id: '/torre/financiero-consolidado'
+      path: '/financiero-consolidado'
+      fullPath: '/torre/financiero-consolidado'
+      preLoaderRoute: typeof TorreFinancieroConsolidadoRouteImport
+      parentRoute: typeof TorreRoute
+    }
     '/torre/finanzas': {
       id: '/torre/finanzas'
       path: '/finanzas'
       fullPath: '/torre/finanzas'
       preLoaderRoute: typeof TorreFinanzasRouteImport
+      parentRoute: typeof TorreRoute
+    }
+    '/torre/grupos-empresariales': {
+      id: '/torre/grupos-empresariales'
+      path: '/grupos-empresariales'
+      fullPath: '/torre/grupos-empresariales'
+      preLoaderRoute: typeof TorreGruposEmpresarialesRouteImport
+      parentRoute: typeof TorreRoute
+    }
+    '/torre/inventario': {
+      id: '/torre/inventario'
+      path: '/inventario'
+      fullPath: '/torre/inventario'
+      preLoaderRoute: typeof TorreInventarioRouteImport
       parentRoute: typeof TorreRoute
     }
     '/torre/legal': {
@@ -1040,6 +1266,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/torre/login'
       preLoaderRoute: typeof TorreLoginRouteImport
+      parentRoute: typeof TorreRoute
+    }
+    '/torre/marketing-auto': {
+      id: '/torre/marketing-auto'
+      path: '/marketing-auto'
+      fullPath: '/torre/marketing-auto'
+      preLoaderRoute: typeof TorreMarketingAutoRouteImport
       parentRoute: typeof TorreRoute
     }
     '/torre/mercado': {
@@ -1091,11 +1324,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TorrePuestoRouteImport
       parentRoute: typeof TorreRoute
     }
+    '/torre/reglas-auto': {
+      id: '/torre/reglas-auto'
+      path: '/reglas-auto'
+      fullPath: '/torre/reglas-auto'
+      preLoaderRoute: typeof TorreReglasAutoRouteImport
+      parentRoute: typeof TorreRoute
+    }
     '/torre/servicios': {
       id: '/torre/servicios'
       path: '/servicios'
       fullPath: '/torre/servicios'
       preLoaderRoute: typeof TorreServiciosRouteImport
+      parentRoute: typeof TorreRoute
+    }
+    '/torre/sire': {
+      id: '/torre/sire'
+      path: '/sire'
+      fullPath: '/torre/sire'
+      preLoaderRoute: typeof TorreSireRouteImport
       parentRoute: typeof TorreRoute
     }
     '/torre/sucursales': {
@@ -1126,11 +1373,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TorreTenantsRouteImport
       parentRoute: typeof TorreRoute
     }
+    '/torre/usuarios': {
+      id: '/torre/usuarios'
+      path: '/usuarios'
+      fullPath: '/torre/usuarios'
+      preLoaderRoute: typeof TorreUsuariosRouteImport
+      parentRoute: typeof TorreRoute
+    }
     '/torre/versiones': {
       id: '/torre/versiones'
       path: '/versiones'
       fullPath: '/torre/versiones'
       preLoaderRoute: typeof TorreVersionesRouteImport
+      parentRoute: typeof TorreRoute
+    }
+    '/torre/white-label': {
+      id: '/torre/white-label'
+      path: '/white-label'
+      fullPath: '/torre/white-label'
+      preLoaderRoute: typeof TorreWhiteLabelRouteImport
       parentRoute: typeof TorreRoute
     }
     '/api/auth/$': {
@@ -1139,6 +1400,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/api/auth/$'
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/torre/clientes-360/$id': {
+      id: '/torre/clientes-360/$id'
+      path: '/$id'
+      fullPath: '/torre/clientes-360/$id'
+      preLoaderRoute: typeof TorreClientes360IdRouteImport
+      parentRoute: typeof TorreClientes360Route
     }
     '/api/central/v1/$': {
       id: '/api/central/v1/$'
@@ -1182,15 +1450,35 @@ const RemitosRouteChildren: RemitosRouteChildren = {
 const RemitosRouteWithChildren =
   RemitosRoute._addFileChildren(RemitosRouteChildren)
 
+interface TorreClientes360RouteChildren {
+  TorreClientes360IdRoute: typeof TorreClientes360IdRoute
+}
+
+const TorreClientes360RouteChildren: TorreClientes360RouteChildren = {
+  TorreClientes360IdRoute: TorreClientes360IdRoute,
+}
+
+const TorreClientes360RouteWithChildren =
+  TorreClientes360Route._addFileChildren(TorreClientes360RouteChildren)
+
 interface TorreRouteChildren {
+  TorreApiMarketplaceRoute: typeof TorreApiMarketplaceRoute
   TorreAppsRoute: typeof TorreAppsRoute
   TorreAuditoriaRoute: typeof TorreAuditoriaRoute
+  TorreBiForecastRoute: typeof TorreBiForecastRoute
+  TorreCatalogoUnificadoRoute: typeof TorreCatalogoUnificadoRoute
   TorreClientesRoute: typeof TorreClientesRoute
+  TorreClientes360Route: typeof TorreClientes360RouteWithChildren
   TorreConfiguracionRoute: typeof TorreConfiguracionRoute
   TorreDeploymentsRoute: typeof TorreDeploymentsRoute
+  TorreEjecutivoRoute: typeof TorreEjecutivoRoute
+  TorreFinancieroConsolidadoRoute: typeof TorreFinancieroConsolidadoRoute
   TorreFinanzasRoute: typeof TorreFinanzasRoute
+  TorreGruposEmpresarialesRoute: typeof TorreGruposEmpresarialesRoute
+  TorreInventarioRoute: typeof TorreInventarioRoute
   TorreLegalRoute: typeof TorreLegalRoute
   TorreLoginRoute: typeof TorreLoginRoute
+  TorreMarketingAutoRoute: typeof TorreMarketingAutoRoute
   TorreMercadoRoute: typeof TorreMercadoRoute
   TorrePlanesRoute: typeof TorrePlanesRoute
   TorreProcesadoresRoute: typeof TorreProcesadoresRoute
@@ -1198,24 +1486,37 @@ interface TorreRouteChildren {
   TorrePromocionesRoute: typeof TorrePromocionesRoute
   TorrePublicidadRoute: typeof TorrePublicidadRoute
   TorrePuestoRoute: typeof TorrePuestoRoute
+  TorreReglasAutoRoute: typeof TorreReglasAutoRoute
   TorreServiciosRoute: typeof TorreServiciosRoute
+  TorreSireRoute: typeof TorreSireRoute
   TorreSucursalesRoute: typeof TorreSucursalesRoute
   TorreSuperAlToqueRoute: typeof TorreSuperAlToqueRoute
   TorreSuscripcionesRoute: typeof TorreSuscripcionesRoute
   TorreTenantsRoute: typeof TorreTenantsRoute
+  TorreUsuariosRoute: typeof TorreUsuariosRoute
   TorreVersionesRoute: typeof TorreVersionesRoute
+  TorreWhiteLabelRoute: typeof TorreWhiteLabelRoute
   TorreIndexRoute: typeof TorreIndexRoute
 }
 
 const TorreRouteChildren: TorreRouteChildren = {
+  TorreApiMarketplaceRoute: TorreApiMarketplaceRoute,
   TorreAppsRoute: TorreAppsRoute,
   TorreAuditoriaRoute: TorreAuditoriaRoute,
+  TorreBiForecastRoute: TorreBiForecastRoute,
+  TorreCatalogoUnificadoRoute: TorreCatalogoUnificadoRoute,
   TorreClientesRoute: TorreClientesRoute,
+  TorreClientes360Route: TorreClientes360RouteWithChildren,
   TorreConfiguracionRoute: TorreConfiguracionRoute,
   TorreDeploymentsRoute: TorreDeploymentsRoute,
+  TorreEjecutivoRoute: TorreEjecutivoRoute,
+  TorreFinancieroConsolidadoRoute: TorreFinancieroConsolidadoRoute,
   TorreFinanzasRoute: TorreFinanzasRoute,
+  TorreGruposEmpresarialesRoute: TorreGruposEmpresarialesRoute,
+  TorreInventarioRoute: TorreInventarioRoute,
   TorreLegalRoute: TorreLegalRoute,
   TorreLoginRoute: TorreLoginRoute,
+  TorreMarketingAutoRoute: TorreMarketingAutoRoute,
   TorreMercadoRoute: TorreMercadoRoute,
   TorrePlanesRoute: TorrePlanesRoute,
   TorreProcesadoresRoute: TorreProcesadoresRoute,
@@ -1223,12 +1524,16 @@ const TorreRouteChildren: TorreRouteChildren = {
   TorrePromocionesRoute: TorrePromocionesRoute,
   TorrePublicidadRoute: TorrePublicidadRoute,
   TorrePuestoRoute: TorrePuestoRoute,
+  TorreReglasAutoRoute: TorreReglasAutoRoute,
   TorreServiciosRoute: TorreServiciosRoute,
+  TorreSireRoute: TorreSireRoute,
   TorreSucursalesRoute: TorreSucursalesRoute,
   TorreSuperAlToqueRoute: TorreSuperAlToqueRoute,
   TorreSuscripcionesRoute: TorreSuscripcionesRoute,
   TorreTenantsRoute: TorreTenantsRoute,
+  TorreUsuariosRoute: TorreUsuariosRoute,
   TorreVersionesRoute: TorreVersionesRoute,
+  TorreWhiteLabelRoute: TorreWhiteLabelRoute,
   TorreIndexRoute: TorreIndexRoute,
 }
 
@@ -1274,12 +1579,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { createStart } from '@tanstack/react-start'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-  }
-}
