@@ -131,6 +131,12 @@ class ProductosAdminService {
     ) as Map<String, dynamic>;
     return (data['data'] as Map<String, dynamic>)['actualizados'] as int? ?? 0;
   }
+
+  /// `POST /api/v1/productos/orden` — reordena el catálogo.
+  /// Recibe lista de IDs en el orden deseado. Solo admin/dueño.
+  Future<void> ordenar(List<String> ids) async {
+    await _client.post('/api/v1/productos/orden', body: ids);
+  }
 }
 
 final productosAdminServiceProvider = Provider<ProductosAdminService>(

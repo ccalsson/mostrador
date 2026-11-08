@@ -78,6 +78,9 @@ class _ProductosFake implements ProductosAdminService {
   ) async {
     return items.length;
   }
+
+  @override
+  Future<void> ordenar(List<String> ids) async {}
 }
 
 class _CatalogoFake implements CatalogoService {

@@ -10,6 +10,7 @@ import '../../models/producto.dart';
 import '../../models/reportes.dart';
 import '../../services/canal_mercado_service.dart';
 import '../../services/catalogo_service.dart';
+import '../../services/productos_service.dart';
 import '../../services/reportes_service.dart';
 import 'ajuste_stock_dialog.dart';
 import 'costos_masivos_dialog.dart';
@@ -44,6 +45,37 @@ class _ProductosPaneState extends ConsumerState<ProductosPane> {
 
   void _elegir(String id) =>
       setState(() => _seleccion = _seleccion == id ? null : id);
+
+  Future<void> _mover(String productoId, int direccion) async {
+    final catalogo = ref.read(catalogoProvider);
+    final productos = catalogo.value?.productos ?? [];
+    final index = productos.indexWhere((p) => p.id == productoId);
+    if (index < 0) return;
+
+    final nuevoIndex = index + direccion;
+    if (nuevoIndex < 0 || nuevoIndex >= productos.length) return;
+
+    final ids = productos.map((p) => p.id).toList();
+    final tmp = ids[index];
+    ids[index] = ids[nuevoIndex];
+    ids[nuevoIndex] = tmp;
+
+    try {
+      await ref.read(productosAdminServiceProvider).ordenar(ids);
+      ref.invalidate(catalogoProvider);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..removeCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..removeCurrentSnackBar()
+        ..showSnackBar(
+            const SnackBar(content: Text('No se pudo reordenar el catálogo.')));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -132,6 +164,7 @@ class _ProductosPaneState extends ConsumerState<ProductosPane> {
                         mostrarFormProducto(context, existente: producto),
                     onAjustar: (producto) =>
                         mostrarAjusteStock(context, producto),
+                    onMover: _mover,
                   );
 
                   if (!conRail) return tabla;
@@ -195,6 +228,7 @@ class _TablaProductos extends StatelessWidget {
     required this.onElegir,
     required this.onEditar,
     required this.onAjustar,
+    required this.onMover,
   });
 
   final List<Producto> productos;
@@ -204,6 +238,7 @@ class _TablaProductos extends StatelessWidget {
   final ValueChanged<String> onElegir;
   final ValueChanged<Producto> onEditar;
   final ValueChanged<Producto> onAjustar;
+  final void Function(String productoId, int direccion) onMover;
 
   @override
   Widget build(BuildContext context) {
@@ -228,13 +263,13 @@ class _TablaProductos extends StatelessWidget {
         ? const [
             ColumnaTabla('Nombre'),
             ColumnaTabla('Precio', ancho: 92, alineacion: TextAlign.end),
-            ColumnaTabla('', ancho: 96, alineacion: TextAlign.end),
+            ColumnaTabla('', ancho: 120, alineacion: TextAlign.end),
           ]
         : const [
             ColumnaTabla('Nombre', flex: 4),
             ColumnaTabla('Precio', ancho: 104, alineacion: TextAlign.end),
             ColumnaTabla('Stock', ancho: 104, alineacion: TextAlign.end),
-            ColumnaTabla('', ancho: 200, alineacion: TextAlign.end),
+            ColumnaTabla('', ancho: 272, alineacion: TextAlign.end),
           ];
 
     return Tarjeta(
@@ -326,9 +361,29 @@ class _TablaProductos extends StatelessWidget {
   }
 
   Widget _acciones(Producto producto) {
+    final index = productos.indexWhere((p) => p.id == producto.id);
+    final puedeSubir = index > 0;
+    final puedeBajar = index >= 0 && index < productos.length - 1;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
+        IconButton(
+          key: Key('admin_subir_${producto.id}'),
+          tooltip: 'Mover arriba',
+          visualDensity: VisualDensity.compact,
+          iconSize: 18,
+          onPressed: puedeSubir ? () => onMover(producto.id, -1) : null,
+          icon: const Icon(Icons.arrow_upward),
+        ),
+        IconButton(
+          key: Key('admin_bajar_${producto.id}'),
+          tooltip: 'Mover abajo',
+          visualDensity: VisualDensity.compact,
+          iconSize: 18,
+          onPressed: puedeBajar ? () => onMover(producto.id, 1) : null,
+          icon: const Icon(Icons.arrow_downward),
+        ),
+        const SizedBox(width: 6),
         _BotonTabla(
           etiqueta: 'Editar',
           clave: Key('admin_editar_${producto.id}'),
@@ -345,9 +400,38 @@ class _TablaProductos extends StatelessWidget {
   }
 
   Widget _accionesCompactas(Producto producto) {
+    final index = productos.indexWhere((p) => p.id == producto.id);
+    final puedeSubir = index > 0;
+    final puedeBajar = index >= 0 && index < productos.length - 1;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
+        IconButton(
+          key: Key('admin_subir_${producto.id}'),
+          tooltip: 'Mover arriba',
+          visualDensity: VisualDensity.compact,
+          iconSize: 16,
+          style: IconButton.styleFrom(
+            minimumSize: const Size(28, 28),
+            padding: EdgeInsets.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          onPressed: puedeSubir ? () => onMover(producto.id, -1) : null,
+          icon: const Icon(Icons.arrow_upward),
+        ),
+        IconButton(
+          key: Key('admin_bajar_${producto.id}'),
+          tooltip: 'Mover abajo',
+          visualDensity: VisualDensity.compact,
+          iconSize: 16,
+          style: IconButton.styleFrom(
+            minimumSize: const Size(28, 28),
+            padding: EdgeInsets.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          onPressed: puedeBajar ? () => onMover(producto.id, 1) : null,
+          icon: const Icon(Icons.arrow_downward),
+        ),
         IconButton(
           key: Key('admin_editar_${producto.id}'),
           tooltip: 'Editar',
