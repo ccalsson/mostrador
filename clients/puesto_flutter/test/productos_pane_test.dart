@@ -6,7 +6,17 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:puesto_flutter/core/network/api_client.dart';
+import 'package:puesto_flutter/core/tema.dart';
 import 'package:puesto_flutter/features/admin/productos_pane.dart';
+
+const _escritorio = Size(1200, 1000);
+const _telefono = Size(390, 844);
+
+http.Response _json(Object body, [int status = 200]) => http.Response(
+      jsonEncode(body),
+      status,
+      headers: {'content-type': 'application/json; charset=utf-8'},
+    );
 
 class _CatalogoHttp {
   final guardados = <Map<String, dynamic>>[];
@@ -19,60 +29,82 @@ class _CatalogoHttp {
     baseUrl: 'http://api.test',
     tokenProvider: () async => 'tok-1',
     httpClient: MockClient((request) async {
-      if (request.method == 'GET' && request.url.path == '/api/v1/catalogo') {
+      final path = request.url.path;
+      if (request.method == 'GET' && path == '/api/v1/catalogo') {
         lecturas++;
-        return http.Response(
-          jsonEncode({
-            'data': [
+        return _json({
+          'data': [
+            {
+              'id': 'p_1',
+              'nombre': 'Manzana',
+              'unidad': 'bulto',
+              'unidadLabel': 'cajón',
+              'precio': 2000,
+              'stock': 10,
+              'stockMinimo': 2,
+              'activo': true,
+              'publicadoOnline': publicado,
+            },
+            {
+              'id': 'p_2',
+              'nombre': 'Pera',
+              'unidad': 'kg',
+              'unidadLabel': 'kg',
+              'precio': 1000,
+              'stock': 10,
+              'stockMinimo': 2,
+              'activo': true,
+              'publicadoOnline': false,
+            },
+          ],
+          'version': 'v$lecturas',
+        });
+      }
+      if (request.method == 'GET' && path == '/api/v1/reportes/productos') {
+        return _json({
+          'data': {
+            'semana': [
               {
-                'id': 'p_1',
+                'productoId': 'p_1',
                 'nombre': 'Manzana',
-                'unidad': 'bulto',
-                'unidadLabel': 'cajón',
-                'precio': 2000,
-                'stock': 10,
-                'stockMinimo': 2,
-                'activo': true,
-                'publicadoOnline': publicado,
-              },
-              {
-                'id': 'p_2',
-                'nombre': 'Pera',
-                'unidad': 'kg',
-                'unidadLabel': 'kg',
-                'precio': 1000,
-                'stock': 10,
-                'stockMinimo': 2,
-                'activo': true,
-                'publicadoOnline': false,
+                'cantidad': 4,
+                'total': 8000,
               },
             ],
-            'version': 'v$lecturas',
-          }),
-          200,
-          headers: {'content-type': 'application/json; charset=utf-8'},
-        );
+            'mes': [
+              {
+                'productoId': 'p_1',
+                'nombre': 'Manzana',
+                'cantidad': 12,
+                'total': 24000,
+              },
+            ],
+          },
+        });
       }
-      if (request.method == 'POST' && request.url.path == '/api/v1/productos') {
+      if (request.method == 'GET' && path.endsWith('/historial')) {
+        return _json({
+          'data': {
+            'dias': [
+              {'dia': '2026-10-01', 'cantidad': 2, 'total': 4000},
+            ],
+          },
+        });
+      }
+      if (request.method == 'POST' && path == '/api/v1/productos') {
         final body = jsonDecode(request.body) as Map<String, dynamic>;
         guardados.add(body);
         if (rechazo != null) {
-          return http.Response(
-            jsonEncode({'message': rechazo}),
-            403,
-            headers: {'content-type': 'application/json; charset=utf-8'},
-          );
+          return _json({'message': rechazo}, 403);
         }
         publicado = body['publicadoOnline'] as bool;
-        return http.Response('{"data":{"id":"p_1"}}', 200);
+        return _json({'data': {'id': 'p_1'}});
       }
-      if (request.method == 'POST' && request.url.path.endsWith('/baja')) {
+      if (request.method == 'POST' && path.endsWith('/baja')) {
         bajas++;
-        return http.Response('{"data":{"ok":true}}', 200);
+        return _json({'data': {'ok': true}});
       }
-      throw StateError(
-        'Request inesperada: ${request.method} ${request.url.path}',
-      );
+      throw StateError('Request inesperada: ${request.method} $path');
     }),
   );
 }
@@ -89,7 +121,10 @@ Future<void> _abrir(
   await tester.pumpWidget(
     ProviderScope(
       overrides: [apiClientProvider.overrideWithValue(backend.api)],
-      child: const MaterialApp(home: Scaffold(body: ProductosPane())),
+      child: MaterialApp(
+        theme: temaClaro(),
+        home: const Scaffold(body: ProductosPane()),
+      ),
     ),
   );
   await tester.pumpAndSettle();
@@ -104,146 +139,135 @@ Future<void> _tocar(WidgetTester tester, String key) async {
 }
 
 void main() {
-  for (final escritorio in [true, false]) {
-    final superficie = escritorio ? 'escritorio' : 'teléfono';
-    final size = escritorio ? const Size(1200, 1000) : const Size(390, 844);
-    final publicadoKey = escritorio
-        ? 'admin_producto_publicado'
-        : 'admin_prod_publicado';
-    final guardarKey = escritorio
-        ? 'admin_producto_guardar'
-        : 'admin_guardar_producto';
+  testWidgets('despublica, relee y vuelve a publicar', (tester) async {
+    final backend = _CatalogoHttp();
+    await _abrir(tester, backend, _escritorio);
+    await _tocar(tester, 'admin_editar_p_1');
+    expect(
+      tester.widget<SwitchListTile>(find.byKey(const Key('admin_prod_publicado'))).value,
+      isTrue,
+    );
+    await _tocar(tester, 'admin_prod_publicado');
+    await _tocar(tester, 'admin_guardar_producto');
+    expect(backend.guardados.single['publicadoOnline'], isFalse);
+    expect(backend.guardados.single['unidad'], 'bulto');
+    expect(backend.lecturas, 2);
+    expect(backend.bajas, 0);
+    await _tocar(tester, 'admin_editar_p_1');
+    expect(
+      tester.widget<SwitchListTile>(find.byKey(const Key('admin_prod_publicado'))).value,
+      isFalse,
+    );
+    await _tocar(tester, 'admin_prod_publicado');
+    await _tocar(tester, 'admin_guardar_producto');
+    expect(backend.guardados.last['publicadoOnline'], isTrue);
+    expect(tester.takeException(), isNull);
+  });
 
-    testWidgets('$superficie: despublica, relee y vuelve a publicar', (
-      tester,
-    ) async {
-      final backend = _CatalogoHttp();
-      await _abrir(tester, backend, size);
-      await _tocar(tester, 'admin_producto_p_1');
-      expect(
-        tester.widget<SwitchListTile>(find.byKey(Key(publicadoKey))).value,
-        isTrue,
-      );
-      await _tocar(tester, publicadoKey);
-      await _tocar(tester, guardarKey);
-      expect(backend.guardados.single['publicadoOnline'], isFalse);
-      expect(backend.guardados.single['unidad'], 'bulto');
-      expect(backend.lecturas, 2);
-      expect(backend.bajas, 0);
-      await _tocar(tester, 'admin_producto_p_1');
-      expect(
-        tester.widget<SwitchListTile>(find.byKey(Key(publicadoKey))).value,
-        isFalse,
-      );
-      await _tocar(tester, publicadoKey);
-      await _tocar(tester, guardarKey);
-      expect(backend.guardados.last['publicadoOnline'], isTrue);
-      expect(tester.takeException(), isNull);
-    });
+  testWidgets('editar nombre conserva publicación', (tester) async {
+    final backend = _CatalogoHttp();
+    await _abrir(tester, backend, _escritorio);
+    await _tocar(tester, 'admin_editar_p_1');
+    await tester.enterText(
+      find.byKey(const Key('admin_prod_nombre')),
+      'Manzana roja',
+    );
+    await _tocar(tester, 'admin_guardar_producto');
+    expect(backend.guardados.single['publicadoOnline'], isTrue);
+    expect(backend.guardados.single['nombre'], 'Manzana roja');
+  });
 
-    testWidgets('$superficie: editar nombre conserva publicación', (
-      tester,
-    ) async {
-      final backend = _CatalogoHttp();
-      await _abrir(tester, backend, size);
-      await _tocar(tester, 'admin_producto_p_1');
-      await tester.enterText(
-        find.byKey(
-          Key(escritorio ? 'admin_producto_nombre' : 'admin_prod_nombre'),
-        ),
-        'Manzana roja',
-      );
-      await _tocar(tester, guardarKey);
-      expect(backend.guardados.single['publicadoOnline'], isTrue);
-      expect(backend.guardados.single['nombre'], 'Manzana roja');
-    });
+  testWidgets('alta empieza sin publicar y envía elección', (tester) async {
+    final backend = _CatalogoHttp();
+    await _abrir(tester, backend, _escritorio);
+    await _tocar(tester, 'admin_nuevo_producto');
+    expect(
+      tester.widget<SwitchListTile>(find.byKey(const Key('admin_prod_publicado'))).value,
+      isFalse,
+    );
+    await tester.enterText(find.byKey(const Key('admin_prod_nombre')), 'Naranja');
+    await tester.enterText(find.byKey(const Key('admin_prod_precio')), '1500');
+    await tester.enterText(find.byKey(const Key('admin_prod_minimo')), '0');
+    await _tocar(tester, 'admin_prod_publicado');
+    await _tocar(tester, 'admin_guardar_producto');
+    expect(backend.guardados.single.containsKey('id'), isFalse);
+    expect(backend.guardados.single['publicadoOnline'], isTrue);
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
 
-    testWidgets('$superficie: alta empieza sin publicar y envía elección', (
-      tester,
-    ) async {
-      final backend = _CatalogoHttp();
-      await _abrir(tester, backend, size);
-      await _tocar(tester, 'admin_nuevo_producto');
-      expect(
-        tester.widget<SwitchListTile>(find.byKey(Key(publicadoKey))).value,
-        isFalse,
-      );
-      final prefix = escritorio ? 'admin_producto' : 'admin_prod';
-      await tester.enterText(find.byKey(Key('${prefix}_nombre')), 'Naranja');
-      await tester.enterText(find.byKey(Key('${prefix}_precio')), '1500');
-      await tester.enterText(find.byKey(Key('${prefix}_minimo')), '0');
-      await _tocar(tester, publicadoKey);
-      await _tocar(tester, guardarKey);
-      expect(backend.guardados.single.containsKey('id'), isFalse);
-      expect(backend.guardados.single['publicadoOnline'], isTrue);
-      if (escritorio) {
-        expect(
-          tester.widget<SwitchListTile>(find.byKey(Key(publicadoKey))).value,
-          isFalse,
-        );
-      } else {
-        expect(find.byType(AlertDialog), findsNothing);
-      }
-      expect(tester.takeException(), isNull);
-    });
+  testWidgets('muestra rechazo del plan sin anunciar éxito', (tester) async {
+    final backend = _CatalogoHttp()
+      ..publicado = false
+      ..rechazo = 'Sin Presencia o Pro no se publica en Mercado.';
+    await _abrir(tester, backend, _escritorio);
+    await _tocar(tester, 'admin_editar_p_1');
+    await _tocar(tester, 'admin_prod_publicado');
+    await _tocar(tester, 'admin_guardar_producto');
+    expect(find.text(backend.rechazo!), findsOneWidget);
+    expect(find.text('Producto actualizado.'), findsNothing);
+    expect(backend.lecturas, 1);
+    expect(backend.publicado, isFalse);
+    expect(find.byKey(const Key('admin_guardar_producto')), findsOneWidget);
+  });
 
-    testWidgets('$superficie: muestra rechazo del plan sin anunciar éxito', (
-      tester,
-    ) async {
-      final backend = _CatalogoHttp()
-        ..publicado = false
-        ..rechazo = 'Sin Presencia o Pro no se publica en Mercado.';
-      await _abrir(tester, backend, size);
-      await _tocar(tester, 'admin_producto_p_1');
-      await _tocar(tester, publicadoKey);
-      await _tocar(tester, guardarKey);
-      expect(find.text(backend.rechazo!), findsOneWidget);
-      expect(find.text('Producto actualizado.'), findsNothing);
-      expect(backend.lecturas, 1);
-      expect(backend.publicado, isFalse);
-      expect(find.byKey(Key(guardarKey)), findsOneWidget);
-    });
+  testWidgets('cancelar no guarda ni da de baja', (tester) async {
+    final backend = _CatalogoHttp();
+    await _abrir(tester, backend, _escritorio);
+    await _tocar(tester, 'admin_editar_p_1');
+    await _tocar(tester, 'admin_prod_publicado');
+    final cancelar = find.widgetWithText(TextButton, 'Cancelar');
+    await tester.ensureVisible(cancelar);
+    await tester.tap(cancelar);
+    await tester.pumpAndSettle();
+    expect(backend.guardados, isEmpty);
+    expect(backend.bajas, 0);
+    expect(find.byType(AlertDialog), findsNothing);
+  });
 
-    testWidgets('$superficie: cancelar no guarda ni da de baja', (
-      tester,
-    ) async {
-      final backend = _CatalogoHttp();
-      await _abrir(tester, backend, size);
-      await _tocar(tester, 'admin_producto_p_1');
-      await _tocar(tester, publicadoKey);
-      final cancelar = find.widgetWithText(TextButton, 'Cancelar');
-      await tester.ensureVisible(cancelar);
-      await tester.tap(cancelar);
-      await tester.pumpAndSettle();
-      expect(backend.guardados, isEmpty);
-      expect(backend.bajas, 0);
-      expect(find.byKey(Key(publicadoKey)), findsNothing);
-      expect(find.byType(AlertDialog), findsNothing);
-    });
-  }
+  testWidgets('escritorio: elegir producto muestra su historial', (tester) async {
+    final backend = _CatalogoHttp();
+    await _abrir(tester, backend, _escritorio);
+    expect(find.text('Todavía no elegiste ninguno.'), findsOneWidget);
 
-  testWidgets(
-    'selección desktop cambia unidad y publicación sin arrastrar estado',
-    (tester) async {
-      final backend = _CatalogoHttp();
-      await _abrir(tester, backend, const Size(1200, 1000));
-      await _tocar(tester, 'admin_producto_p_1');
-      await _tocar(tester, 'admin_producto_p_2');
-      final field = tester.state<FormFieldState<String>>(
-        find.byKey(const Key('admin_producto_unidad')),
-      );
-      expect(field.value, 'kg');
-      expect(
-        tester
-            .widget<SwitchListTile>(
-              find.byKey(const Key('admin_producto_publicado')),
-            )
-            .value,
-        isFalse,
-      );
-      await _tocar(tester, 'admin_producto_guardar');
-      expect(backend.guardados.single['id'], 'p_2');
-      expect(backend.guardados.single['unidad'], 'kg');
-    },
-  );
+    await _tocar(tester, 'admin_producto_p_1');
+    expect(find.text('Ventas · Manzana'), findsOneWidget);
+    expect(find.byKey(const Key('admin_producto_historial')), findsOneWidget);
+
+    await _tocar(tester, 'admin_producto_p_2');
+    expect(find.text('Ventas · Pera'), findsOneWidget);
+    expect(find.text('Ventas · Manzana'), findsNothing);
+
+    // El diálogo de edición arranca con los datos del producto elegido.
+    await _tocar(tester, 'admin_editar_p_2');
+    final unidad = tester.state<FormFieldState<String>>(
+      find.byKey(const Key('admin_prod_unidad')),
+    );
+    expect(unidad.value, 'kg');
+    expect(
+      tester.widget<SwitchListTile>(find.byKey(const Key('admin_prod_publicado'))).value,
+      isFalse,
+    );
+    await _tocar(tester, 'admin_guardar_producto');
+    expect(backend.guardados.single['id'], 'p_2');
+    expect(backend.guardados.single['unidad'], 'kg');
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('teléfono: fila compacta con stock y edición por diálogo', (tester) async {
+    final backend = _CatalogoHttp();
+    await _abrir(tester, backend, _telefono);
+    final fila = find.byKey(const Key('admin_producto_p_1'));
+    expect(
+      find.descendant(of: fila, matching: find.text('10 cajón')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: fila, matching: find.text('\$2000,00')),
+      findsOneWidget,
+    );
+    await _tocar(tester, 'admin_editar_p_1');
+    expect(find.byKey(const Key('admin_prod_nombre')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }

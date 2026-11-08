@@ -11,7 +11,15 @@ val uploadKeyPassword = System.getenv("ANDROID_KEY_PASSWORD")
 val hasUploadSigning = listOf(uploadStore, uploadPassword, uploadAlias, uploadKeyPassword)
     .all { !it.isNullOrBlank() }
 
-if (gradle.startParameter.taskNames.any { it.contains("release", ignoreCase = true) } && !hasUploadSigning) {
+val isReleaseTask = gradle.startParameter.taskNames.any { task ->
+    val taskLower = task.lowercase()
+    taskLower == "assemblerelease" ||
+    taskLower == "bundlerelease" ||
+    taskLower.contains("assemblerelease") ||
+    taskLower.contains("bundlerelease")
+}
+
+if (isReleaseTask && !hasUploadSigning) {
     throw GradleException("La entrega release requiere las cuatro variables ANDROID de firma upload; no se permite firma debug.")
 }
 

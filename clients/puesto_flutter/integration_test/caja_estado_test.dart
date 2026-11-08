@@ -122,17 +122,8 @@ Future<void> _loginYIrAEstadoDeCaja(WidgetTester tester) async {
   await _esperar(tester, find.byKey(const Key('login_email')));
   await tester.enterText(find.byKey(const Key('login_email')), _emailCaja);
   await tester.enterText(find.byKey(const Key('login_password')), _password);
-  await tocaLoginHasta(tester, find.byKey(const Key('catalogo_lista')));
-
-  // El chip de rol del header también dice "Caja": la píldora se acota al
-  // menú horizontal de secciones.
-  await tester.tap(find.descendant(
-    of: find.byWidgetPredicate(
-        (widget) => widget is ListView && widget.scrollDirection == Axis.horizontal),
-    matching: find.text('Caja'),
-  ));
-  await tester.pump();
-  await _esperar(tester, find.byKey(const Key('caja_lista')));
+  // El cajero aterriza directo en Caja (como /caja en la web).
+  await tocaLoginHasta(tester, find.byKey(const Key('caja_lista')));
 
   await tester.tap(find.text('Estado de caja'));
   await tester.pump();

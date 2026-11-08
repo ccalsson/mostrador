@@ -1007,7 +1007,7 @@ class _FacturaContenido extends StatelessWidget {
                     children: [
                       Text(factura.tipoLabel,
                           style: theme.textTheme.titleMedium),
-                      Text('N° ${factura.numeroFiscal}',
+                      Text('Nº ${factura.numeroFiscal}',
                           style: theme.textTheme.headlineSmall
                               ?.copyWith(fontWeight: FontWeight.bold)),
                     ],

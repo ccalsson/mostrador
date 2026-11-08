@@ -52,8 +52,8 @@ class RemitoAltaController extends Notifier<RemitoAltaEstado> {
       state = RemitoAltaEstado(
         lectura: lectura,
         aviso: lectura.lineas.isEmpty
-            ? 'La foto está. No distinguí líneas: completalas a mano.'
-            : 'Leí ${lectura.lineas.length} líneas. Revisalas antes de cargar.',
+            ? 'La foto está. No distinguí líneas: complétalas a mano.'
+            : 'Leí ${lectura.lineas.length} líneas. Revísalas antes de cargar.',
       );
       return lectura;
     } on ApiException catch (error) {

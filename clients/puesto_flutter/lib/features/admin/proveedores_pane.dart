@@ -1,10 +1,16 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/errors/api_exceptions.dart';
+import '../../core/tema.dart';
+import '../../core/widgets/tabla_web.dart';
 import '../../models/proveedor.dart';
 import '../../services/proveedores_service.dart';
 import 'proveedor_form_controller.dart';
+
+const _quiebreFicha = 1024.0;
 
 class ProveedoresPane extends ConsumerStatefulWidget {
   const ProveedoresPane({super.key});
@@ -37,20 +43,64 @@ class _ProveedoresPaneState extends ConsumerState<ProveedoresPane> {
     super.dispose();
   }
 
-  void _seleccionar(Proveedor proveedor) {
+  void _seleccionar(Proveedor proveedor, {required bool enRail}) {
     setState(() {
       _seleccionado = proveedor;
       _modoNuevo = false;
       _cargarForm(proveedor);
     });
+    if (!enRail) _abrirFicha();
   }
 
-  void _nuevo() {
+  void _nuevo({required bool enRail}) {
     setState(() {
       _seleccionado = null;
       _modoNuevo = true;
       _limpiarForm();
     });
+    if (!enRail) _abrirFicha();
+  }
+
+  void _cerrarFicha() {
+    setState(() {
+      _seleccionado = null;
+      _modoNuevo = false;
+      _limpiarForm();
+    });
+  }
+
+  void _abrirFicha() {
+    showDialog<void>(
+      context: context,
+      builder: (dialogo) => Dialog(
+        insetPadding: const EdgeInsets.all(16),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420, maxHeight: 640),
+          child: _TarjetaFicha(
+            child: _Ficha(
+              nombreController: _nombre,
+              cuitController: _cuit,
+              telefonoController: _telefono,
+              emailController: _email,
+              direccionController: _direccion,
+              observacionesController: _observaciones,
+              activo: _activo,
+              onActivoChanged: (v) => setState(() => _activo = v),
+              modoNuevo: _modoNuevo,
+              proveedor: _seleccionado,
+              enviando: ref.read(proveedorFormProvider).enviando,
+              errorMensaje:
+                  _validacion ?? ref.read(proveedorFormProvider).errorMensaje,
+              onGuardar: () async {
+                final ok = await _guardar();
+                if (ok && dialogo.mounted) Navigator.of(dialogo).pop();
+              },
+              onCerrar: () => Navigator.of(dialogo).pop(),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   void _cargarForm(Proveedor proveedor) {
@@ -75,10 +125,11 @@ class _ProveedoresPaneState extends ConsumerState<ProveedoresPane> {
     _validacion = null;
   }
 
-  Future<void> _guardar() async {
+  Future<bool> _guardar() async {
     final nombre = _nombre.text.trim();
     if (nombre.isEmpty) {
-      return setState(() => _validacion = 'Ingresá el nombre del proveedor.');
+      setState(() => _validacion = 'Ingresá el nombre del proveedor.');
+      return false;
     }
     setState(() => _validacion = null);
     final ok = await ref.read(proveedorFormProvider.notifier).guardar(
@@ -86,22 +137,25 @@ class _ProveedoresPaneState extends ConsumerState<ProveedoresPane> {
       input: ProveedorInput(
         nombre: nombre,
         cuit: _cuit.text.trim().isEmpty ? null : _cuit.text.trim(),
-        telefono: _telefono.text.trim().isEmpty ? null : _telefono.text.trim(),
+        telefono:
+            _telefono.text.trim().isEmpty ? null : _telefono.text.trim(),
         email: _email.text.trim().isEmpty ? null : _email.text.trim(),
-        direccion: _direccion.text.trim().isEmpty ? null : _direccion.text.trim(),
+        direccion:
+            _direccion.text.trim().isEmpty ? null : _direccion.text.trim(),
         observaciones: _observaciones.text.trim().isEmpty
             ? null
             : _observaciones.text.trim(),
         activo: _activo,
       ),
     );
-    if (!ok || !mounted) return;
+    if (!ok || !mounted) return false;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(_modoNuevo ? 'Proveedor cargado.' : 'Proveedor guardado.'),
+        content: Text(
+          _modoNuevo ? 'Proveedor cargado.' : 'Proveedor guardado.',
+        ),
       ),
     );
-    ref.invalidate(proveedoresProvider);
     if (_modoNuevo) {
       setState(() {
         _modoNuevo = false;
@@ -109,131 +163,179 @@ class _ProveedoresPaneState extends ConsumerState<ProveedoresPane> {
         _limpiarForm();
       });
     }
+    return true;
   }
 
   @override
   Widget build(BuildContext context) {
+    final tokens = context.tokens;
     final proveedores = ref.watch(proveedoresProvider);
     final estado = ref.watch(proveedorFormProvider);
 
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-          child: Row(
-            children: [
-              const Expanded(
-                child: Text(
-                  'Proveedores',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-                ),
-              ),
-              IconButton(
-                key: const Key('admin_proveedores_refrescar'),
-                tooltip: 'Actualizar proveedores',
-                onPressed: () => ref.invalidate(proveedoresProvider),
-                icon: const Icon(Icons.refresh),
-              ),
-              FilledButton.icon(
-                key: const Key('admin_nuevo_proveedor'),
-                onPressed: _nuevo,
-                icon: const Icon(Icons.add),
-                label: const Text('Nuevo proveedor'),
-              ),
-            ],
-          ),
-        ),
-        Expanded(
-          child: proveedores.when(
-            loading: () => const Center(child: CircularProgressIndicator()),
-            error: (error, _) => Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final enRail = constraints.maxWidth >= _quiebreFicha;
+        final elegido = _seleccionado;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Row(
                 children: [
-                  Text(
-                    error is ApiException
-                        ? error.message
-                        : 'No se pudieron cargar los proveedores.',
+                  Expanded(
+                    child: Text(
+                      'Directorio del puesto. Se elige al cargar un remito.',
+                      style: TextStyle(fontSize: 12.5, color: tokens.muted),
+                    ),
                   ),
-                  const SizedBox(height: 16),
-                  FilledButton.tonal(
-                    onPressed: () => ref.invalidate(proveedoresProvider),
-                    child: const Text('Reintentar'),
+                  const SizedBox(width: 12),
+                  FilledButton.icon(
+                    key: const Key('admin_nuevo_proveedor'),
+                    onPressed: () => _nuevo(enRail: enRail),
+                    icon: const Icon(Icons.person_add_outlined, size: 18),
+                    label: const Text('Nuevo proveedor'),
                   ),
                 ],
               ),
             ),
-            data: (lista) => Row(
-              children: [
-                Expanded(
-                  flex: 2,
-                  child: lista.isEmpty
-                      ? const Center(
-                          child: Text(
-                            'Todavía no hay proveedores.',
-                            key: Key('admin_proveedores_vacia'),
-                          ),
-                        )
-                      : ListView.separated(
-                          key: const Key('admin_proveedores_lista'),
-                          itemCount: lista.length,
-                          separatorBuilder: (_, _) => const Divider(height: 1),
-                          itemBuilder: (context, index) {
-                            final proveedor = lista[index];
-                            final seleccionado = _seleccionado?.id == proveedor.id;
-                            return _ProveedorTile(
-                              proveedor: proveedor,
-                              seleccionado: seleccionado,
-                              onTap: () => _seleccionar(proveedor),
-                            );
-                          },
-                        ),
-                ),
-                if (_seleccionado != null || _modoNuevo)
-                  Expanded(
-                    flex: 3,
-                    child: Material(
-                      color: Theme.of(context).colorScheme.surfaceContainerLowest,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          border: Border(
-                            left: BorderSide(
-                              color: Theme.of(context).dividerColor,
-                            ),
-                          ),
-                        ),
-                        child: _FormPanel(
-                          nombreController: _nombre,
-                          cuitController: _cuit,
-                          telefonoController: _telefono,
-                          emailController: _email,
-                          direccionController: _direccion,
-                          observacionesController: _observaciones,
-                          activo: _activo,
-                          onActivoChanged: (v) => setState(() => _activo = v),
-                          modoNuevo: _modoNuevo,
-                          validacion: _validacion,
-                          enviando: estado.enviando,
-                          errorMensaje: _validacion ?? estado.errorMensaje,
-                          onGuardar: _guardar,
-                          proveedorId: _seleccionado?.id,
-                        ),
+            Expanded(
+              child: proveedores.when(
+                loading: () =>
+                    const Center(child: CircularProgressIndicator()),
+                error: (error, _) => Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        error is ApiException
+                            ? error.message
+                            : 'No se pudieron cargar los proveedores.',
                       ),
-                    ),
+                      const SizedBox(height: 16),
+                      FilledButton.tonal(
+                        key: const Key('admin_proveedores_reintentar'),
+                        onPressed: () =>
+                            ref.invalidate(proveedoresProvider),
+                        child: const Text('Reintentar'),
+                      ),
+                    ],
                   ),
-              ],
+                ),
+                data: (lista) {
+                  final listado = _Listado(
+                    lista: lista,
+                    seleccionado: elegido,
+                    onTap: (p) => _seleccionar(p, enRail: enRail),
+                  );
+                  if (enRail) {
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(child: listado),
+                        const SizedBox(width: 16),
+                        SizedBox(
+                          width: 340,
+                          child: elegido == null && !_modoNuevo
+                              ? Padding(
+                                  padding: const EdgeInsets.only(top: 8),
+                                  child: Text(
+                                    'Elegí un proveedor para editar su ficha.',
+                                    style: TextStyle(
+                                      fontSize: 12.5,
+                                      color: tokens.muted,
+                                    ),
+                                  ),
+                                )
+                              : _TarjetaFicha(
+                                  child: _Ficha(
+                                    nombreController: _nombre,
+                                    cuitController: _cuit,
+                                    telefonoController: _telefono,
+                                    emailController: _email,
+                                    direccionController: _direccion,
+                                    observacionesController: _observaciones,
+                                    activo: _activo,
+                                    onActivoChanged: (v) =>
+                                        setState(() => _activo = v),
+                                    modoNuevo: _modoNuevo,
+                                    proveedor: elegido,
+                                    enviando: estado.enviando,
+                                    errorMensaje:
+                                        _validacion ?? estado.errorMensaje,
+                                    onGuardar: _guardar,
+                                    onCerrar: _cerrarFicha,
+                                  ),
+                                ),
+                        ),
+                      ],
+                    );
+                  }
+                  return listado;
+                },
+              ),
             ),
-          ),
-        ),
-      ],
+          ],
+        );
+      },
     );
   }
 }
 
-class _ProveedorTile extends StatelessWidget {
-  const _ProveedorTile({
+class _Listado extends StatelessWidget {
+  const _Listado({
+    required this.lista,
+    required this.seleccionado,
+    required this.onTap,
+  });
+
+  final List<Proveedor> lista;
+  final Proveedor? seleccionado;
+  final ValueChanged<Proveedor> onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    if (lista.isEmpty) {
+      return Tarjeta(
+        padding: EdgeInsets.zero,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 24),
+          child: Text(
+            'Todavía no hay proveedores.',
+            key: const Key('admin_proveedores_vacia'),
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 13, color: tokens.muted),
+          ),
+        ),
+      );
+    }
+    return Tarjeta(
+      padding: EdgeInsets.zero,
+      child: ListView.separated(
+        key: const Key('admin_proveedores_lista'),
+        padding: EdgeInsets.zero,
+        itemCount: lista.length,
+        separatorBuilder: (_, _) =>
+            Divider(height: 1, thickness: 1, color: tokens.line),
+        itemBuilder: (context, index) {
+          final proveedor = lista[index];
+          return _FilaProveedor(
+            key: Key('admin_proveedor_${proveedor.id}'),
+            proveedor: proveedor,
+            seleccionado: seleccionado?.id == proveedor.id,
+            onTap: () => onTap(proveedor),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _FilaProveedor extends StatefulWidget {
+  const _FilaProveedor({
+    super.key,
     required this.proveedor,
     required this.seleccionado,
     required this.onTap,
@@ -244,38 +346,99 @@ class _ProveedorTile extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) {
-    final datos = proveedor.cuit != null && proveedor.cuit!.isNotEmpty
-        ? proveedor.cuit!
-        : proveedor.telefono != null && proveedor.telefono!.isNotEmpty
-        ? proveedor.telefono!
-        : 'Sin datos';
+  State<_FilaProveedor> createState() => _FilaProveedorState();
+}
 
-    return ListTile(
-      key: Key('admin_proveedor_${proveedor.id}'),
-      tileColor: seleccionado
-          ? Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3)
-          : null,
-      leading: const Icon(Icons.local_shipping_outlined),
-      title: Text(
-        proveedor.nombre,
-        style: TextStyle(fontWeight: seleccionado ? FontWeight.w600 : null),
+class _FilaProveedorState extends State<_FilaProveedor> {
+  bool _encima = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    final datos = widget.proveedor.cuit != null &&
+            widget.proveedor.cuit!.isNotEmpty
+        ? widget.proveedor.cuit!
+        : widget.proveedor.telefono != null &&
+                widget.proveedor.telefono!.isNotEmpty
+            ? widget.proveedor.telefono!
+            : 'Sin datos';
+    final fondo =
+        widget.seleccionado ? tokens.okBg : (_encima ? tokens.paper : null);
+
+    final contenido = Container(
+      constraints: const BoxConstraints(minHeight: 44),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      color: fondo,
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  widget.proveedor.nombre,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style:
+                      const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  datos,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 11.5, color: tokens.muted),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Pildora(
+            widget.proveedor.activo ? 'Activo' : 'Baja',
+            color: widget.proveedor.activo ? tokens.ok : tokens.muted,
+          ),
+        ],
       ),
-      subtitle: Text(datos),
-      trailing: Chip(
-        label: Text(proveedor.activo ? 'Activo' : 'Baja'),
-        visualDensity: VisualDensity.compact,
-        backgroundColor: proveedor.activo
-            ? Theme.of(context).colorScheme.primaryContainer
-            : Theme.of(context).colorScheme.errorContainer,
-      ),
-      onTap: onTap,
+    );
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _encima = true),
+      onExit: (_) => setState(() => _encima = false),
+      child: InkWell(onTap: widget.onTap, child: contenido),
     );
   }
 }
 
-class _FormPanel extends StatelessWidget {
-  const _FormPanel({
+class _TarjetaFicha extends StatelessWidget {
+  const _TarjetaFicha({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    return Container(
+      decoration: BoxDecoration(
+        color: tokens.surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: tokens.line),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(height: 2, color: tokens.naranja),
+          Flexible(child: child),
+        ],
+      ),
+    );
+  }
+}
+
+class _Ficha extends StatelessWidget {
+  const _Ficha({
     required this.nombreController,
     required this.cuitController,
     required this.telefonoController,
@@ -285,11 +448,11 @@ class _FormPanel extends StatelessWidget {
     required this.activo,
     required this.onActivoChanged,
     required this.modoNuevo,
-    required this.validacion,
+    required this.proveedor,
     required this.enviando,
     required this.errorMensaje,
     required this.onGuardar,
-    required this.proveedorId,
+    required this.onCerrar,
   });
 
   final TextEditingController nombreController;
@@ -301,83 +464,113 @@ class _FormPanel extends StatelessWidget {
   final bool activo;
   final ValueChanged<bool> onActivoChanged;
   final bool modoNuevo;
-  final String? validacion;
+  final Proveedor? proveedor;
   final bool enviando;
   final String? errorMensaje;
-  final VoidCallback onGuardar;
-  final String? proveedorId;
+  final FutureOr<void> Function() onGuardar;
+  final VoidCallback onCerrar;
 
   @override
   Widget build(BuildContext context) {
+    final tokens = context.tokens;
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            modoNuevo ? 'Nuevo proveedor' : 'Proveedor',
-            style: Theme.of(context).textTheme.titleMedium,
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                modoNuevo ? 'Alta' : 'Ficha',
+                style: const TextStyle(
+                  fontFamily: 'Fraunces',
+                  fontSize: 17,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              TextButton(
+                onPressed: onCerrar,
+                child: const Text('Cerrar', style: TextStyle(fontSize: 12)),
+              ),
+            ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           _campo(
             key: const Key('admin_proveedor_nombre'),
             controller: nombreController,
             label: 'Nombre',
-            maxLength: 120,
             requerido: true,
           ),
           _campo(
             key: const Key('admin_proveedor_cuit'),
             controller: cuitController,
             label: 'CUIT',
-            maxLength: 20,
           ),
           _campo(
             key: const Key('admin_proveedor_telefono'),
             controller: telefonoController,
             label: 'Teléfono',
-            maxLength: 40,
             keyboardType: TextInputType.phone,
           ),
           _campo(
             key: const Key('admin_proveedor_email'),
             controller: emailController,
             label: 'Email',
-            maxLength: 120,
             keyboardType: TextInputType.emailAddress,
           ),
           _campo(
             key: const Key('admin_proveedor_direccion'),
             controller: direccionController,
             label: 'Dirección',
-            maxLength: 200,
           ),
           _campo(
             key: const Key('admin_proveedor_observaciones'),
             controller: observacionesController,
             label: 'Observaciones',
-            maxLength: 300,
+            maxLines: 3,
           ),
-          if (!modoNuevo)
-            SwitchListTile(
-              key: const Key('admin_proveedor_activo'),
-              title: const Text('Activo'),
-              value: activo,
-              onChanged: enviando ? null : onActivoChanged,
+          if (!modoNuevo) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: Checkbox(
+                    key: const Key('admin_proveedor_activo'),
+                    value: activo,
+                    onChanged:
+                        enviando ? null : (v) => onActivoChanged(v ?? false),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Text(
+                  'Activo en el puesto',
+                  style: TextStyle(fontSize: 13),
+                ),
+              ],
             ),
-          if (proveedorId != null)
-            _ProductosProveedor(proveedorId: proveedorId!),
+          ],
+          if (proveedor != null) ...[
+            const SizedBox(height: 12),
+            _ProductosProveedor(proveedorId: proveedor!.id),
+          ],
           if (errorMensaje != null) ...[
             const SizedBox(height: 8),
             Text(
               errorMensaje!,
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
+              style: TextStyle(fontSize: 12.5, color: tokens.terra),
             ),
           ],
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           FilledButton(
             key: const Key('admin_proveedor_guardar'),
             onPressed: enviando ? null : onGuardar,
+            style: ButtonStyle(
+              minimumSize: WidgetStateProperty.all(const Size.fromHeight(38)),
+            ),
             child: enviando
                 ? const SizedBox(
                     width: 16,
@@ -395,21 +588,22 @@ class _FormPanel extends StatelessWidget {
     required Key key,
     required TextEditingController controller,
     required String label,
-    required int maxLength,
     bool requerido = false,
     TextInputType? keyboardType,
+    int maxLines = 1,
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: TextField(
         key: key,
         controller: controller,
-        maxLength: maxLength,
         keyboardType: keyboardType,
+        maxLines: maxLines,
         enabled: !enviando,
         decoration: InputDecoration(
           labelText: requerido ? '$label *' : label,
           isDense: true,
+          border: const OutlineInputBorder(),
         ),
       ),
     );
@@ -423,6 +617,7 @@ class _ProductosProveedor extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final tokens = context.tokens;
     final productos = ref.watch(productosProveedorProvider(proveedorId));
     return productos.when(
       loading: () => const LinearProgressIndicator(),
@@ -430,29 +625,33 @@ class _ProductosProveedor extends ConsumerWidget {
         error is ApiException
             ? error.message
             : 'No se pudieron cargar los productos.',
-        style: TextStyle(color: Theme.of(context).colorScheme.error),
+        style: TextStyle(fontSize: 12.5, color: tokens.terra),
       ),
       data: (nombres) {
         if (nombres.isEmpty) {
-          return const Padding(
-            padding: EdgeInsets.only(top: 16),
-            child: Text('Todavía no hay remitos confirmados de este proveedor.'),
+          return Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(
+              'Todavía no hay remitos confirmados de este proveedor.',
+              style: TextStyle(fontSize: 12.5, color: tokens.muted),
+            ),
           );
         }
         return Padding(
-          padding: const EdgeInsets.only(top: 16),
+          padding: const EdgeInsets.only(top: 8),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
             children: [
               const Text(
                 'Productos en sus remitos',
-                style: TextStyle(fontWeight: FontWeight.w600),
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 4),
               for (final nombre in nombres)
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 2),
-                  child: Text(nombre),
+                  child: Text(nombre, style: const TextStyle(fontSize: 12.5)),
                 ),
             ],
           ),

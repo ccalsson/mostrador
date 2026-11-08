@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:puesto_flutter/core/network/api_client.dart';
+import 'package:puesto_flutter/core/tema.dart';
 import 'package:puesto_flutter/features/admin/proveedores_pane.dart';
 
 void main() {
@@ -56,7 +57,10 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [apiClientProvider.overrideWithValue(api)],
-        child: const MaterialApp(home: Scaffold(body: ProveedoresPane())),
+        child: MaterialApp(
+          theme: temaClaro(),
+          home: const Scaffold(body: ProveedoresPane()),
+        ),
       ),
     );
     await tester.pumpAndSettle();

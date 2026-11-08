@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
-/// Tokens del contrato visual (app/src/styles.css), en claro y oscuro.
+/// Tokens del contrato visual (repoweb/src/styles.css), en claro y oscuro.
 class TokensMostrador extends ThemeExtension<TokensMostrador> {
   const TokensMostrador({
     required this.paper,
@@ -15,6 +15,8 @@ class TokensMostrador extends ThemeExtension<TokensMostrador> {
     required this.leaf,
     required this.leaf2,
     required this.leafFg,
+    required this.btn,
+    required this.btnFg,
     required this.terra,
     required this.ok,
     required this.warnBg,
@@ -34,6 +36,8 @@ class TokensMostrador extends ThemeExtension<TokensMostrador> {
   final Color leaf;
   final Color leaf2;
   final Color leafFg;
+  final Color btn;
+  final Color btnFg;
   final Color terra;
   final Color ok;
   final Color warnBg;
@@ -53,6 +57,8 @@ class TokensMostrador extends ThemeExtension<TokensMostrador> {
     leaf: Color(0xFF263449),
     leaf2: Color(0xFF131C28),
     leafFg: Color(0xFFF2F5F9),
+    btn: Color(0xFF263449),
+    btnFg: Color(0xFFF2F5F9),
     terra: Color(0xFF1D5FD4),
     ok: Color(0xFF157347),
     warnBg: Color(0xFFFDF1DC),
@@ -72,7 +78,10 @@ class TokensMostrador extends ThemeExtension<TokensMostrador> {
     line: Color(0xFF2A3340),
     leaf: Color(0xFF6EA8FE),
     leaf2: Color(0xFF10151C),
-    leafFg: Color(0xFF0E1116),
+    // La barra sigue siendo oscura en este modo: leafFg no se invierte.
+    leafFg: Color(0xFFF2F5F9),
+    btn: Color(0xFF1D5FD4),
+    btnFg: Color(0xFFFFFFFF),
     terra: Color(0xFF7CC0F5),
     ok: Color(0xFF4CC38A),
     warnBg: Color(0xFF3A2A14),
@@ -131,7 +140,7 @@ ThemeData _tema(TokensMostrador t, Brightness brillo) {
     colorScheme: ColorScheme(
       brightness: brillo,
       primary: t.leaf,
-      onPrimary: t.leafFg,
+      onPrimary: oscuro ? t.leaf2 : t.leafFg,
       primaryContainer: t.okBg,
       onPrimaryContainer: oscuro ? t.ok : t.leaf2,
       secondary: t.naranja,
@@ -139,7 +148,7 @@ ThemeData _tema(TokensMostrador t, Brightness brillo) {
       secondaryContainer: t.warnBg,
       onSecondaryContainer: oscuro ? t.terra : t.alerta,
       tertiary: t.ambar,
-      onTertiary: oscuro ? t.leafFg : t.ink,
+      onTertiary: oscuro ? t.leaf2 : t.ink,
       tertiaryContainer: t.paper2,
       onTertiaryContainer: t.ink,
       error: t.terra,
@@ -152,7 +161,7 @@ ThemeData _tema(TokensMostrador t, Brightness brillo) {
       outline: t.line,
       outlineVariant: t.line,
       inverseSurface: oscuro ? t.leaf : t.leaf2,
-      onInverseSurface: t.leafFg,
+      onInverseSurface: oscuro ? t.leaf2 : t.leafFg,
       surfaceContainerHighest: t.paper2,
       surfaceContainer: t.surface,
       surfaceContainerLow: t.surface,
@@ -184,8 +193,8 @@ ThemeData _tema(TokensMostrador t, Brightness brillo) {
     ),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
-        backgroundColor: t.leaf,
-        foregroundColor: t.leafFg,
+        backgroundColor: t.btn,
+        foregroundColor: t.btnFg,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
         textStyle: _plex.copyWith(fontSize: 14, fontWeight: FontWeight.w600),
@@ -215,8 +224,8 @@ ThemeData _tema(TokensMostrador t, Brightness brillo) {
     ),
     snackBarTheme: SnackBarThemeData(
       behavior: SnackBarBehavior.floating,
-      backgroundColor: oscuro ? t.leaf : t.leaf2,
-      contentTextStyle: _plex.copyWith(fontSize: 14, color: t.leafFg),
+      backgroundColor: oscuro ? t.btn : t.leaf2,
+      contentTextStyle: _plex.copyWith(fontSize: 14, color: t.btnFg),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
     ),
     dividerTheme: DividerThemeData(color: t.line, thickness: 1, space: 1),

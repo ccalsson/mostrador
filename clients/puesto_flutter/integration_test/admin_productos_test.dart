@@ -162,29 +162,8 @@ Future<void> _buscarProducto(WidgetTester tester, String nombre, String id) asyn
 /// El menú de secciones es una fila horizontal de píldoras: en pantallas
 /// angostas las últimas quedan fuera del viewport. Desplaza el menú hasta la
 /// píldora y recién ahí toca.
-Future<void> _tocarPildora(WidgetTester tester, String etiqueta) async {
-  final pildora = find.text(etiqueta);
-  await tester.scrollUntilVisible(
-    pildora,
-    100,
-    scrollable: find
-        .byWidgetPredicate(
-          (widget) =>
-              widget is Scrollable && widget.axisDirection == AxisDirection.right,
-        )
-        .first,
-  );
-  await tester.ensureVisible(pildora);
-  await tester.pump(const Duration(milliseconds: 300));
-  await tester.tap(pildora);
-  await tester.pump();
-}
-
-String _subtitulo(WidgetTester tester, String id) =>
-    ((tester
-                .widget<ListTile>(find.byKey(Key('admin_producto_$id')))
-                .subtitle!) as Text)
-        .data!;
+Future<void> _tocarPildora(WidgetTester tester, String etiqueta) =>
+    irASeccion(tester, etiqueta);
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -237,7 +216,11 @@ void main() {
     await tester.enterText(find.byKey(const Key('admin_prod_inicial')), '5');
     await tester.tap(find.byKey(const Key('admin_guardar_producto')));
 
-    // El backend confirma el alta: stock 5 por debajo del mínimo 10.
+    // El backend inserta el producto y recién después aplica el stock inicial,
+    // así que hay que esperar la respuesta del alta (el diálogo se cierra)
+    // antes de leer /catalogo.
+    await _esperarSin(tester, find.byKey(const Key('admin_prod_nombre')));
+
     final producto = await _productoRemoto(tokenDueno, nombre);
     final id = producto['id'] as String;
     expect((producto['stock'] as num).toDouble(), 5);
@@ -246,13 +229,17 @@ void main() {
     expect(producto['activo'], true);
     expect(producto['stockBajo'], true);
 
-    await _esperarSin(tester, find.byKey(const Key('admin_prod_nombre')));
     await _buscarProducto(tester, nombre, id);
-    final subtitulo = _subtitulo(tester, id);
-    expect(subtitulo, contains(moneda(1250.5)));
-    expect(subtitulo, contains('Stock: 5'));
-    expect(subtitulo, contains('Mín.: 10'));
-    expect(find.text('Stock bajo'), findsOneWidget);
+    final fila = find.byKey(Key('admin_producto_$id'));
+    expect(
+      find.descendant(of: fila, matching: find.text(moneda(1250.5))),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: fila, matching: find.text('5 kg')),
+      findsOneWidget,
+    );
+    expect(find.text('Bajo'), findsOneWidget);
 
     // ---- Alerta de stock bajo y marcar leída ----
     await _tocarPildora(tester, 'Alertas');
@@ -280,7 +267,7 @@ void main() {
         find.byKey(const Key('admin_ajuste_motivo')), 'reposicion e2e');
     await tester.tap(find.byKey(const Key('admin_ajuste_guardar')));
     await _esperarSin(tester, find.byKey(const Key('admin_ajuste_cantidad')));
-    await _esperar(tester, find.textContaining('Stock: 15'));
+    await _esperar(tester, find.text('15 kg'));
 
     await tester.tap(find.byKey(Key('admin_ajustar_$id')));
     await tester.pump();
@@ -292,10 +279,10 @@ void main() {
         find.byKey(const Key('admin_ajuste_motivo')), 'fruta dañada e2e');
     await tester.tap(find.byKey(const Key('admin_ajuste_guardar')));
     await _esperarSin(tester, find.byKey(const Key('admin_ajuste_cantidad')));
-    await _esperar(tester, find.textContaining('Stock: 13'));
+    await _esperar(tester, find.text('13 kg'));
 
     // ---- Edición: precio prellenado y nuevo valor ----
-    await tester.tap(find.byKey(Key('admin_producto_$id')));
+    await tester.tap(find.byKey(Key('admin_editar_$id')));
     await tester.pump();
     await _esperar(tester, find.byKey(const Key('admin_guardar_producto')));
     expect(
@@ -312,7 +299,7 @@ void main() {
     await _esperar(tester, find.textContaining(moneda(1300)));
 
     // ---- Baja lógica con confirmación ----
-    await tester.tap(find.byKey(Key('admin_producto_$id')));
+    await tester.tap(find.byKey(Key('admin_editar_$id')));
     await tester.pump();
     await _esperar(tester, find.byKey(const Key('admin_baja_producto')));
     await tester.tap(find.byKey(const Key('admin_baja_producto')));
@@ -320,14 +307,14 @@ void main() {
     await _esperar(tester, find.byKey(const Key('admin_confirmar_baja')));
     await tester.tap(find.byKey(const Key('admin_confirmar_baja')));
     await _esperarSin(tester, find.byKey(const Key('admin_confirmar_baja')));
-    await _esperar(tester, find.text('Inactivo'));
+    await _esperar(tester, find.text('Baja'));
 
     // Estado final en el backend: la única fuente de verdad.
     final final_ = await _productoRemoto(tokenDueno, nombre);
     expect(final_['activo'], false, reason: 'la baja es lógica');
     expect((final_['stock'] as num).toDouble(), 13);
     expect((final_['precio'] as num).toDouble(), 1300);
-    expect(find.text('Stock bajo'), findsNothing,
+    expect(find.text('Bajo'), findsNothing,
         reason: 'con stock 13 sobre mínimo 10 ya no hay alerta de stock');
   });
 }

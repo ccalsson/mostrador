@@ -46,7 +46,11 @@ void main() {
     await _esperar(tester, find.byKey(const Key('login_email')));
     await tester.enterText(find.byKey(const Key('login_email')), _email);
     await tester.enterText(find.byKey(const Key('login_password')), _password);
-    await tocaLoginHasta(tester, find.byKey(const Key('catalogo_lista')));
+    // El shell aterriza por rol (cajero → Caja); el catálogo se abre desde
+    // el grupo Catálogo del header.
+    await tocaLoginHasta(tester, find.byKey(const Key('logout_button')));
+    await irASeccion(tester, 'Catálogo');
+    await _esperar(tester, find.byKey(const Key('catalogo_lista')));
     expect(find.byType(ListTile), findsWidgets);
 
     await tester.tap(find.byKey(const Key('logout_button')));

@@ -67,7 +67,9 @@ Future<String> _vendedorCreaPedido(WidgetTester tester) async {
   await _esperar(tester, find.byKey(const Key('login_email')));
   await tester.enterText(find.byKey(const Key('login_email')), _email);
   await tester.enterText(find.byKey(const Key('login_password')), _password);
-  await tocaLoginHasta(tester, find.byKey(const Key('catalogo_lista')));
+  await tocaLoginHasta(tester, find.byKey(const Key('logout_button')));
+  await irASeccion(tester, 'Catálogo');
+  await _esperar(tester, find.byKey(const Key('catalogo_lista')));
 
   await _esperar(tester, _porPrefijoClave('agregar_'));
 
@@ -79,8 +81,8 @@ Future<String> _vendedorCreaPedido(WidgetTester tester) async {
   await tester.tap(agregar);
   await tester.pump();
 
-  await tester.tap(find.text('Carrito'));
-  await tester.pump();
+  // El carrito vive en la sección "Puesto" del grupo Operación.
+  await irASeccion(tester, 'Puesto');
   await _esperar(tester, find.byKey(const Key('carrito_total')));
 
   await tester.tap(_porPrefijoClave('carrito_mas_').first);

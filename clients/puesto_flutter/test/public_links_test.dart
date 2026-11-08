@@ -17,15 +17,21 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class _AuthFake extends AuthController {
+  _AuthFake([this.sesion]);
+  final StaffSession? sesion;
+
   @override
-  AuthState build() => const AuthState.unauthenticated();
+  AuthState build() =>
+      sesion == null
+          ? const AuthState.unauthenticated()
+          : AuthState.authenticated(sesion!);
 }
 
 late SharedPreferences _prefs;
 
-Widget _screen(Widget home) => ProviderScope(
+Widget _screen(Widget home, {StaffSession? sesion}) => ProviderScope(
   overrides: [
-    authControllerProvider.overrideWith(_AuthFake.new),
+    authControllerProvider.overrideWith(() => _AuthFake(sesion)),
     tenantProvider.overrideWith(
       (ref) async => const IdentidadTenant(nombre: 'Mostrador', bajada: ''),
     ),
@@ -166,26 +172,29 @@ void main() {
 
   for (final role in Rol.values) {
     testWidgets('Sesión ofrece enlaces para ${role.name}', (tester) async {
-      // Ancho < 900 => los tres roles usan el drawer (sidebar sólo para admin).
+      // Ancho >= 700 => el header muestra el menú de usuario (avatar).
       await tester.binding.setSurfaceSize(const Size(800, 900));
       addTearDown(() => tester.binding.setSurfaceSize(null));
-      await tester.pumpWidget(_screen(AdaptiveShell(rol: role)));
+      await tester.pumpWidget(
+        _screen(
+          AdaptiveShell(rol: role),
+          sesion: StaffSession(
+            staff: Staff(id: 'stf_1', nombre: 'Operador', rol: role),
+            tenantId: 'casa',
+            casaId: 'casa',
+          ),
+        ),
+      );
       // pump(Duration) en vez de pumpAndSettle: el pane inicial puede tener
       // un spinner infinito si el ApiClient real no resuelve en el test.
       await tester.pump(const Duration(milliseconds: 100));
       await tester.pump(const Duration(milliseconds: 100));
 
-      await tester.tap(find.byTooltip('Menú'));
+      await tester.tap(find.byType(CircleAvatar));
+      // El menú necesita terminar su animación: si no, absorbe el toque.
       await tester.pump(const Duration(milliseconds: 400));
-      await tester.pump(const Duration(milliseconds: 400));
-
-      final sesionFinder = find.text('Sesión');
-      for (var i = 0; i < 5; i++) {
-        await tester.drag(find.byType(ListView).last, const Offset(0, -200));
-        await tester.pump(const Duration(milliseconds: 100));
-      }
-      expect(sesionFinder, findsWidgets, reason: 'Sesión no apareció tras scrollear');
-      await tester.tap(sesionFinder.last);
+      await tester.pump(const Duration(seconds: 1));
+      await tester.tap(find.byKey(const Key('nav_item_Sesión')));
       await tester.pump(const Duration(milliseconds: 400));
       await tester.pump(const Duration(milliseconds: 400));
 
