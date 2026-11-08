@@ -17,11 +17,12 @@ export async function listEgresosForStaff(
       monto: unknown;
       concepto: string;
       categoria: string;
+      medio: string;
       usuario_id: string;
       creado_at: string;
       usuario_nombre: string;
     }>`
-      select e.id, e.monto, e.concepto, e.categoria, e.usuario_id, e.creado_at::text as creado_at,
+      select e.id, e.monto, e.concepto, e.categoria, e.medio, e.usuario_id, e.creado_at::text as creado_at,
              coalesce(s.nombre, 'Sin nombre') as usuario_nombre
       from egresos_caja e
       left join staff s on s.id = e.usuario_id
@@ -33,6 +34,7 @@ export async function listEgresosForStaff(
       monto: num(r.monto),
       concepto: r.concepto,
       categoria: r.categoria,
+      medio: r.medio,
       usuarioId: r.usuario_id,
       usuarioNombre: r.usuario_nombre,
       creadoAt: r.creado_at,
@@ -51,11 +53,12 @@ export async function listEgresosForStaff(
     monto: unknown;
     concepto: string;
     categoria: string;
+    medio: string;
     usuario_id: string;
     creado_at: string;
     usuario_nombre: string;
   }>`
-    select e.id, e.monto, e.concepto, e.categoria, e.usuario_id, e.creado_at::text as creado_at,
+    select e.id, e.monto, e.concepto, e.categoria, e.medio, e.usuario_id, e.creado_at::text as creado_at,
            coalesce(s.nombre, 'Sin nombre') as usuario_nombre
     from egresos_caja e
     left join staff s on s.id = e.usuario_id
@@ -67,6 +70,7 @@ export async function listEgresosForStaff(
     monto: num(r.monto),
     concepto: r.concepto,
     categoria: r.categoria,
+    medio: r.medio,
     usuarioId: r.usuario_id,
     usuarioNombre: r.usuario_nombre,
     creadoAt: r.creado_at,
@@ -75,7 +79,7 @@ export async function listEgresosForStaff(
 
 export async function createEgresoForStaff(
   staff: Staff,
-  input: { monto: number; concepto: string; categoria?: string },
+  input: { monto: number; concepto: string; categoria?: string; medio?: string },
 ) {
   assertRole(staff, ["admin", "cajero"]);
   if (input.monto <= 0) throw new Error("El monto debe ser mayor a cero.");
@@ -94,6 +98,12 @@ export async function createEgresoForStaff(
     throw new Error(`Categoría inválida: ${categoria}`);
   }
 
+  const mediosValidos = ["efectivo", "transferencia", "otro"];
+  const medio = input.medio ?? "efectivo";
+  if (!mediosValidos.includes(medio)) {
+    throw new Error(`Medio inválido: ${medio}`);
+  }
+
   const sql = await getSql();
   const open = await sql<{ id: string }>`
     select id from cierres_caja
@@ -104,13 +114,14 @@ export async function createEgresoForStaff(
 
   const id = newId("egr");
   await sql`
-    insert into egresos_caja (id, tenant_id, cierre_id, monto, concepto, categoria, usuario_id)
-    values (${id}, ${staff.tenantId}, ${open[0].id}, ${input.monto}, ${concepto}, ${categoria}, ${staff.id})
+    insert into egresos_caja (id, tenant_id, cierre_id, monto, concepto, categoria, medio, usuario_id)
+    values (${id}, ${staff.tenantId}, ${open[0].id}, ${input.monto}, ${concepto}, ${categoria}, ${medio}, ${staff.id})
   `;
   await audit(staff.tenantId, staff, "alta_egreso", "caja", {
     id,
     monto: input.monto,
     concepto,
+    medio,
   });
   return { id, ok: true as const };
 }

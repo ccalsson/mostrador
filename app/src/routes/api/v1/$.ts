@@ -1051,6 +1051,7 @@ const ROUTES: Entry[] = [
           monto: asNumber(body.monto, "monto"),
           concepto: asString(body.concepto, "concepto", 200),
           categoria: asOptionalString(body.categoria, 30),
+          medio: asOptionalString(body.medio, 20),
         }),
       });
     },

@@ -19,11 +19,13 @@ class EgresosService {
     required double monto,
     required String concepto,
     String? categoria,
+    String? medio,
   }) async {
     await _client.post('/api/v1/egresos', body: {
       'monto': monto,
       'concepto': concepto,
-      'categoria': categoria ?? 'gasto',
+      'categoria': categoria ?? 'alquiler',
+      'medio': medio ?? 'efectivo',
     });
   }
 

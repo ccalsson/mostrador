@@ -27,6 +27,12 @@ const _etiquetasCategoria = {
   'otro': 'Otro',
 };
 
+const _etiquetasMedio = {
+  'efectivo': 'Efectivo',
+  'transferencia': 'Transferencia',
+  'otro': 'Otro',
+};
+
 class EgresosPane extends ConsumerStatefulWidget {
   const EgresosPane({super.key});
 
@@ -356,6 +362,8 @@ class _FilaEgresoState extends State<_FilaEgreso> {
         widget.seleccionado ? tokens.okBg : (_encima ? tokens.paper : null);
     final categoria =
         _etiquetasCategoria[egreso.categoria] ?? egreso.categoria;
+    final medio =
+        _etiquetasMedio[egreso.medio] ?? egreso.medio;
 
     final contenido = Container(
       constraints: const BoxConstraints(minHeight: 40),
@@ -377,7 +385,7 @@ class _FilaEgresoState extends State<_FilaEgreso> {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  '${egreso.usuarioNombre} · $categoria · ${_fechaCorta(egreso.creadoAt)}',
+                  '${egreso.usuarioNombre} · $medio · $categoria · ${_fechaCorta(egreso.creadoAt)}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(fontSize: 11.5, color: tokens.muted),
@@ -483,6 +491,8 @@ class _FichaDetalle extends StatelessWidget {
     final tokens = context.tokens;
     final categoria =
         _etiquetasCategoria[egreso.categoria] ?? egreso.categoria;
+    final medio =
+        _etiquetasMedio[egreso.medio] ?? egreso.medio;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 14),
@@ -527,6 +537,7 @@ class _FichaDetalle extends StatelessWidget {
           _campoFicha('Monto', moneda(egreso.monto),
               color: tokens.terra, negrita: true),
           _campoFicha('Categoría', categoria),
+          _campoFicha('Medio', medio),
           _campoFicha('Usuario', egreso.usuarioNombre),
           _campoFicha('Fecha', _fechaLarga(egreso.creadoAt)),
           const SizedBox(height: 14),
@@ -593,6 +604,7 @@ Future<void> mostrarDialogoNuevoEgreso(
   final conceptoCtrl = TextEditingController();
   final montoCtrl = TextEditingController();
   var categoria = 'alquiler';
+  var medio = 'efectivo';
 
   final resultado = await showDialog<Map<String, String>>(
     context: context,
@@ -651,6 +663,25 @@ Future<void> mostrarDialogoNuevoEgreso(
                 onChanged: (v) =>
                     setDialogState(() => categoria = v ?? 'alquiler'),
               ),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                initialValue: medio,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  labelText: 'Medio',
+                  isDense: true,
+                  border: OutlineInputBorder(),
+                ),
+                items: const [
+                  DropdownMenuItem(
+                      value: 'efectivo', child: Text('Efectivo')),
+                  DropdownMenuItem(
+                      value: 'transferencia', child: Text('Transferencia')),
+                  DropdownMenuItem(value: 'otro', child: Text('Otro')),
+                ],
+                onChanged: (v) =>
+                    setDialogState(() => medio = v ?? 'efectivo'),
+              ),
             ],
           ),
         ),
@@ -670,6 +701,7 @@ Future<void> mostrarDialogoNuevoEgreso(
                 'concepto': conceptoCtrl.text.trim(),
                 'monto': montoCtrl.text.trim(),
                 'categoria': categoria,
+                'medio': medio,
               });
             },
             style: ButtonStyle(
@@ -702,6 +734,7 @@ Future<void> mostrarDialogoNuevoEgreso(
           monto: montoNum,
           concepto: resultado['concepto']!,
           categoria: resultado['categoria'],
+          medio: resultado['medio'],
         );
     ref.invalidate(egresosProvider);
     if (!context.mounted) return;
