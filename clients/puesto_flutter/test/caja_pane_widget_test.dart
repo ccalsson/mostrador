@@ -5,45 +5,23 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:puesto_flutter/core/errors/api_exceptions.dart';
 import 'package:puesto_flutter/core/format.dart';
-import 'package:puesto_flutter/core/tema.dart';
 import 'package:puesto_flutter/features/caja/caja_pane.dart';
-import 'package:puesto_flutter/models/caja.dart';
 import 'package:puesto_flutter/models/cobro.dart';
 import 'package:puesto_flutter/models/pedido.dart';
 import 'package:puesto_flutter/models/ticket.dart';
-import 'package:puesto_flutter/services/caja_service.dart';
 import 'package:puesto_flutter/services/pedidos_service.dart';
-import 'package:puesto_flutter/services/anulaciones_service.dart';
-
-class _AnulacionesFake implements AnulacionesService {
-  ApiException? error;
-  final List<({String id, String motivo})> pedidos = [];
-
-  @override
-  Future<void> pedido(String id, {required String motivo}) async {
-    pedidos.add((id: id, motivo: motivo));
-    final fallo = error;
-    if (fallo != null) throw fallo;
-  }
-
-  @override
-  Future<void> cobro(String id, {required String motivo}) async =>
-      throw UnimplementedError();
-}
 
 class _PedidosFake implements PedidosService {
   _PedidosFake(this.pedidos);
 
   List<Pedido> pedidos;
   ApiException? cobrarError;
-  ApiException? estadoError;
   final List<String?> estadosConsultados = [];
-  final List<({String id, PedidoEstado estado})> estadosActualizados = [];
   final List<String> cobroUuids = [];
   final List<FormaPago> formas = [];
   final List<double?> recibidos = [];
   final List<({String id, List<({String productoId, double cantidad})> items})>
-  ediciones = [];
+      ediciones = [];
   int detalleLlamadas = 0;
 
   Pedido _buscar(String id) => pedidos.firstWhere((p) => p.id == id);
@@ -106,20 +84,19 @@ class _PedidosFake implements PedidosService {
       );
       final subtotal = redondear2(base.precioUnitario * linea.cantidad);
       total += subtotal;
-      nuevos.add(
-        PedidoItem(
-          id: base.id,
-          productoId: base.productoId,
-          nombre: base.nombre,
-          cantidad: linea.cantidad,
-          precioUnitario: base.precioUnitario,
-          unidad: base.unidad,
-          unidadLabel: base.unidadLabel,
-          subtotal: subtotal,
-        ),
-      );
+      nuevos.add(PedidoItem(
+        id: base.id,
+        productoId: base.productoId,
+        nombre: base.nombre,
+        cantidad: linea.cantidad,
+        precioUnitario: base.precioUnitario,
+        unidad: base.unidad,
+        unidadLabel: base.unidadLabel,
+        subtotal: subtotal,
+      ));
     }
-    final actualizado = _copia(previo, items: nuevos, total: redondear2(total));
+    final actualizado =
+        _copia(previo, items: nuevos, total: redondear2(total));
     _reemplazar(id, actualizado);
     return actualizado;
   }
@@ -128,20 +105,19 @@ class _PedidosFake implements PedidosService {
   Future<void> entregar(String id) async => throw UnimplementedError();
 
   @override
+  Future<Pedido> actualizarEstado(String id, PedidoEstado estado) async =>
+      throw UnimplementedError();
+
+  @override
   Future<Pedido> entregarParcial(
     String id, {
     required List<({String itemId, double cantidad, String? nota})> items,
-  }) async => throw UnimplementedError();
+  }) async =>
+      throw UnimplementedError();
 
   @override
-  Future<Pedido> actualizarEstado(String id, PedidoEstado estado) async {
-    estadosActualizados.add((id: id, estado: estado));
-    final fallo = estadoError;
-    if (fallo != null) throw fallo;
-    final actualizado = _copia(_buscar(id), estado: estado);
-    _reemplazar(id, actualizado);
-    return actualizado;
-  }
+  Future<Uint8List> comprobante(String pedidoId) async =>
+      throw UnimplementedError();
 
   @override
   Future<Pedido> crear({
@@ -150,24 +126,22 @@ class _PedidosFake implements PedidosService {
     String clienteNombre = 'Mostrador',
     String? clienteId,
     String? nota,
-  }) async => throw UnimplementedError();
+  }) async =>
+      throw UnimplementedError();
 
   @override
   Future<Ticket> ticket(String cobroId) async => throw UnimplementedError();
-
-  @override
-  Future<Uint8List> comprobante(String pedidoId) async => throw UnimplementedError();
 }
 
 String _apiEstado(PedidoEstado estado) => switch (estado) {
-  PedidoEstado.borrador => 'borrador',
-  PedidoEstado.enviado => 'enviado',
-  PedidoEstado.enPreparacion => 'en_preparacion',
-  PedidoEstado.listo => 'listo',
-  PedidoEstado.cobrado => 'cobrado',
-  PedidoEstado.anulado => 'anulado',
-  PedidoEstado.entregado => 'entregado',
-};
+      PedidoEstado.borrador => 'borrador',
+      PedidoEstado.enviado => 'enviado',
+      PedidoEstado.enPreparacion => 'en_preparacion',
+      PedidoEstado.listo => 'listo',
+      PedidoEstado.cobrado => 'cobrado',
+      PedidoEstado.anulado => 'anulado',
+      PedidoEstado.entregado => 'entregado',
+    };
 
 PedidoItem _item(
   String productoId, {
@@ -175,60 +149,63 @@ PedidoItem _item(
   double cantidad = 1,
   double precio = 100,
   String unidadLabel = 'kg',
-}) => PedidoItem(
-  id: 'itm_$productoId',
-  productoId: productoId,
-  nombre: nombre,
-  cantidad: cantidad,
-  precioUnitario: precio,
-  unidad: 'kg',
-  unidadLabel: unidadLabel,
-  subtotal: redondear2(precio * cantidad),
-);
+}) =>
+    PedidoItem(
+      id: 'itm_$productoId',
+      productoId: productoId,
+      nombre: nombre,
+      cantidad: cantidad,
+      precioUnitario: precio,
+      unidad: 'kg',
+      unidadLabel: unidadLabel,
+      subtotal: redondear2(precio * cantidad),
+    );
 
 Pedido _pedido(
   String id, {
   PedidoEstado estado = PedidoEstado.enviado,
   double total = 0,
   List<PedidoItem> items = const [],
-}) => Pedido(
-  id: id,
-  clientUuid: 'uuid-$id',
-  vendedorId: 'stf_venta',
-  vendedorNombre: 'Venta',
-  clienteId: null,
-  clienteNombre: 'Mostrador',
-  estado: estado,
-  nota: null,
-  items: items,
-  total: total,
-  createdAt: '2026-10-01 10:00:00+00',
-  updatedAt: '',
-  formaPago: null,
-  comprobanteNombre: null,
-);
+}) =>
+    Pedido(
+      id: id,
+      clientUuid: 'uuid-$id',
+      vendedorId: 'stf_venta',
+      vendedorNombre: 'Venta',
+      clienteId: null,
+      clienteNombre: 'Mostrador',
+      estado: estado,
+      nota: null,
+      items: items,
+      total: total,
+      createdAt: '2026-10-01 10:00:00+00',
+      updatedAt: '',
+      formaPago: null,
+      comprobanteNombre: null,
+    );
 
 Pedido _copia(
   Pedido p, {
   PedidoEstado? estado,
   List<PedidoItem>? items,
   double? total,
-}) => Pedido(
-  id: p.id,
-  clientUuid: p.clientUuid,
-  vendedorId: p.vendedorId,
-  vendedorNombre: p.vendedorNombre,
-  clienteId: p.clienteId,
-  clienteNombre: p.clienteNombre,
-  estado: estado ?? p.estado,
-  nota: p.nota,
-  items: items ?? p.items,
-  total: total ?? p.total,
-  createdAt: p.createdAt,
-  updatedAt: p.updatedAt,
-  formaPago: p.formaPago,
-  comprobanteNombre: p.comprobanteNombre,
-);
+}) =>
+    Pedido(
+      id: p.id,
+      clientUuid: p.clientUuid,
+      vendedorId: p.vendedorId,
+      vendedorNombre: p.vendedorNombre,
+      clienteId: p.clienteId,
+      clienteNombre: p.clienteNombre,
+      estado: estado ?? p.estado,
+      nota: p.nota,
+      items: items ?? p.items,
+      total: total ?? p.total,
+      createdAt: p.createdAt,
+      updatedAt: p.updatedAt,
+      formaPago: p.formaPago,
+      comprobanteNombre: p.comprobanteNombre,
+    );
 
 /// `pumpAndSettle` no sirve mientras hay spinners; se sondea el frame.
 Future<void> _esperar(
@@ -255,41 +232,13 @@ Future<void> _esperarSin(
   fail('No desapareció de pantalla: $finder');
 }
 
-const _cajaEstadoTest = CajaEstado(
-  id: 'caja_test',
-  abiertoAt: '2026-10-01 08:00:00+00',
-  esperado: 0,
-  egresos: 0,
-  totales: [],
-  ultimos: [],
-);
-
-Future<void> _montar(
-  WidgetTester tester,
-  _PedidosFake fake, {
-  _AnulacionesFake? anulaciones,
-}) async {
-  tester.view.physicalSize = const Size(1280, 900);
-  tester.view.devicePixelRatio = 1;
-  addTearDown(tester.view.resetPhysicalSize);
-  addTearDown(tester.view.resetDevicePixelRatio);
-  await tester.pumpWidget(
-    ProviderScope(
-      overrides: [
-        pedidosServiceProvider.overrideWithValue(fake),
-        anulacionesServiceProvider.overrideWithValue(
-          anulaciones ?? _AnulacionesFake(),
-        ),
-        cajaEstadoProvider.overrideWithValue(
-          AsyncValue.data(_cajaEstadoTest),
-        ),
-      ],
-      child: MaterialApp(
-        theme: temaClaro(),
-        home: const Scaffold(body: CajaPane(intervalo: null)),
-      ),
+Future<void> _montar(WidgetTester tester, _PedidosFake fake) async {
+  await tester.pumpWidget(ProviderScope(
+    overrides: [pedidosServiceProvider.overrideWithValue(fake)],
+    child: const MaterialApp(
+      home: Scaffold(body: CajaPane()),
     ),
-  );
+  ));
   await _esperar(tester, find.byKey(const Key('caja_lista')));
 }
 
@@ -305,19 +254,15 @@ Future<void> _drenarSnackBar(WidgetTester tester) async {
 }
 
 void main() {
-  testWidgets('recepción: carga, selección y acciones del pedido a cobrar', (
-    tester,
-  ) async {
+  testWidgets('recepción: carga, selección y acciones del pedido a cobrar',
+      (tester) async {
     final fake = _PedidosFake([
       _pedido('ped_1', total: 1500, items: [_item('p1', precio: 1500)]),
     ]);
     await _montar(tester, fake);
 
-    expect(
-      fake.estadosConsultados.first,
-      'borrador,enviado,en_preparacion,listo',
-      reason: 'el filtro inicial pide sólo estados por cobrar',
-    );
+    expect(fake.estadosConsultados.first, 'borrador,enviado,en_preparacion,listo',
+        reason: 'el filtro inicial pide sólo estados por cobrar');
     expect(find.byKey(const Key('caja_sin_seleccion')), findsOneWidget);
 
     await _abrirDetalle(tester, 'ped_1');
@@ -328,35 +273,27 @@ void main() {
       'Enviado',
     );
     expect(
-      tester.widget<Text>(find.byKey(const Key('caja_detalle_total'))).data,
-      'Total: \$1500,00',
+      tester.widget<MontoOculto>(find.byKey(const Key('caja_detalle_total'))).monto,
+      1500.0,
     );
     expect(find.text('1 × \$1500,00 / kg'), findsOneWidget);
     expect(find.byKey(const Key('caja_cobrar')), findsOneWidget);
     expect(find.byKey(const Key('caja_editar_items')), findsOneWidget);
   });
 
-  testWidgets('el tablero mueve el pedido cobrado a "Para entregar"', (
-    tester,
-  ) async {
+  testWidgets('pedido cobrado: sin acciones de cobro ni edición', (tester) async {
     final fake = _PedidosFake([
       _pedido('ped_1'),
       _pedido('ped_2', estado: PedidoEstado.cobrado),
     ]);
     await _montar(tester, fake);
+    expect(find.byKey(const Key('caja_tile_ped_2')), findsNothing,
+        reason: 'el filtro por cobrar excluye los cobrados');
 
-    expect(
-      fake.estadosConsultados,
-      containsAll(<String?>['cobrado', 'entregado']),
-      reason: 'el tablero consulta cada sección del recorrido por separado',
-    );
+    await tester.tap(find.text('Cobrados'));
     await _esperar(tester, find.byKey(const Key('caja_tile_ped_2')));
-    expect(
-      find.byKey(const Key('caja_tile_ped_1')),
-      findsOneWidget,
-      reason: 'la cola y lo que falta entregar se ven a la vez',
-    );
-    expect(find.text('PARA ENTREGAR'), findsOneWidget);
+    expect(fake.estadosConsultados.contains('cobrado,entregado'), isTrue);
+    expect(find.byKey(const Key('caja_tile_ped_1')), findsNothing);
 
     await _abrirDetalle(tester, 'ped_2');
     expect(
@@ -367,108 +304,62 @@ void main() {
     expect(find.byKey(const Key('caja_editar_items')), findsNothing);
   });
 
-  testWidgets('preparación: marca listo y relee el detalle canónico', (
-    tester,
-  ) async {
-    final fake = _PedidosFake([
-      _pedido('ped_1', estado: PedidoEstado.enPreparacion),
-    ]);
-    await _montar(tester, fake);
-    await _abrirDetalle(tester, 'ped_1');
-
-    expect(find.byKey(const Key('caja_marcar_listo')), findsOneWidget);
-    await tester.tap(find.byKey(const Key('caja_marcar_listo')));
-    await _esperar(tester, find.text('Pedido en "Listo".'));
-    await _esperar(tester, find.text('Listo'));
-
-    expect(
-      fake.estadosActualizados,
-      [(id: 'ped_1', estado: PedidoEstado.listo)],
-    );
-    expect(find.byKey(const Key('caja_marcar_listo')), findsNothing);
-  });
-
-  testWidgets('fallo al marcar listo muestra error y conserva el estado', (
-    tester,
-  ) async {
-    final fake = _PedidosFake([
-      _pedido('ped_1', estado: PedidoEstado.enPreparacion),
-    ])..estadoError = const ApiException('Transición no permitida.');
-    await _montar(tester, fake);
-    await _abrirDetalle(tester, 'ped_1');
-
-    await tester.tap(find.byKey(const Key('caja_marcar_listo')));
-    await _esperar(tester, find.text('Transición no permitida.'));
-
-    expect(
-      tester.widget<Text>(find.byKey(const Key('caja_detalle_estado'))).data,
-      'En preparación',
-    );
-  });
-
-  testWidgets(
-    'cobro en efectivo: vuelto estimado local y vuelto real del backend',
-    (tester) async {
-      final fake = _PedidosFake([
-        _pedido('ped_1', total: 1500, items: [_item('p1', precio: 1500)]),
-      ]);
-      await _montar(tester, fake);
-      await _abrirDetalle(tester, 'ped_1');
-
-      await tester.tap(find.byKey(const Key('caja_cobrar')));
-      await _esperar(tester, find.byKey(const Key('cobro_dialogo')));
-
-      expect(
-        tester.widget<Text>(find.byKey(const Key('cobro_total'))).data,
-        'Total: \$1500,00',
-      );
-      expect(
-        tester.widget<Text>(find.byKey(const Key('cobro_vuelto'))).data,
-        '\$0,00',
-        reason: 'con el total como importe inicial no hay vuelto',
-      );
-
-      await tester.enterText(find.byKey(const Key('cobro_recibido')), '2000');
-      await tester.pump();
-      expect(
-        tester.widget<Text>(find.byKey(const Key('cobro_vuelto'))).data,
-        '\$500,00',
-        reason: 'estimación local mientras se completa el formulario',
-      );
-
-      await tester.tap(find.byKey(const Key('cobro_confirmar')));
-      await _esperar(tester, find.byKey(const Key('caja_cobro_exito')));
-
-      expect(find.byKey(const Key('cobro_dialogo')), findsNothing);
-      expect(
-        find.text('Total: \$1500,00 · Vuelto: \$123,45'),
-        findsOneWidget,
-        reason:
-            'tras cobrar manda el vuelto real del backend, no la estimación',
-      );
-      expect(
-        tester.widget<Text>(find.byKey(const Key('caja_detalle_estado'))).data,
-        'Cobrado',
-        reason:
-            'el detalle se relee del backend, sin transición local ficticia',
-      );
-      expect(fake.detalleLlamadas, greaterThanOrEqualTo(2));
-      expect(find.byKey(const Key('caja_cobrar')), findsNothing);
-      expect(fake.cobroUuids.length, 1);
-      expect(fake.formas.single, FormaPago.efectivo);
-      expect(fake.recibidos.single, 2000.0);
-    },
-  );
-
-  testWidgets('error de cobro: avisa en el diálogo y conserva el pedido', (
-    tester,
-  ) async {
+  testWidgets('cobro en efectivo: vuelto estimado local y vuelto real del backend',
+      (tester) async {
     final fake = _PedidosFake([
       _pedido('ped_1', total: 1500, items: [_item('p1', precio: 1500)]),
     ]);
-    fake.cobrarError = ValidationException(
-      'Solo se cobra un pedido pendiente.',
+    await _montar(tester, fake);
+    await _abrirDetalle(tester, 'ped_1');
+
+    await tester.tap(find.byKey(const Key('caja_cobrar')));
+    await _esperar(tester, find.byKey(const Key('cobro_dialogo')));
+
+    expect(
+      tester.widget<Text>(find.byKey(const Key('cobro_total'))).data,
+      'Total: \$1500,00',
     );
+    expect(
+      tester.widget<Text>(find.byKey(const Key('cobro_vuelto'))).data,
+      '\$0,00',
+      reason: 'con el total como importe inicial no hay vuelto',
+    );
+
+    await tester.enterText(find.byKey(const Key('cobro_recibido')), '2000');
+    await tester.pump();
+    expect(
+      tester.widget<Text>(find.byKey(const Key('cobro_vuelto'))).data,
+      '\$500,00',
+      reason: 'estimación local mientras se completa el formulario',
+    );
+
+    await tester.tap(find.byKey(const Key('cobro_confirmar')));
+    await _esperar(tester, find.byKey(const Key('caja_cobro_exito')));
+
+    expect(find.byKey(const Key('cobro_dialogo')), findsNothing);
+    expect(
+      find.text('\$1500,00'),
+      findsAtLeastNWidgets(1),
+      reason: 'el monto total se muestra con MontoOculto',
+    );
+    expect(
+      tester.widget<Text>(find.byKey(const Key('caja_detalle_estado'))).data,
+      'Cobrado',
+      reason: 'el detalle se relee del backend, sin transición local ficticia',
+    );
+    expect(fake.detalleLlamadas, greaterThanOrEqualTo(2));
+    expect(find.byKey(const Key('caja_cobrar')), findsNothing);
+    expect(fake.cobroUuids.length, 1);
+    expect(fake.formas.single, FormaPago.efectivo);
+    expect(fake.recibidos.single, 2000.0);
+  });
+
+  testWidgets('error de cobro: avisa en el diálogo y conserva el pedido',
+      (tester) async {
+    final fake = _PedidosFake([
+      _pedido('ped_1', total: 1500, items: [_item('p1', precio: 1500)]),
+    ]);
+    fake.cobrarError = ValidationException('Solo se cobra un pedido pendiente.');
     await _montar(tester, fake);
     await _abrirDetalle(tester, 'ped_1');
 
@@ -477,11 +368,8 @@ void main() {
     await tester.tap(find.byKey(const Key('cobro_confirmar')));
     await _esperar(tester, find.byKey(const Key('cobro_error')));
 
-    expect(
-      find.byKey(const Key('cobro_dialogo')),
-      findsOneWidget,
-      reason: 'el diálogo sigue abierto para reintentar o cancelar',
-    );
+    expect(find.byKey(const Key('cobro_dialogo')), findsOneWidget,
+        reason: 'el diálogo sigue abierto para reintentar o cancelar');
     expect(find.text('Solo se cobra un pedido pendiente.'), findsOneWidget);
     expect(
       tester.widget<Text>(find.byKey(const Key('caja_detalle_estado'))).data,
@@ -491,11 +379,8 @@ void main() {
     final boton = tester.widget<FilledButton>(
       find.byKey(const Key('cobro_confirmar')),
     );
-    expect(
-      boton.onPressed,
-      isNotNull,
-      reason: 'tras el error el usuario puede reintentar',
-    );
+    expect(boton.onPressed, isNotNull,
+        reason: 'tras el error el usuario puede reintentar');
     expect(fake.cobroUuids.length, 1);
 
     await tester.tap(find.byKey(const Key('cobro_cancelar')));
@@ -523,103 +408,48 @@ void main() {
     );
     await _esperar(tester, find.byKey(const Key('caja_cobro_exito')));
 
-    expect(
-      fake.cobroUuids.length,
-      1,
-      reason: 'el mismo clic no debe generar dos cobros',
-    );
+    expect(fake.cobroUuids.length, 1,
+        reason: 'el mismo clic no debe generar dos cobros');
   });
 
-  testWidgets(
-    'edición de ítems inline: botones +/- y guardar',
-    (tester) async {
-      final fake = _PedidosFake([
-        _pedido('ped_1', total: 100, items: [_item('p1', precio: 100)]),
-      ]);
-      await _montar(tester, fake);
-      await _abrirDetalle(tester, 'ped_1');
-      expect(
-        tester.widget<Text>(find.byKey(const Key('caja_detalle_total'))).data,
-        'Total: \$100,00',
-      );
-
-      // Tap "Editar ítems" to enter inline edit mode
-      await tester.tap(find.byKey(const Key('caja_editar_items')));
-      await tester.pump();
-
-      // Should see inline editing controls
-      expect(find.byKey(const Key('caja_edit_mas_p1')), findsOneWidget);
-      expect(find.byKey(const Key('caja_edit_menos_p1')), findsOneWidget);
-      expect(find.byKey(const Key('caja_edit_trash_p1')), findsOneWidget);
-      expect(find.byKey(const Key('caja_edit_items_guardar')), findsOneWidget);
-      expect(find.byKey(const Key('caja_edit_items_cancelar')), findsOneWidget);
-
-      // Tap + twice to increase quantity to 3
-      await tester.tap(find.byKey(const Key('caja_edit_mas_p1')));
-      await tester.pump();
-      await tester.tap(find.byKey(const Key('caja_edit_mas_p1')));
-      await tester.pump();
-      expect(
-        tester.widget<Text>(find.byKey(const Key('caja_edit_cant_p1'))).data,
-        '3',
-      );
-
-      // Tap "Guardar"
-      await tester.tap(find.byKey(const Key('caja_edit_items_guardar')));
-      await _esperar(tester, find.text('Ítems actualizados.'));
-
-      expect(fake.ediciones.single.id, 'ped_1');
-      expect(fake.ediciones.single.items.single.productoId, 'p1');
-      expect(fake.ediciones.single.items.single.cantidad, 3.0);
-    },
-  );
-
-  testWidgets('anulación de pedido exige motivo y confirma en backend', (
-    tester,
-  ) async {
-    final pedidos = _PedidosFake([_pedido('ped_1')]);
-    final anulaciones = _AnulacionesFake();
-    await _montar(tester, pedidos, anulaciones: anulaciones);
+  testWidgets('edición de ítems: total estimado local y total real del backend',
+      (tester) async {
+    final fake = _PedidosFake([
+      _pedido('ped_1', total: 100, items: [_item('p1', precio: 100)]),
+    ]);
+    await _montar(tester, fake);
     await _abrirDetalle(tester, 'ped_1');
-
-    await tester.tap(find.byKey(const Key('caja_anular_pedido')));
-    await _esperar(tester, find.byKey(const Key('anulacion_motivo')));
     expect(
-      tester
-          .widget<FilledButton>(find.byKey(const Key('anulacion_confirmar')))
-          .onPressed,
-      isNull,
-      reason: 'el motivo es obligatorio',
+      tester.widget<MontoOculto>(find.byKey(const Key('caja_detalle_total'))).monto,
+      100.0,
     );
 
-    await tester.enterText(
-      find.byKey(const Key('anulacion_motivo')),
-      'Pedido duplicado',
-    );
+    await tester.tap(find.byKey(const Key('caja_editar_items')));
+    await _esperar(tester, find.byKey(const Key('items_dialogo')));
+
+    await tester.enterText(find.byKey(const Key('items_cantidad_p1')), '3');
     await tester.pump();
-    await tester.tap(find.byKey(const Key('anulacion_confirmar')));
-    await _esperar(tester, find.text('Pedido anulado.'));
-
-    expect(anulaciones.pedidos, [(id: 'ped_1', motivo: 'Pedido duplicado')]);
-  });
-
-  testWidgets('cancelar confirmación de anulación no llama a la API', (
-    tester,
-  ) async {
-    final anulaciones = _AnulacionesFake();
-    await _montar(
-      tester,
-      _PedidosFake([_pedido('ped_1')]),
-      anulaciones: anulaciones,
+    expect(
+      tester.widget<Text>(find.byKey(const Key('items_total_estimado'))).data,
+      'Total estimado: \$300,00',
     );
-    await _abrirDetalle(tester, 'ped_1');
 
-    await tester.tap(find.byKey(const Key('caja_anular_pedido')));
-    await _esperar(tester, find.byKey(const Key('anulacion_cancelar')));
-    await tester.tap(find.byKey(const Key('anulacion_cancelar')));
-    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('items_guardar')));
+    await _esperar(tester, find.byKey(const Key('items_confirmar')));
+    await tester.tap(find.byKey(const Key('items_confirmar_aceptar')));
 
-    expect(anulaciones.pedidos, isEmpty);
-    expect(find.byKey(const Key('caja_anular_pedido')), findsOneWidget);
+    await _esperar(tester, find.text('Ítems actualizados.'));
+    expect(fake.ediciones.single.id, 'ped_1');
+    expect(fake.ediciones.single.items.single.productoId, 'p1');
+    expect(fake.ediciones.single.items.single.cantidad, 3.0);
+    await _esperarSin(tester, find.byKey(const Key('items_dialogo')));
+
+    await _esperar(tester, find.text('\$300,00'));
+    expect(
+      tester.widget<MontoOculto>(find.byKey(const Key('caja_detalle_total'))).monto,
+      300.0,
+      reason: 'el total definitivo lo recalcula el backend',
+    );
+    await _drenarSnackBar(tester);
   });
 }

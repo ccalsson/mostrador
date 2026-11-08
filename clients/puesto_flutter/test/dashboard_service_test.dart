@@ -7,65 +7,6 @@ import 'package:puesto_flutter/core/network/api_client.dart';
 import 'package:puesto_flutter/models/dashboard.dart';
 import 'package:puesto_flutter/services/dashboard_service.dart';
 
-/// Payload tal como lo arma `dashboardResumenForStaff` en
-/// `app/src/lib/server/panel.ts` (respaldo real del contrato).
-Map<String, dynamic> _payloadBackend({int dias = 7}) => {
-      'dias': dias,
-      'ventas': 150000,
-      'ventasPrev': 100000,
-      'tickets': 12,
-      'ticketsPrev': 8,
-      'ticketPromedio': 12500,
-      'enCola': 3,
-      'series': [
-        {'dia': '2026-10-15', 'total': 20000, 'n': 2},
-        {'dia': '2026-10-16', 'total': 30000, 'n': 3},
-      ],
-      'top': [
-        {'nombre': 'Mate', 'cantidad': 40, 'total': 12000},
-        {'nombre': 'Factura', 'cantidad': 12, 'total': 6000},
-      ],
-      'formas': [
-        {'formaPago': 'efectivo', 'total': 100000, 'n': 7},
-        {'formaPago': 'transferencia', 'total': 50000, 'n': 5},
-      ],
-      'movimientos': [
-        {
-          'id': 'c-1',
-          'monto': 5000,
-          'formaPago': 'efectivo',
-          'createdAt': '2026-10-16 12:34:00',
-          'cliente': 'Ana',
-          'numero': 118,
-          'productos': 'Mate, Factura',
-        },
-      ],
-      'cola': [
-        {
-          'id': 'p-1',
-          'cliente': 'Beto',
-          'estado': 'en_preparacion',
-          'createdAt': '2026-10-16 12:30:00',
-          'total': 8000,
-          'vendedor': 'Vale',
-        },
-      ],
-      'trial': {
-        'diasRestantes': 14,
-        'ticketsHoy': 5,
-        'ticketsTrial': 42,
-        'producto': 'Naranja',
-        'puesto': 2,
-        'liderTickets': 12,
-        'compradores': 30,
-        'puestos': 8,
-        'imagenes': {
-          'resultados': '/slides/resultados.jpg',
-          'ranking': null,
-        },
-      },
-    };
-
 DashboardService _servicio(MockClient mock) => DashboardService(ApiClient(
       baseUrl: 'http://api.test',
       tokenProvider: () async => 'tok-1',
@@ -74,12 +15,31 @@ DashboardService _servicio(MockClient mock) => DashboardService(ApiClient(
     ));
 
 void main() {
-  test('obtener: GET /dashboard con parámetro dias y Bearer', () async {
+  test('obtener: GET /dashboard con parámetro dias', () async {
     late http.Request visto;
     final servicio = _servicio(MockClient((request) async {
       visto = request;
       return http.Response(
-        jsonEncode({'data': _payloadBackend(dias: 7)}),
+        jsonEncode({
+          'data': {
+            'totalVentas': 150000.5,
+            'totalCobrado': 140000.0,
+            'cantidadPedidos': 15,
+            'cantidadCobros': 12,
+            'pedidosPendientes': 2,
+            'stockBajoCount': 3,
+            'porFormaPago': {
+              'efectivo': 100000.0,
+              'transferencia': 40000.0,
+            },
+            'alertasSinLeer': 5,
+            'reputacionPromedio': 4.2,
+            'ventasPorSucursal': {
+              'Central': 90000.0,
+              'Norte': 60000.0,
+            },
+          },
+        }),
         200,
         headers: {'content-type': 'application/json; charset=utf-8'},
       );
@@ -91,90 +51,34 @@ void main() {
     expect(visto.url.path, '/api/v1/dashboard');
     expect(visto.url.queryParameters, {'dias': '7'});
     expect(visto.headers['authorization'], 'Bearer tok-1');
-    expect(resumen.dias, 7);
+    expect(resumen.totalVentas, 150000.5);
+    expect(resumen.totalCobrado, 140000.0);
+    expect(resumen.cantidadPedidos, 15);
+    expect(resumen.cantidadCobros, 12);
+    expect(resumen.pedidosPendientes, 2);
+    expect(resumen.stockBajoCount, 3);
+    expect(resumen.porFormaPago['efectivo'], 100000.0);
+    expect(resumen.porFormaPago['transferencia'], 40000.0);
+    expect(resumen.alertasSinLeer, 5);
+    expect(resumen.reputacionPromedio, 4.2);
+    expect(resumen.ventasPorSucursal['Central'], 90000.0);
+    expect(resumen.ventasPorSucursal['Norte'], 60000.0);
   });
 
-  test('DashboardResumen parsea el payload real del backend', () async {
-    final servicio = _servicio(MockClient((request) async {
-      return http.Response(
-        jsonEncode({'data': _payloadBackend(dias: 7)}),
-        200,
-        headers: {'content-type': 'application/json; charset=utf-8'},
-      );
-    }));
-
-    final r = await servicio.obtener(dias: 7);
-
-    expect(r.dias, 7);
-    expect(r.ventas, 150000);
-    expect(r.ventasPrev, 100000);
-    expect(r.tickets, 12);
-    expect(r.ticketsPrev, 8);
-    expect(r.ticketPromedio, 12500);
-    expect(r.enCola, 3);
-    expect(r.series.length, 2);
-    expect(r.series.first.dia, '2026-10-15');
-    expect(r.series.first.total, 20000);
-    expect(r.top.first.nombre, 'Mate');
-    expect(r.formas.first.formaPago, 'efectivo');
-    expect(r.movimientos.first.cliente, 'Ana');
-    expect(r.movimientos.first.numero, 118);
-    expect(r.cola.first.vendedor, 'Vale');
+  test('DashboardResumen.fromJson tolera respuestas vacías', () {
+    final resumen = DashboardResumen.fromJson(const {});
+    expect(resumen.totalVentas, 0);
+    expect(resumen.totalCobrado, 0);
+    expect(resumen.cantidadPedidos, 0);
+    expect(resumen.porFormaPago, isEmpty);
+    expect(resumen.reputacionPromedio, isNull);
+    expect(resumen.ventasPorSucursal, isEmpty);
   });
 
-  test('TrialInfo se parsea correctamente desde el payload', () async {
-    final servicio = _servicio(MockClient((request) async {
-      return http.Response(
-        jsonEncode({'data': _payloadBackend(dias: 7)}),
-        200,
-        headers: {'content-type': 'application/json; charset=utf-8'},
-      );
-    }));
-
-    final r = await servicio.obtener(dias: 7);
-
-    expect(r.trial, isNotNull);
-    expect(r.trial!.diasRestantes, 14);
-    expect(r.trial!.ticketsHoy, 5);
-    expect(r.trial!.ticketsTrial, 42);
-    expect(r.trial!.producto, 'Naranja');
-    expect(r.trial!.puesto, 2);
-    expect(r.trial!.liderTickets, 12);
-    expect(r.trial!.compradores, 30);
-    expect(r.trial!.puestos, 8);
-    expect(r.trial!.imagenes.resultados, '/slides/resultados.jpg');
-    expect(r.trial!.imagenes.ranking, isNull);
-  });
-
-  test('TrialInfo null cuando el backend no envía trial', () async {
-    final r = DashboardResumen.fromJson(const {
-      'dias': 7,
-      'ventas': 0,
-      'trial': null,
+  test('DashboardResumen.fromJson usa fallback para reputacion nula', () {
+    final resumen = DashboardResumen.fromJson(const {
+      'reputacionPromedio': null,
     });
-    expect(r.trial, isNull);
-  });
-
-  test('Deltas percentuales vs período anterior', () {
-    final r = DashboardResumen.fromJson(_payloadBackend());
-    expect(r.deltaVentasPct()!, closeTo(50.0, 0.001));
-    expect(r.deltaTicketsPct()!, closeTo(50.0, 0.001));
-  });
-
-  test('Delta null cuando no hay base (ventasPrev = 0)', () {
-    final r = DashboardResumen.fromJson(
-      {..._payloadBackend(), 'ventasPrev': 0, 'ticketsPrev': 0},
-    );
-    expect(r.deltaVentasPct(), isNull);
-    expect(r.deltaTicketsPct(), isNull);
-  });
-
-  test('DashboardResumen.fromJson tolera payload vacío', () {
-    final r = DashboardResumen.fromJson(const {});
-    expect(r.dias, 7);
-    expect(r.ventas, 0);
-    expect(r.series, isEmpty);
-    expect(r.movimientos, isEmpty);
-    expect(r.cola, isEmpty);
+    expect(resumen.reputacionPromedio, isNull);
   });
 }

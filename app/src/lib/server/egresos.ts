@@ -82,6 +82,17 @@ export async function createEgresoForStaff(
   const concepto = input.concepto.trim();
   if (!concepto) throw new Error("El concepto es obligatorio.");
   if (concepto.length > 200) throw new Error("El concepto es demasiado largo.");
+  
+  const categoriasValidas = [
+    "alquiler", "combustible", "servicios", "proveedores", 
+    "mercaderia", "sueldos", "otros",
+    // Legacy
+    "gasto", "retiro", "pago_proveedor", "otro"
+  ];
+  const categoria = input.categoria ?? "alquiler";
+  if (!categoriasValidas.includes(categoria)) {
+    throw new Error(`Categoría inválida: ${categoria}`);
+  }
 
   const sql = await getSql();
   const open = await sql<{ id: string }>`
@@ -94,7 +105,7 @@ export async function createEgresoForStaff(
   const id = newId("egr");
   await sql`
     insert into egresos_caja (id, tenant_id, cierre_id, monto, concepto, categoria, usuario_id)
-    values (${id}, ${staff.tenantId}, ${open[0].id}, ${input.monto}, ${concepto}, ${input.categoria ?? "gasto"}, ${staff.id})
+    values (${id}, ${staff.tenantId}, ${open[0].id}, ${input.monto}, ${concepto}, ${categoria}, ${staff.id})
   `;
   await audit(staff.tenantId, staff, "alta_egreso", "caja", {
     id,

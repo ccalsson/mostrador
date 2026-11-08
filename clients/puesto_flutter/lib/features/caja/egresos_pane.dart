@@ -13,6 +13,14 @@ import '../../services/egresos_service.dart';
 const _quiebreFicha = 1024.0;
 
 const _etiquetasCategoria = {
+  'alquiler': 'Alquiler',
+  'combustible': 'Combustible',
+  'servicios': 'Servicios',
+  'proveedores': 'Proveedores',
+  'mercaderia': 'Mercadería',
+  'sueldos': 'Sueldos',
+  'otros': 'Otros',
+  // Categorías legacy (aún pueden existir en datos viejos)
   'gasto': 'Gasto',
   'retiro': 'Retiro personal',
   'pago_proveedor': 'Pago a proveedor',
@@ -584,7 +592,7 @@ Future<void> mostrarDialogoNuevoEgreso(
     BuildContext context, WidgetRef ref) async {
   final conceptoCtrl = TextEditingController();
   final montoCtrl = TextEditingController();
-  var categoria = 'gasto';
+  var categoria = 'alquiler';
 
   final resultado = await showDialog<Map<String, String>>(
     context: context,
@@ -629,16 +637,19 @@ Future<void> mostrarDialogoNuevoEgreso(
                   border: OutlineInputBorder(),
                 ),
                 items: const [
-                  DropdownMenuItem(value: 'gasto', child: Text('Gasto')),
+                  DropdownMenuItem(value: 'alquiler', child: Text('Alquiler')),
                   DropdownMenuItem(
-                      value: 'retiro', child: Text('Retiro personal')),
+                      value: 'combustible', child: Text('Combustible')),
+                  DropdownMenuItem(value: 'servicios', child: Text('Servicios')),
                   DropdownMenuItem(
-                      value: 'pago_proveedor',
-                      child: Text('Pago a a proveedor')),
-                  DropdownMenuItem(value: 'otro', child: Text('Otro')),
+                      value: 'proveedores', child: Text('Proveedores')),
+                  DropdownMenuItem(
+                      value: 'mercaderia', child: Text('Mercadería')),
+                  DropdownMenuItem(value: 'sueldos', child: Text('Sueldos')),
+                  DropdownMenuItem(value: 'otros', child: Text('Otros')),
                 ],
                 onChanged: (v) =>
-                    setDialogState(() => categoria = v ?? 'gasto'),
+                    setDialogState(() => categoria = v ?? 'alquiler'),
               ),
             ],
           ),
