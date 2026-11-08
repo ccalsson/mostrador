@@ -13,7 +13,8 @@ import '../caja/error_caja.dart';
 
 /// Intervalo de sondeo del tablero. Pasar `null` a `intervalo` lo congela: lo
 /// usan los widget tests, que fallan si queda un `Timer.periodic` pendiente.
-const Duration kSondeoCola = Duration(seconds: 15);
+/// Paridad con la web (`vendedor.tsx:26` refetchInterval: 2500ms).
+const Duration kSondeoCola = Duration(milliseconds: 2500);
 
 /// Secciones del tablero, en el orden en que recorre un pedido: entra a la
 /// cola de caja, se cobra, se entrega. Cada una mapea al `?estados=` del

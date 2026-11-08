@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:puesto_flutter/core/errors/api_exceptions.dart';
@@ -58,6 +60,12 @@ class _PedidosFake implements PedidosService {
   Future<void> entregar(String id) async => throw UnimplementedError();
 
   @override
+  Future<Pedido> entregarParcial(
+    String id, {
+    required List<({String itemId, double cantidad, String? nota})> items,
+  }) async => throw UnimplementedError();
+
+  @override
   Future<Pedido> actualizarEstado(String id, PedidoEstado estado) async =>
       throw UnimplementedError();
 
@@ -66,6 +74,7 @@ class _PedidosFake implements PedidosService {
     required String clientUuid,
     required List<({String productoId, int cantidad})> items,
     String clienteNombre = 'Mostrador',
+    String? clienteId,
     String? nota,
   }) async =>
       throw UnimplementedError();
@@ -79,6 +88,9 @@ class _PedidosFake implements PedidosService {
 
   @override
   Future<Ticket> ticket(String cobroId) async => throw UnimplementedError();
+
+  @override
+  Future<Uint8List> comprobante(String pedidoId) async => throw UnimplementedError();
 }
 
 Pedido _pedido(String id, {PedidoEstado estado = PedidoEstado.enviado}) => Pedido(

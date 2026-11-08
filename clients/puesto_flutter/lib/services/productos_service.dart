@@ -112,6 +112,25 @@ class ProductosAdminService {
   Future<void> borrarFoto(String productoId) async {
     await _client.delete('/api/v1/productos/$productoId/foto');
   }
+
+  /// `PATCH /api/v1/productos/batch-costos` — actualización masiva de costos.
+  /// Solo admin/dueño. Devuelve la cantidad de productos actualizados.
+  Future<int> actualizarCostosMasivos(
+    List<({String productoId, double? costo})> items,
+  ) async {
+    final data = await _client.patch(
+      '/api/v1/productos/batch-costos',
+      body: {
+        'items': items
+            .map((e) => {
+                  'productoId': e.productoId,
+                  'costo': e.costo,
+                })
+            .toList(),
+      },
+    ) as Map<String, dynamic>;
+    return (data['data'] as Map<String, dynamic>)['actualizados'] as int? ?? 0;
+  }
 }
 
 final productosAdminServiceProvider = Provider<ProductosAdminService>(

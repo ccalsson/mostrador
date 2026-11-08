@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -126,6 +128,12 @@ class _PedidosFake implements PedidosService {
   Future<void> entregar(String id) async => throw UnimplementedError();
 
   @override
+  Future<Pedido> entregarParcial(
+    String id, {
+    required List<({String itemId, double cantidad, String? nota})> items,
+  }) async => throw UnimplementedError();
+
+  @override
   Future<Pedido> actualizarEstado(String id, PedidoEstado estado) async {
     estadosActualizados.add((id: id, estado: estado));
     final fallo = estadoError;
@@ -140,11 +148,15 @@ class _PedidosFake implements PedidosService {
     required String clientUuid,
     required List<({String productoId, int cantidad})> items,
     String clienteNombre = 'Mostrador',
+    String? clienteId,
     String? nota,
   }) async => throw UnimplementedError();
 
   @override
   Future<Ticket> ticket(String cobroId) async => throw UnimplementedError();
+
+  @override
+  Future<Uint8List> comprobante(String pedidoId) async => throw UnimplementedError();
 }
 
 String _apiEstado(PedidoEstado estado) => switch (estado) {
@@ -366,7 +378,7 @@ void main() {
 
     expect(find.byKey(const Key('caja_marcar_listo')), findsOneWidget);
     await tester.tap(find.byKey(const Key('caja_marcar_listo')));
-    await _esperar(tester, find.text('Pedido marcado como listo.'));
+    await _esperar(tester, find.text('Pedido en "Listo".'));
     await _esperar(tester, find.text('Listo'));
 
     expect(
@@ -519,7 +531,7 @@ void main() {
   });
 
   testWidgets(
-    'edición de ítems: total estimado local y total real del backend',
+    'edición de ítems inline: botones +/- y guardar',
     (tester) async {
       final fake = _PedidosFake([
         _pedido('ped_1', total: 100, items: [_item('p1', precio: 100)]),
@@ -531,33 +543,34 @@ void main() {
         'Total: \$100,00',
       );
 
+      // Tap "Editar ítems" to enter inline edit mode
       await tester.tap(find.byKey(const Key('caja_editar_items')));
-      await _esperar(tester, find.byKey(const Key('items_dialogo')));
+      await tester.pump();
 
-      await tester.enterText(find.byKey(const Key('items_cantidad_p1')), '3');
+      // Should see inline editing controls
+      expect(find.byKey(const Key('caja_edit_mas_p1')), findsOneWidget);
+      expect(find.byKey(const Key('caja_edit_menos_p1')), findsOneWidget);
+      expect(find.byKey(const Key('caja_edit_trash_p1')), findsOneWidget);
+      expect(find.byKey(const Key('caja_edit_items_guardar')), findsOneWidget);
+      expect(find.byKey(const Key('caja_edit_items_cancelar')), findsOneWidget);
+
+      // Tap + twice to increase quantity to 3
+      await tester.tap(find.byKey(const Key('caja_edit_mas_p1')));
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('caja_edit_mas_p1')));
       await tester.pump();
       expect(
-        tester.widget<Text>(find.byKey(const Key('items_total_estimado'))).data,
-        'Total estimado: \$300,00',
+        tester.widget<Text>(find.byKey(const Key('caja_edit_cant_p1'))).data,
+        '3',
       );
 
-      await tester.tap(find.byKey(const Key('items_guardar')));
-      await _esperar(tester, find.byKey(const Key('items_confirmar')));
-      await tester.tap(find.byKey(const Key('items_confirmar_aceptar')));
-
+      // Tap "Guardar"
+      await tester.tap(find.byKey(const Key('caja_edit_items_guardar')));
       await _esperar(tester, find.text('Ítems actualizados.'));
+
       expect(fake.ediciones.single.id, 'ped_1');
       expect(fake.ediciones.single.items.single.productoId, 'p1');
       expect(fake.ediciones.single.items.single.cantidad, 3.0);
-      await _esperarSin(tester, find.byKey(const Key('items_dialogo')));
-
-      await _esperar(tester, find.text('Total: \$300,00'));
-      expect(
-        tester.widget<Text>(find.byKey(const Key('caja_detalle_total'))).data,
-        'Total: \$300,00',
-        reason: 'el total definitivo lo recalcula el backend',
-      );
-      await _drenarSnackBar(tester);
     },
   );
 

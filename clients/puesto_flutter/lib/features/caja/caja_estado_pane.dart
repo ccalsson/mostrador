@@ -7,6 +7,7 @@ import '../../models/caja.dart';
 import '../../services/caja_service.dart';
 import '../../services/anulaciones_service.dart';
 import '../../services/catalogo_service.dart';
+import '../../services/facturacion_service.dart';
 import '../../services/pedidos_service.dart';
 import 'anulacion_dialog.dart';
 import 'cierre_controller.dart';
@@ -209,11 +210,15 @@ class _FilaCobro extends ConsumerStatefulWidget {
 
 class _FilaCobroState extends ConsumerState<_FilaCobro> {
   bool _enviando = false;
+  bool _facturando = false;
 
   @override
   Widget build(BuildContext context) {
     final estilo = Theme.of(context).textTheme.bodyMedium;
     final cobro = widget.cobro;
+    // Gap 4: config AFIP para saber si está habilitada la facturación.
+    final afipAsync = ref.watch(afipConfigProvider);
+    final afip = afipAsync.value;
     return Padding(
       key: Key('caja_mov_fila_${cobro.id}'),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -256,6 +261,41 @@ class _FilaCobroState extends ConsumerState<_FilaCobro> {
               ),
             ],
           ),
+          // --- Gap 4: facturación electrónica inline ---
+          if (cobro.facturaId != null)
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                key: Key('caja_ver_factura_${cobro.id}'),
+                onPressed: () => _mostrarFactura(context, cobro.facturaId!),
+                icon: const Icon(Icons.receipt_long, size: 18),
+                label: Text(
+                  cobro.cae != null
+                      ? 'Ver factura · CAE ${cobro.cae}'
+                      : 'Ver factura',
+                ),
+              ),
+            )
+          else if (afip?.habilitada == true)
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                key: Key('caja_facturar_${cobro.id}'),
+                onPressed: _facturando ? null : () => _emitirFactura(cobro.id),
+                icon: _facturando
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.fact_check_outlined, size: 18),
+                label: Text(
+                  afip?.ambiente == 'homo'
+                      ? 'Factura de prueba'
+                      : 'Factura electrónica',
+                ),
+              ),
+            ),
           Align(
             alignment: Alignment.centerRight,
             child: TextButton.icon(
@@ -268,6 +308,48 @@ class _FilaCobroState extends ConsumerState<_FilaCobro> {
         ],
       ),
     );
+  }
+
+  /// Gap 4: muestra la factura en un diálogo simple con los datos del CAE.
+  void _mostrarFactura(BuildContext context, String facturaId) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => _DialogoFactura(facturaId: facturaId),
+    );
+  }
+
+  /// Gap 4: emite factura electrónica para un cobro sin factura.
+  Future<void> _emitirFactura(String cobroId) async {
+    setState(() => _facturando = true);
+    try {
+      final factura = await ref
+          .read(facturacionServiceProvider)
+          .emitirFactura(cobroId);
+      if (!mounted) return;
+      ref.invalidate(cajaEstadoProvider);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${factura.tipoLabel} · CAE ${factura.cae ?? "—"}'
+            '${factura.ambiente == "homo" ? " (prueba)" : ""}',
+          ),
+        ),
+      );
+    } on ApiException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.message)),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No se pudo emitir la factura.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _facturando = false);
+    }
   }
 
   Future<void> _anularCobro() async {
@@ -307,5 +389,71 @@ class _FilaCobroState extends ConsumerState<_FilaCobro> {
     } finally {
       if (mounted) setState(() => _enviando = false);
     }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Gap 4: diálogo con los datos de una factura emitida
+// ---------------------------------------------------------------------------
+
+class _DialogoFactura extends ConsumerWidget {
+  const _DialogoFactura({required this.facturaId});
+
+  final String facturaId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final facturaAsync = ref.watch(facturaProvider(facturaId));
+    final tema = Theme.of(context);
+    return AlertDialog(
+      key: const Key('dialogo_factura'),
+      title: const Text('Factura electrónica'),
+      content: SizedBox(
+        width: 400,
+        child: facturaAsync.when(
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (e, _) => Text('Error: $e'),
+          data: (factura) => SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${factura.tipoLabel} ${factura.numeroFiscal}',
+                  style: tema.textTheme.titleMedium,
+                ),
+                const SizedBox(height: 8),
+                Text('Fecha: ${factura.fecha}'),
+                Text('Receptor: ${factura.receptorNombre ?? "—"}'),
+                if (factura.receptorCondicion != null)
+                  Text('Condición: ${factura.receptorCondicion}'),
+                const Divider(),
+                Text('Neto: ${moneda(factura.neto)}'),
+                Text('IVA: ${moneda(factura.iva)}'),
+                Text(
+                  'Total: ${moneda(factura.total)}',
+                  style: tema.textTheme.titleSmall,
+                ),
+                const Divider(),
+                Text('CAE: ${factura.cae ?? "—"}'),
+                if (factura.caeVto != null) Text('Vto. CAE: ${factura.caeVto}'),
+                if (factura.ambiente == 'homo')
+                  Text(
+                    'Ambiente: Homologación (sin validez fiscal)',
+                    style: tema.textTheme.bodySmall?.copyWith(
+                      color: tema.colorScheme.error,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cerrar'),
+        ),
+      ],
+    );
   }
 }

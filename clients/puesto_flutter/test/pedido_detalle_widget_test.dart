@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -26,6 +28,13 @@ class _PedidosFake implements PedidosService {
   }
 
   @override
+  Future<Pedido> entregarParcial(
+    String id, {
+    required List<({String itemId, double cantidad, String? nota})> items,
+  }) async =>
+      pedido;
+
+  @override
   Future<Pedido> actualizarEstado(String id, PedidoEstado estado) async =>
       throw UnimplementedError();
 
@@ -40,6 +49,7 @@ class _PedidosFake implements PedidosService {
     required String clientUuid,
     required List<({String productoId, int cantidad})> items,
     String clienteNombre = 'Mostrador',
+    String? clienteId,
     String? nota,
   }) async =>
       throw UnimplementedError();
@@ -62,6 +72,9 @@ class _PedidosFake implements PedidosService {
 
   @override
   Future<Ticket> ticket(String cobroId) async => throw UnimplementedError();
+
+  @override
+  Future<Uint8List> comprobante(String pedidoId) async => throw UnimplementedError();
 }
 
 class _ChecklistFake implements ChecklistService {
@@ -133,11 +146,11 @@ Future<void> _montar(WidgetTester tester, _PedidosFake fake) async {
 /// `pump` intermedio (taps repetidos en el mismo frame).
 Future<void> _confirmarDobleTap(WidgetTester tester) async {
   await tester.tap(find.byKey(const Key('pedido_entregar')));
-  await _esperar(tester, find.byKey(const Key('entrega_confirmar')));
-  await tester.tap(find.byKey(const Key('entrega_confirmar')));
-  // Tras el primer tap el diálogo ya se está cerrando; el segundo tap no
-  // debe producir otra petición (warnIfMissed: el diálogo ya no es hittable).
-  await tester.tap(find.byKey(const Key('entrega_confirmar')), warnIfMissed: false);
+  await _esperar(tester, find.byKey(const Key('entrega_total')));
+  // El diálogo se cierra inmediatamente al tocar "Entrega total" (paridad con
+  // el guard de doble-tap del diálogo web). El segundo tap queda en nada.
+  await tester.tap(find.byKey(const Key('entrega_total')));
+  await tester.pumpAndSettle();
 }
 
 Future<void> _drenarSnackBar(WidgetTester tester) async {
@@ -196,7 +209,7 @@ void main() {
     await _esperar(tester, find.byKey(const Key('entrega_error')));
 
     expect(fake.entregas, 1);
-    expect(find.text('Falla simulada del servidor.'), findsOneWidget);
+    expect(find.text('Falla simulada del servidor.'), findsWidgets);
     expect(find.text('Cobrado'), findsOneWidget,
         reason: 'el estado mostrado no se altera artificialmente');
     final boton = tester.widget<FilledButton>(

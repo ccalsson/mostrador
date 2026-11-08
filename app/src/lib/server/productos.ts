@@ -131,3 +131,31 @@ export async function ordenarProductosForStaff(staff: Staff, ids: string[]) {
   }
   return { ok: true as const };
 }
+
+/**
+ * Actualización masiva de costos de productos (solo admin/dueño).
+ * Recibe un array de {productoId, costo} y actualiza cada uno.
+ */
+export async function batchCostosForStaff(
+  staff: Staff,
+  items: { productoId: string; costo: number | null }[],
+) {
+  assertRole(staff, ["admin"]);
+  if (items.length === 0) return { actualizados: 0 };
+  if (items.length > 200) throw new Error("Máximo 200 productos por operación.");
+  const sql = await getSql();
+  let actualizados = 0;
+  for (const item of items) {
+    const result = validarCosto(item.costo);
+    if (!result.ok) throw new Error(`Costo inválido para ${item.productoId}: ${result.error}`);
+    const rows = await sql`
+      update productos
+      set costo = ${result.costo}, updated_at = now()
+      where id = ${item.productoId} and tenant_id = ${staff.tenantId} and activo = true
+      returning id
+    `;
+    if (rows.length > 0) actualizados++;
+  }
+  await audit(staff.tenantId, staff, "batch_costos", "producto", { cantidad: actualizados });
+  return { actualizados };
+}

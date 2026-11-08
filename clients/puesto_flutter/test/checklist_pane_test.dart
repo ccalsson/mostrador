@@ -115,7 +115,7 @@ void main() {
     await _montar(tester, fake);
     await _esperar(tester, find.byKey(const Key('checklist_input')));
 
-    expect(find.text('No hay items en el checklist.\nAgrega items para verificar antes de entregar.'),
+    expect(find.text('No hay ítems en el checklist.\nAgregá ítems para verificar antes de entregar.'),
         findsOneWidget);
     expect(find.byKey(const Key('checklist_agregar')), findsOneWidget);
   });

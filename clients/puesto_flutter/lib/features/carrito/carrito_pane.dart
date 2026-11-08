@@ -4,8 +4,11 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/format.dart';
 import '../../models/carrito.dart';
+import '../../models/cliente.dart';
 import '../../models/pedido.dart';
+import '../../services/clientes_service.dart';
 import 'carrito_controller.dart';
+import 'quick_cliente_dialog.dart';
 
 /// Carrito del vendedor: líneas con cantidades, total y confirmación
 /// explícita. Tras crear el pedido muestra la pantalla de resultado.
@@ -22,6 +25,106 @@ class CarritoPane extends ConsumerWidget {
       return _CarritoConBadge(ref: ref);
     }
     return _ListaCarrito(carrito: carrito);
+  }
+}
+
+/// Selector de cliente con botón "+" para alta rápida inline.
+/// Paridad con el `QuickCliente` de la web (`vendedor.tsx:182-189`).
+class _SelectorCliente extends ConsumerWidget {
+  const _SelectorCliente({
+    required this.clienteId,
+    required this.clienteNombre,
+    required this.onClienteChanged,
+  });
+
+  final String? clienteId;
+  final String clienteNombre;
+  final ValueChanged<Cliente?> onClienteChanged;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final clientes = ref.watch(clientesProvider);
+    final tema = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Cliente', style: tema.textTheme.labelMedium),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              Expanded(
+                child: clientes.when(
+                  data: (lista) {
+                    final opciones = [
+                      // "Mostrador" como opción por defecto (sin clienteId).
+                      const Cliente(id: '', nombre: 'Mostrador'),
+                      ...lista.where((c) => c.activo),
+                    ];
+                    return DropdownButtonFormField<String>(
+                      key: const Key('carrito_cliente_selector'),
+                      initialValue: clienteId ?? '',
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        isDense: true,
+                        border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      ),
+                      items: [
+                        for (final c in opciones)
+                          DropdownMenuItem(value: c.id, child: Text(c.nombre)),
+                      ],
+                      onChanged: (nuevoId) {
+                        if (nuevoId == null || nuevoId.isEmpty) {
+                          onClienteChanged(null);
+                        } else {
+                          final cliente = opciones.firstWhere((c) => c.id == nuevoId);
+                          onClienteChanged(cliente);
+                        }
+                      },
+                    );
+                  },
+                  loading: () => const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8),
+                    child: LinearProgressIndicator(),
+                  ),
+                  error: (_, _) => Text(
+                    'No se pudieron cargar los clientes.',
+                    style: TextStyle(color: tema.colorScheme.error),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton.filledTonal(
+                key: const Key('carrito_cliente_nuevo'),
+                tooltip: 'Crear cliente nuevo',
+                onPressed: () => _abrirQuickCliente(context, ref),
+                icon: const Icon(Icons.person_add_alt, size: 20),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _abrirQuickCliente(BuildContext context, WidgetRef ref) async {
+    final cliente = await showDialog<Cliente>(
+      context: context,
+      builder: (_) => const QuickClienteDialog(),
+    );
+    if (cliente != null) {
+      onClienteChanged(cliente);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${cliente.nombre} quedó cargado'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    }
   }
 }
 
@@ -135,6 +238,17 @@ class _ListaCarrito extends ConsumerWidget {
               _mostrarSnackBarResultados(context, resultados);
             },
           ),
+        // Selector de cliente
+        _SelectorCliente(
+          clienteId: carrito.clienteId,
+          clienteNombre: carrito.clienteNombre,
+          onClienteChanged: (cliente) {
+            controlador.fijarCliente(
+              clienteId: cliente?.id,
+              clienteNombre: cliente?.nombre ?? 'Mostrador',
+            );
+          },
+        ),
         Expanded(
           child: ListView.separated(
             key: const Key('carrito_lineas'),

@@ -118,6 +118,72 @@ class PedidoCola {
       );
 }
 
+/// Datos del trial Pro que la web usa en la vitrina (slider de destacados).
+///
+/// El backend (`slidesTrial` en `panel.ts`) lo calcula a partir de las
+/// suscripciones SaaS activas; si no hay trial devuelve `null` en el JSON.
+class TrialInfo {
+  const TrialInfo({
+    required this.diasRestantes,
+    required this.ticketsHoy,
+    required this.ticketsTrial,
+    required this.producto,
+    required this.puesto,
+    required this.liderTickets,
+    required this.compradores,
+    required this.puestos,
+    required this.imagenes,
+  });
+
+  final int diasRestantes;
+  final int ticketsHoy;
+  final int ticketsTrial;
+  final String? producto;
+  final int? puesto;
+  final int liderTickets;
+  final int compradores;
+  final int puestos;
+  final TrialImagenes imagenes;
+
+  factory TrialInfo.fromJson(Map<String, dynamic> json) => TrialInfo(
+        diasRestantes: (json['diasRestantes'] as num?)?.toInt() ?? 0,
+        ticketsHoy: (json['ticketsHoy'] as num?)?.toInt() ?? 0,
+        ticketsTrial: (json['ticketsTrial'] as num?)?.toInt() ?? 0,
+        producto: json['producto'] as String?,
+        puesto: (json['puesto'] as num?)?.toInt(),
+        liderTickets: (json['liderTickets'] as num?)?.toInt() ?? 0,
+        compradores: (json['compradores'] as num?)?.toInt() ?? 0,
+        puestos: (json['puestos'] as num?)?.toInt() ?? 0,
+        imagenes: TrialImagenes.fromJson(
+          json['imagenes'] as Map<String, dynamic>? ?? const {},
+        ),
+      );
+}
+
+class TrialImagenes {
+  const TrialImagenes({
+    this.resultados,
+    this.producto,
+    this.ranking,
+    this.actividad,
+    this.cuenta,
+  });
+
+  final String? resultados;
+  final String? producto;
+  final String? ranking;
+  final String? actividad;
+  final String? cuenta;
+
+  factory TrialImagenes.fromJson(Map<String, dynamic> json) => TrialImagenes(
+        resultados: json['resultados'] as String?,
+        producto: json['producto'] as String?,
+        ranking: json['ranking'] as String?,
+        actividad: json['actividad'] as String?,
+        cuenta: json['cuenta'] as String?,
+      );
+}
+
 class DashboardResumen {
   const DashboardResumen({
     required this.dias,
@@ -132,6 +198,7 @@ class DashboardResumen {
     required this.formas,
     required this.movimientos,
     required this.cola,
+    this.trial,
   });
 
   final int dias;
@@ -146,6 +213,7 @@ class DashboardResumen {
   final List<FormaPagoTotal> formas;
   final List<Movimiento> movimientos;
   final List<PedidoCola> cola;
+  final TrialInfo? trial;
 
   factory DashboardResumen.fromJson(Map<String, dynamic> json) {
     List<T> parseLista<T>(
@@ -169,6 +237,9 @@ class DashboardResumen {
       formas: parseLista(json['formas'], FormaPagoTotal.fromJson),
       movimientos: parseLista(json['movimientos'], Movimiento.fromJson),
       cola: parseLista(json['cola'], PedidoCola.fromJson),
+      trial: json['trial'] is Map<String, dynamic>
+          ? TrialInfo.fromJson(json['trial'] as Map<String, dynamic>)
+          : null,
     );
   }
 
@@ -185,6 +256,7 @@ class DashboardResumen {
     formas: [],
     movimientos: [],
     cola: [],
+    trial: null,
   );
 
   /// Delta percentual vs el período anterior. `null` si no hay base.

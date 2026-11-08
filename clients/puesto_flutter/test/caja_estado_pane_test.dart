@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -106,6 +107,12 @@ class _PedidosVacioFake implements PedidosService {
   Future<void> entregar(String id) async => throw UnimplementedError();
 
   @override
+  Future<Pedido> entregarParcial(
+    String id, {
+    required List<({String itemId, double cantidad, String? nota})> items,
+  }) async => throw UnimplementedError();
+
+  @override
   Future<Pedido> actualizarEstado(String id, PedidoEstado estado) async =>
       throw UnimplementedError();
 
@@ -114,11 +121,15 @@ class _PedidosVacioFake implements PedidosService {
     required String clientUuid,
     required List<({String productoId, int cantidad})> items,
     String clienteNombre = 'Mostrador',
+    String? clienteId,
     String? nota,
   }) async => throw UnimplementedError();
 
   @override
   Future<Ticket> ticket(String cobroId) async => throw UnimplementedError();
+
+  @override
+  Future<Uint8List> comprobante(String pedidoId) async => throw UnimplementedError();
 }
 
 UltimoCobro _cobro(String id, {double monto = 7200, int? numero = 1090}) =>

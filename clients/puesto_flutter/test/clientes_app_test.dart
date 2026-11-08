@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:puesto_flutter/core/network/api_client.dart';
+import 'package:puesto_flutter/core/tema.dart';
 import 'package:puesto_flutter/features/admin/clientes_app_pane.dart';
 import 'package:puesto_flutter/models/comprador_app.dart';
 import 'package:puesto_flutter/services/compradores_app_service.dart';
@@ -167,10 +168,68 @@ void main() {
   group('ClientesAppPane', () {
     late MockClient httpClient;
 
+    Map<String, dynamic> respuestaCompradoresApp() => {
+          'data': {
+            'compradores': [
+              {
+                'userId': 'user_1',
+                'email': 'juan@test.com',
+                'nombre': 'Juan Perez',
+                'telefono': '1122334455',
+                'identidad': 'aprobada',
+                'clienteId': null,
+                'pedidos': 3,
+                'enLista': false,
+              },
+              {
+                'userId': 'user_2',
+                'email': 'maria@test.com',
+                'nombre': 'Maria Lopez',
+                'telefono': null,
+                'identidad': 'sin_documento',
+                'clienteId': 'cli_99',
+                'pedidos': 7,
+                'enLista': true,
+              },
+            ],
+          },
+        };
+
+    Map<String, dynamic> respuestaEstadisticas() => {
+          'data': {
+            'pedidos': 3,
+            'total': 15000.0,
+            'cobrados': 2,
+            'enCurso': 1,
+            'anulados': 0,
+            'ultimo': '2026-10-20 14:30:00',
+            'formas': [
+              {'forma': 'efectivo', 'cantidad': 2, 'total': 10000.0},
+              {'forma': 'transferencia', 'cantidad': 1, 'total': 5000.0},
+            ],
+          },
+        };
+
     setUp(() {
       httpClient = MockClient((request) async {
+        final path = request.url.path;
+        if (request.method == 'GET' && path == '/api/v1/compradores-app') {
+          return http.Response(
+            jsonEncode(respuestaCompradoresApp()),
+            200,
+            headers: {'content-type': 'application/json; charset=utf-8'},
+          );
+        }
         if (request.method == 'GET' &&
-            request.url.path == '/api/v1/clientes') {
+            path.endsWith('/estadisticas') &&
+            path.startsWith('/api/v1/compradores-app/')) {
+          return http.Response(
+            jsonEncode(respuestaEstadisticas()),
+            200,
+            headers: {'content-type': 'application/json; charset=utf-8'},
+          );
+        }
+        if (request.method == 'GET' && path == '/api/v1/clientes') {
           return http.Response(
             jsonEncode(_respuestaClientes()),
             200,
@@ -195,7 +254,7 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           overrides: [apiClientProvider.overrideWithValue(apiClient)],
-          child: const MaterialApp(
+          child: MaterialApp(theme: temaClaro(),
             home: Scaffold(body: ClientesAppPane()),
           ),
         ),
@@ -209,20 +268,67 @@ void main() {
       expect(find.byKey(const Key('clientes_app_lista')), findsOneWidget);
       expect(find.text('Juan Perez'), findsOneWidget);
       expect(find.text('Maria Lopez'), findsOneWidget);
-      // El cliente de puesto NO aparece
-      expect(find.text('Almacen Centro'), findsNothing);
     });
 
     testWidgets('muestra estadisticas con total de compradores',
         (tester) async {
       await abrirPane(tester);
 
-      // Hay 2 compradores
+      // La barra de estadísticas muestra el total de compradores (2)
       expect(find.text('2'), findsWidgets);
     });
 
-    testWidgets('filtra por busqueda de nombre', (tester) async {
-      await abrirPane(tester);
+    testWidgets('filtra por busqueda de nombre via servidor', (tester) async {
+      // Mock que responde según el query param 'busca'
+      final httpClientBusqueda = MockClient((request) async {
+        final path = request.url.path;
+        if (request.method == 'GET' && path == '/api/v1/compradores-app') {
+          final busca = request.url.queryParameters['busca'] ?? '';
+          final compradores = respuestaCompradoresApp()['data']['compradores']
+              as List<dynamic>;
+          final filtrados = busca.isEmpty
+              ? compradores
+              : compradores
+                  .where((c) =>
+                      (c['nombre'] as String).toLowerCase().contains(busca.toLowerCase()))
+                  .toList();
+          return http.Response(
+            jsonEncode({
+              'data': {'compradores': filtrados}
+            }),
+            200,
+            headers: {'content-type': 'application/json; charset=utf-8'},
+          );
+        }
+        if (request.method == 'GET' && path.endsWith('/estadisticas')) {
+          return http.Response(
+            jsonEncode(respuestaEstadisticas()),
+            200,
+            headers: {'content-type': 'application/json; charset=utf-8'},
+          );
+        }
+        return http.Response('', 404);
+      });
+
+      tester.view.physicalSize = const Size(1280, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final apiClient = ApiClient(
+        baseUrl: 'http://api.test',
+        tokenProvider: () async => 'tok-1',
+        httpClient: httpClientBusqueda,
+        timeout: const Duration(seconds: 5),
+      );
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [apiClientProvider.overrideWithValue(apiClient)],
+          child: MaterialApp(theme: temaClaro(),
+            home: Scaffold(body: ClientesAppPane()),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
 
       await tester.enterText(
         find.byKey(const Key('clientes_app_busqueda')),
@@ -235,7 +341,56 @@ void main() {
     });
 
     testWidgets('muestra mensaje cuando no hay resultados', (tester) async {
-      await abrirPane(tester);
+      // Mock que devuelve lista vacía cuando busca algo inexistente
+      final httpClientVacio = MockClient((request) async {
+        final path = request.url.path;
+        if (request.method == 'GET' && path == '/api/v1/compradores-app') {
+          final busca = request.url.queryParameters['busca'];
+          if (busca != null && busca.isNotEmpty) {
+            return http.Response(
+              jsonEncode({
+                'data': {'compradores': <dynamic>[]}
+              }),
+              200,
+              headers: {'content-type': 'application/json; charset=utf-8'},
+            );
+          }
+          // Sin búsqueda devuelve los compradores normales
+          return http.Response(
+            jsonEncode(respuestaCompradoresApp()),
+            200,
+            headers: {'content-type': 'application/json; charset=utf-8'},
+          );
+        }
+        if (request.method == 'GET' && path.endsWith('/estadisticas')) {
+          return http.Response(
+            jsonEncode(respuestaEstadisticas()),
+            200,
+            headers: {'content-type': 'application/json; charset=utf-8'},
+          );
+        }
+        return http.Response('', 404);
+      });
+
+      tester.view.physicalSize = const Size(1280, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final apiClient = ApiClient(
+        baseUrl: 'http://api.test',
+        tokenProvider: () async => 'tok-1',
+        httpClient: httpClientVacio,
+        timeout: const Duration(seconds: 5),
+      );
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [apiClientProvider.overrideWithValue(apiClient)],
+          child: MaterialApp(theme: temaClaro(),
+            home: Scaffold(body: ClientesAppPane()),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
 
       await tester.enterText(
         find.byKey(const Key('clientes_app_busqueda')),
@@ -249,16 +404,19 @@ void main() {
       );
     });
 
-    testWidgets('abre dialog de detalle al tocar un comprador',
+    testWidgets('expandir fila muestra estadisticas del comprador',
         (tester) async {
       await abrirPane(tester);
 
+      // La fila existe con la key del comprador
+      expect(find.byKey(const Key('comprador_app_user_1')), findsOneWidget);
+
+      // Tocar la fila la expande
       await tester.tap(find.byKey(const Key('comprador_app_user_1')));
       await tester.pumpAndSettle();
 
-      expect(find.text('Juan Perez'), findsNWidgets(2)); // tile + dialog
-      expect(find.text('juan@test.com'), findsWidgets);
-      expect(find.text('Cerrar'), findsOneWidget);
+      // Al expandirse se cargan las estadísticas
+      expect(find.text('Agregar a mis clientes'), findsOneWidget);
     });
   });
 }

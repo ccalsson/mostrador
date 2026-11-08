@@ -184,3 +184,197 @@ export async function cuentaClienteForStaff(staff: Staff, clienteId: string) {
     })),
   };
 }
+
+// ---------------------------------------------------------------------------
+// Compradores de la app (Mercado al Toque) — solo admin
+// ---------------------------------------------------------------------------
+
+export type CompradorAppRow = {
+  userId: string;
+  email: string;
+  nombre: string;
+  telefono: string | null;
+  identidad: string;
+  clienteId: string | null;
+  pedidos: number;
+  enLista: boolean;
+};
+
+/**
+ * Lista los compradores de Mercado al Toque que compraron en este puesto.
+ * Devuelve datos enriquecidos desde mercado_compradores + user + clientes.
+ */
+export async function listarCompradoresAppForStaff(
+  staff: Staff,
+  busca?: string,
+): Promise<{ compradores: CompradorAppRow[] }> {
+  assertRole(staff, ["admin"]);
+  const q = (busca ?? "").trim().toLowerCase().slice(0, 80);
+  const like = `%${q}%`;
+  const sql = await getSql();
+  const rows = await sql<{
+    user_id: string;
+    email: string;
+    nombre: string;
+    telefono: string | null;
+    identidad_estado: string;
+    cliente_id: string | null;
+    pedidos: number;
+  }>`
+    select u.id as user_id, u.email, c.nombre, c.telefono, c.identidad_estado,
+           cl.id as cliente_id,
+           (select count(*)::int from pedidos p
+              where p.comprador_mercado_id = c.id
+                and p.tenant_id = ${staff.tenantId}) as pedidos
+    from mercado_compradores c
+    join "user" u on u.id = c.user_id
+    left join clientes cl on cl.user_id = u.id and cl.tenant_id = ${staff.tenantId}
+    where ${q} = ''
+       or lower(c.nombre) like ${like}
+       or lower(u.email) like ${like}
+       or coalesce(c.telefono, '') like ${like}
+    order by lower(c.nombre)
+    limit 80
+  `;
+  return {
+    compradores: rows.map((row) => ({
+      userId: row.user_id,
+      email: row.email,
+      nombre: row.nombre,
+      telefono: row.telefono,
+      identidad: row.identidad_estado,
+      clienteId: row.cliente_id,
+      pedidos: Number(row.pedidos),
+      enLista: Boolean(row.cliente_id),
+    })),
+  };
+}
+
+export type EstadisticasComprador = {
+  pedidos: number;
+  total: number;
+  cobrados: number;
+  enCurso: number;
+  anulados: number;
+  ultimo: string | null;
+  formas: { forma: string; cantidad: number; total: number }[];
+};
+
+/**
+ * Estadísticas detalladas de un comprador de la app en este puesto.
+ */
+export async function estadisticasCompradorAppForStaff(
+  staff: Staff,
+  userId: string,
+): Promise<EstadisticasComprador> {
+  assertRole(staff, ["admin"]);
+  const sql = await getSql();
+  const comprador = await sql<{ id: string }>`
+    select id from mercado_compradores where user_id = ${userId} limit 1
+  `;
+  if (!comprador[0]) throw new Error("Ese comprador no está en la app.");
+  const [tot] = await sql<{
+    pedidos: unknown;
+    total: unknown;
+    cobrados: unknown;
+    en_curso: unknown;
+    anulados: unknown;
+    ultimo: string | null;
+  }>`
+    select count(*)::int as pedidos,
+           coalesce(sum(i.cantidad * i.precio_unitario), 0) as total,
+           count(*) filter (where p.estado in ('cobrado', 'entregado', 'listo'))::int as cobrados,
+           count(*) filter (where p.estado in ('enviado', 'en_preparacion'))::int as en_curso,
+           count(*) filter (where p.estado = 'anulado')::int as anulados,
+           max(p.created_at)::text as ultimo
+    from pedidos p
+    left join pedido_items i on i.pedido_id = p.id
+    where p.tenant_id = ${staff.tenantId} and p.comprador_mercado_id = ${comprador[0].id}
+  `;
+  const formas = await sql<{ forma: string; cantidad: unknown; total: unknown }>`
+    select coalesce(p.forma_pago, 'sin_pago') as forma, count(*)::int as cantidad,
+           coalesce(sum(i.cantidad * i.precio_unitario), 0) as total
+    from pedidos p
+    left join pedido_items i on i.pedido_id = p.id
+    where p.tenant_id = ${staff.tenantId} and p.comprador_mercado_id = ${comprador[0].id}
+    group by p.forma_pago
+    order by total desc
+  `;
+  return {
+    pedidos: Number(tot?.pedidos ?? 0),
+    total: num(tot?.total),
+    cobrados: Number(tot?.cobrados ?? 0),
+    enCurso: Number(tot?.en_curso ?? 0),
+    anulados: Number(tot?.anulados ?? 0),
+    ultimo: tot?.ultimo ?? null,
+    formas: formas.map((row) => ({
+      forma: row.forma,
+      cantidad: Number(row.cantidad),
+      total: num(row.total),
+    })),
+  };
+}
+
+/**
+ * Agrega un comprador de la app a la lista de clientes del puesto.
+ * Si ya existe un cliente con ese userId, devuelve el id existente.
+ */
+export async function sumarCompradorAppForStaff(
+  staff: Staff,
+  userId: string,
+): Promise<{ id: string }> {
+  assertRole(staff, ["admin"]);
+  const sql = await getSql();
+  const rows = await sql<{ nombre: string; telefono: string | null; email: string }>`
+    select c.nombre, c.telefono, u.email
+    from mercado_compradores c
+    join "user" u on u.id = c.user_id
+    where c.user_id = ${userId}
+    limit 1
+  `;
+  const comprador = rows[0];
+  if (!comprador) throw new Error("Ese comprador no está en la app.");
+  // Si ya existe un cliente del puesto vinculado a este userId, devolverlo.
+  const ya = await sql<{ id: string }>`
+    select id from clientes where tenant_id = ${staff.tenantId} and user_id = ${userId} limit 1
+  `;
+  if (ya[0]) return { id: ya[0].id };
+  const id = newId("cli");
+  await sql`
+    insert into clientes (id, tenant_id, nombre, telefono, email, cuenta_corriente, activo, user_id)
+    values (${id}, ${staff.tenantId}, ${comprador.nombre}, ${comprador.telefono}, ${comprador.email}, ${false}, ${true}, ${userId})
+  `;
+  await audit(staff.tenantId, staff, "alta_cliente_app", "cliente", { id, userId });
+  return { id };
+}
+
+/**
+ * Actualiza los datos editables de un comprador de la app vinculado al puesto.
+ * Solo se puede editar si el comprador tiene una ficha de cliente en el puesto.
+ */
+export async function updateCompradorAppForStaff(
+  staff: Staff,
+  userId: string,
+  input: { nombre: string; telefono?: string; direccion?: string },
+): Promise<{ ok: true }> {
+  assertRole(staff, ["admin"]);
+  const sql = await getSql();
+  // Verificar que el comprador está vinculado al puesto.
+  const cliente = await sql<{ id: string }>`
+    select id from clientes
+    where tenant_id = ${staff.tenantId} and user_id = ${userId}
+    limit 1
+  `;
+  if (!cliente[0]) throw new Error("Este comprador no está vinculado al puesto.");
+  const nombre = input.nombre.trim();
+  if (!nombre) throw new Error("El nombre es obligatorio.");
+  await sql`
+    update clientes
+    set nombre = ${nombre},
+        telefono = ${input.telefono?.trim() || null},
+        direccion = ${input.direccion?.trim() || null}
+    where id = ${cliente[0].id} and tenant_id = ${staff.tenantId}
+  `;
+  await audit(staff.tenantId, staff, "editar_cliente_app", "cliente", { id: cliente[0].id });
+  return { ok: true };
+}

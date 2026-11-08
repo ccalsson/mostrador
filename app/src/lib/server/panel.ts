@@ -119,6 +119,7 @@ export async function dashboardResumenForStaff(staff: Staff, diasInput?: number)
   `;
   const ventas = num(span[0]?.total);
   const tickets = num(span[0]?.n);
+  const trial = await slidesTrial(staff.casaId);
   return {
     dias,
     ventas,
@@ -151,7 +152,102 @@ export async function dashboardResumenForStaff(staff: Staff, diasInput?: number)
       total: num(p.total),
       vendedor: p.vendedor,
     })),
+    trial,
   };
+}
+
+const TRIAL_DIAS = 21;
+
+function imagenDeConfig(valor: unknown): string | null {
+  if (typeof valor !== "string") return null;
+  const url = valor.trim();
+  if (url.startsWith("/") || url.startsWith("https://")) return url;
+  return null;
+}
+
+async function slidesTrial(casaId: string) {
+  const sql = await getSql();
+  try {
+    const lineas = await sql<{ starts_on: string }>`
+      select l.starts_on::text as starts_on
+      from torre.saas_subscription_lines l
+      join torre.saas_products p on p.id = l.product_id
+      join torre.saas_subscriptions s on s.id = l.subscription_id and s.status in ('active', 'past_due')
+      join torre.saas_tenants t on t.id = s.tenant_id and t.status = 'active'
+      where t.operational_tenant_ref = ${casaId}
+        and l.status = 'active'
+        and l.notes = ${"Pro de prueba"}
+        and coalesce(p.config, '{}'::jsonb)->>'tier' = 'pro'
+      limit 1
+    `;
+    const inicio = lineas[0]?.starts_on?.slice(0, 10);
+    if (!inicio) return null;
+    const dias = Math.floor((Date.parse(`${new Date().toISOString().slice(0, 10)}T12:00:00Z`) - Date.parse(`${inicio}T12:00:00Z`)) / 86400000);
+    const diasRestantes = TRIAL_DIAS - dias;
+    if (diasRestantes < 0) return null;
+
+    const propios = await sql<{ hoy: number; trial: number }>`
+      select count(*) filter (where created_at::date = current_date)::int as hoy,
+             count(*) filter (where created_at::date >= ${inicio}::date)::int as trial
+      from cobros
+      where tenant_id = ${casaId} and anulado = false
+    `;
+    const top = await sql<{ nombre: string }>`
+      select i.nombre_snapshot as nombre
+      from pedido_items i
+      join pedidos p on p.id = i.pedido_id
+      where p.tenant_id = ${casaId}
+        and p.estado in ('cobrado', 'entregado')
+        and p.created_at::date = current_date
+      group by i.nombre_snapshot
+      order by sum(i.cantidad * i.precio_unitario) desc
+      limit 1
+    `;
+    const ranking = await sql<{ tenant_id: string; n: number }>`
+      select tenant_id, count(*)::int as n
+      from cobros
+      where anulado = false and created_at::date = current_date
+      group by tenant_id
+      order by n desc
+    `;
+    const mio = ranking.findIndex((fila) => fila.tenant_id === casaId);
+    const actividad = await sql<{ compradores: number; puestos: number }>`
+      select
+        (select count(distinct comprador_mercado_id)::int
+           from pedidos
+           where origen = 'mercado_al_toque'
+             and comprador_mercado_id is not null
+             and created_at::date = current_date) as compradores,
+        (select count(distinct tenant_id)::int
+           from cobros
+           where anulado = false and created_at::date = current_date) as puestos
+    `;
+    const configs = await sql<{ config: unknown }>`select config from tenants where id = ${casaId} limit 1`;
+    const crudo = configs[0]?.config;
+    const config = (typeof crudo === "string" ? JSON.parse(crudo) : crudo ?? {}) as {
+      trialImagenes?: Record<string, unknown>;
+    };
+    const fotos = config.trialImagenes ?? {};
+    return {
+      diasRestantes,
+      ticketsHoy: num(propios[0]?.hoy),
+      ticketsTrial: num(propios[0]?.trial),
+      producto: top[0]?.nombre ?? null,
+      puesto: mio >= 0 ? mio + 1 : null,
+      liderTickets: num(ranking[0]?.n),
+      compradores: num(actividad[0]?.compradores),
+      puestos: num(actividad[0]?.puestos),
+      imagenes: {
+        resultados: imagenDeConfig(fotos.resultados),
+        producto: imagenDeConfig(fotos.producto),
+        ranking: imagenDeConfig(fotos.ranking),
+        actividad: imagenDeConfig(fotos.actividad),
+        cuenta: imagenDeConfig(fotos.cuenta),
+      },
+    };
+  } catch {
+    return null;
+  }
 }
 
 export async function listAlertasForStaff(staff: Staff): Promise<Alerta[]> {

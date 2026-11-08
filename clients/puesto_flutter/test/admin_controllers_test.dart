@@ -71,6 +71,13 @@ class _ProductosFake implements ProductosAdminService {
   
   @override
   Future<void> borrarFoto(String productoId) async {}
+
+  @override
+  Future<int> actualizarCostosMasivos(
+    List<({String productoId, double? costo})> items,
+  ) async {
+    return items.length;
+  }
 }
 
 class _CatalogoFake implements CatalogoService {

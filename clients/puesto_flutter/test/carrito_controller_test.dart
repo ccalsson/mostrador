@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:puesto_flutter/core/errors/api_exceptions.dart';
@@ -24,6 +26,7 @@ class _PedidosFake implements PedidosService {
     required String clientUuid,
     required List<({String productoId, int cantidad})> items,
     String clienteNombre = 'Mostrador',
+    String? clienteId,
     String? nota,
   }) async {
     uuids.add(clientUuid);
@@ -42,6 +45,13 @@ class _PedidosFake implements PedidosService {
 
   @override
   Future<void> entregar(String id) async {}
+
+  @override
+  Future<Pedido> entregarParcial(
+    String id, {
+    required List<({String itemId, double cantidad, String? nota})> items,
+  }) async =>
+      _pedido(id: id, clientUuid: id);
 
   @override
   Future<Pedido> actualizarEstado(String id, PedidoEstado estado) async =>
@@ -65,6 +75,9 @@ class _PedidosFake implements PedidosService {
 
   @override
   Future<Ticket> ticket(String cobroId) async => throw UnimplementedError();
+
+  @override
+  Future<Uint8List> comprobante(String pedidoId) async => throw UnimplementedError();
 }
 
 /// Fake de ConectividadService que siempre reporta conexión.
@@ -282,5 +295,67 @@ void main() {
     expect(v4.hasMatch(a), isTrue);
     expect(v4.hasMatch(b), isTrue);
     expect(a, isNot(b));
+  });
+
+  group('cliente del carrito', () {
+    test('arranca con cliente nulo (Mostrador)', () {
+      expect(carrito().clienteId, isNull);
+      expect(carrito().clienteNombre, 'Mostrador');
+    });
+
+    test('fijarCliente actualiza clienteId y clienteNombre', () {
+      controlador().fijarCliente(clienteId: 'cli_1', clienteNombre: 'Juan');
+      expect(carrito().clienteId, 'cli_1');
+      expect(carrito().clienteNombre, 'Juan');
+    });
+
+    test('fijarCliente con null restaura Mostrador', () {
+      controlador().fijarCliente(clienteId: 'cli_1', clienteNombre: 'Juan');
+      controlador().fijarCliente(clienteId: null);
+      expect(carrito().clienteId, isNull);
+      expect(carrito().clienteNombre, 'Mostrador');
+    });
+
+    test('agregar producto conserva el cliente seleccionado', () {
+      controlador().fijarCliente(clienteId: 'cli_1', clienteNombre: 'Juan');
+      controlador().agregar(_producto('p1'));
+      expect(carrito().clienteId, 'cli_1');
+      expect(carrito().clienteNombre, 'Juan');
+    });
+
+    test('reiniciar limpia el cliente', () {
+      controlador().fijarCliente(clienteId: 'cli_1', clienteNombre: 'Juan');
+      controlador().reiniciar();
+      expect(carrito().clienteId, isNull);
+      expect(carrito().clienteNombre, 'Mostrador');
+    });
+
+    test('agregarDesdeDuplicado carga items al carrito', () {
+      controlador().agregarDesdeDuplicado(
+        productoId: 'p1',
+        nombre: 'Manzana',
+        unidadLabel: 'kg',
+        precio: 100,
+        cantidad: 2,
+      );
+      expect(carrito().lineas.length, 1);
+      expect(carrito().lineas.first.productoId, 'p1');
+      expect(carrito().lineas.first.nombre, 'Manzana');
+      expect(carrito().lineas.first.cantidad, 2);
+      expect(carrito().total, 200);
+    });
+
+    test('agregarDesdeDuplicado acumula si el producto ya existe', () {
+      controlador().agregarDesdeDuplicado(
+        productoId: 'p1', nombre: 'Manzana', unidadLabel: 'kg',
+        precio: 100, cantidad: 2,
+      );
+      controlador().agregarDesdeDuplicado(
+        productoId: 'p1', nombre: 'Manzana', unidadLabel: 'kg',
+        precio: 100, cantidad: 3,
+      );
+      expect(carrito().lineas.length, 1);
+      expect(carrito().lineas.first.cantidad, 5);
+    });
   });
 }

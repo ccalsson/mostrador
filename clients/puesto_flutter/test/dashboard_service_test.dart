@@ -50,6 +50,20 @@ Map<String, dynamic> _payloadBackend({int dias = 7}) => {
           'vendedor': 'Vale',
         },
       ],
+      'trial': {
+        'diasRestantes': 14,
+        'ticketsHoy': 5,
+        'ticketsTrial': 42,
+        'producto': 'Naranja',
+        'puesto': 2,
+        'liderTickets': 12,
+        'compradores': 30,
+        'puestos': 8,
+        'imagenes': {
+          'resultados': '/slides/resultados.jpg',
+          'ranking': null,
+        },
+      },
     };
 
 DashboardService _servicio(MockClient mock) => DashboardService(ApiClient(
@@ -106,6 +120,39 @@ void main() {
     expect(r.movimientos.first.cliente, 'Ana');
     expect(r.movimientos.first.numero, 118);
     expect(r.cola.first.vendedor, 'Vale');
+  });
+
+  test('TrialInfo se parsea correctamente desde el payload', () async {
+    final servicio = _servicio(MockClient((request) async {
+      return http.Response(
+        jsonEncode({'data': _payloadBackend(dias: 7)}),
+        200,
+        headers: {'content-type': 'application/json; charset=utf-8'},
+      );
+    }));
+
+    final r = await servicio.obtener(dias: 7);
+
+    expect(r.trial, isNotNull);
+    expect(r.trial!.diasRestantes, 14);
+    expect(r.trial!.ticketsHoy, 5);
+    expect(r.trial!.ticketsTrial, 42);
+    expect(r.trial!.producto, 'Naranja');
+    expect(r.trial!.puesto, 2);
+    expect(r.trial!.liderTickets, 12);
+    expect(r.trial!.compradores, 30);
+    expect(r.trial!.puestos, 8);
+    expect(r.trial!.imagenes.resultados, '/slides/resultados.jpg');
+    expect(r.trial!.imagenes.ranking, isNull);
+  });
+
+  test('TrialInfo null cuando el backend no envía trial', () async {
+    final r = DashboardResumen.fromJson(const {
+      'dias': 7,
+      'ventas': 0,
+      'trial': null,
+    });
+    expect(r.trial, isNull);
   });
 
   test('Deltas percentuales vs período anterior', () {

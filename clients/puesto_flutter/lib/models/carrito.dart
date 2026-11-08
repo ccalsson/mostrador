@@ -36,6 +36,9 @@ class CarritoLinea {
 /// primer `confirmar`, sobrevive a los reintentos y recién se descarta
 /// cuando el pedido quedó creado. Si no hay conexión, el pedido se guarda
 /// localmente (estado [EnvioEstado.guardadoOffline]).
+///
+/// [clienteId] y [clienteNombre] identifican al cliente seleccionado para el
+/// pedido en curso. Por defecto es nulo (Mostrador), igual que la web.
 class Carrito {
   const Carrito({
     this.lineas = const [],
@@ -43,6 +46,8 @@ class Carrito {
     this.envio = EnvioEstado.inactivo,
     this.errorMensaje,
     this.pedido,
+    this.clienteId,
+    this.clienteNombre = 'Mostrador',
   });
 
   final List<CarritoLinea> lineas;
@@ -50,10 +55,23 @@ class Carrito {
   final EnvioEstado envio;
   final String? errorMensaje;
   final Pedido? pedido;
+  final String? clienteId;
+  final String clienteNombre;
 
   bool get vacio => lineas.isEmpty;
 
   double get total => lineas.fold(0, (acc, linea) => acc + linea.subtotal);
 
   int get unidades => lineas.fold(0, (acc, linea) => acc + linea.cantidad);
+
+  Carrito conCliente({String? clienteId, String clienteNombre = 'Mostrador'}) =>
+      Carrito(
+        lineas: lineas,
+        clientUuid: clientUuid,
+        envio: envio,
+        errorMensaje: errorMensaje,
+        pedido: pedido,
+        clienteId: clienteId,
+        clienteNombre: clienteNombre,
+      );
 }

@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:puesto_flutter/core/errors/api_exceptions.dart';
@@ -13,8 +15,10 @@ class _PedidosFake implements PedidosService {
   List<Pedido> pedidos;
   ApiException? listarError;
   ApiException? entregarError;
+  ApiException? entregarParcialError;
   int detalleLlamadas = 0;
   final List<String> entregados = [];
+  final List<List<({String itemId, double cantidad, String? nota})>> entregasParciales = [];
 
   @override
   Future<void> entregar(String id) async {
@@ -25,6 +29,17 @@ class _PedidosFake implements PedidosService {
       for (final p in pedidos)
         p.id == id ? _pedido(id, estado: PedidoEstado.entregado) : p,
     ];
+  }
+
+  @override
+  Future<Pedido> entregarParcial(
+    String id, {
+    required List<({String itemId, double cantidad, String? nota})> items,
+  }) async {
+    entregasParciales.add(items);
+    final fallo = entregarParcialError;
+    if (fallo != null) throw fallo;
+    return pedidos.firstWhere((p) => p.id == id);
   }
 
   @override
@@ -49,6 +64,7 @@ class _PedidosFake implements PedidosService {
     required String clientUuid,
     required List<({String productoId, int cantidad})> items,
     String clienteNombre = 'Mostrador',
+    String? clienteId,
     String? nota,
   }) async =>
       throw UnimplementedError();
@@ -71,6 +87,9 @@ class _PedidosFake implements PedidosService {
 
   @override
   Future<Ticket> ticket(String cobroId) async => throw UnimplementedError();
+
+  @override
+  Future<Uint8List> comprobante(String pedidoId) async => throw UnimplementedError();
 }
 
 Pedido _pedido(String id, {PedidoEstado estado = PedidoEstado.cobrado}) => Pedido(
@@ -188,5 +207,55 @@ void main() {
     final otro = container.read(entregaControllerProvider('ped_2'));
     expect(otro.fase, EntregaFase.inactiva);
     expect(pedidos.entregados, ['ped_1']);
+  });
+
+  group('entrega parcial', () {
+    test('entrega parcial exitosa: envía las líneas al backend', () async {
+      final controller = container.read(entregaControllerProvider('ped_1').notifier);
+      final lineas = [
+        EntregaLinea(itemId: 'itm_1', cantidad: 2, nota: 'Falta una manzana'),
+        EntregaLinea(itemId: 'itm_2', cantidad: 1),
+      ];
+
+      await controller.entregarParcial(lineas);
+
+      expect(controller.state.fase, EntregaFase.exito);
+      expect(pedidos.entregasParciales.length, 1);
+      expect(pedidos.entregasParciales.first.length, 2);
+      expect(pedidos.entregasParciales.first[0].itemId, 'itm_1');
+      expect(pedidos.entregasParciales.first[0].cantidad, 2);
+      expect(pedidos.entregasParciales.first[0].nota, 'Falta una manzana');
+    });
+
+    test('entrega parcial sin líneas: deja error sin llamar al backend', () async {
+      final controller = container.read(entregaControllerProvider('ped_1').notifier);
+
+      await controller.entregarParcial([]);
+
+      expect(controller.state.fase, EntregaFase.error);
+      expect(controller.state.errorMensaje, contains('al menos un'));
+      expect(pedidos.entregasParciales, isEmpty);
+    });
+
+    test('entrega parcial con error: refleja el mensaje del backend', () async {
+      pedidos.entregarParcialError =
+          ValidationException('Solo se entrega parcialmente un pedido cobrado.');
+      final controller = container.read(entregaControllerProvider('ped_1').notifier);
+      final lineas = [EntregaLinea(itemId: 'itm_1', cantidad: 1)];
+
+      await controller.entregarParcial(lineas);
+
+      expect(controller.state.fase, EntregaFase.error);
+      expect(controller.state.errorMensaje, contains('cobrado'));
+    });
+
+    test('doble submit parcial: solo una llamada al backend', () async {
+      final controller = container.read(entregaControllerProvider('ped_1').notifier);
+      final lineas = [EntregaLinea(itemId: 'itm_1', cantidad: 1)];
+      final primera = controller.entregarParcial(lineas);
+      final segunda = controller.entregarParcial(lineas);
+      await Future.wait([primera, segunda]);
+      expect(pedidos.entregasParciales.length, 1);
+    });
   });
 }

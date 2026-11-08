@@ -8,21 +8,29 @@ import 'package:http/http.dart' as http;
 
 import '../../core/errors/api_exceptions.dart';
 import '../../core/format.dart';
+import '../../core/tema.dart';
 import '../../models/dashboard.dart';
 import '../../models/producto.dart';
+import '../../services/alertas_service.dart';
 import '../../services/caja_service.dart';
 import '../../services/catalogo_service.dart';
 import '../../services/dashboard_service.dart';
+import '../../services/reportes_service.dart';
+import '../../services/sucursales_service.dart';
 import '../caja/ticket_dialog.dart';
 
-enum _Metrica { ventas, tickets }
+enum _Metrica { pesos, tickets }
 
-enum _Estilo { barras, linea }
+enum _Estilo { barras, linea, area }
 
-/// Panel de dashboard para el admin: KPIs con deltas, serie temporal,
-/// formas de pago, top productos, cola de pedidos y últimos movimientos.
+/// Tablero del dueño: replica la composición de `repoweb/src/routes/dashboard.tsx`.
 ///
-/// Períodos: hoy (serie horaria, autorefresh 2s), 7 días y 30 días.
+/// Fila de controles (En vivo + clima/dólar + tres `Seg`), una única tarjeta
+/// de KPIs 2×2 con divisores (`.puesto-kpis` de la web), el gráfico de 256 px,
+/// Stock | Movimientos en dos columnas y un riel de Cola | Productos. El
+/// bloque de título y la mesa del turno los aporta el shell, no este panel.
+///
+/// Períodos: hoy (serie horaria, autorefresh 2 s), 7 días y 30 días.
 class DashboardPane extends ConsumerStatefulWidget {
   const DashboardPane({super.key});
 
@@ -31,19 +39,33 @@ class DashboardPane extends ConsumerStatefulWidget {
 }
 
 class _DashboardPaneState extends ConsumerState<DashboardPane> {
-  _Metrica _metrica = _Metrica.ventas;
+  _Metrica _metrica = _Metrica.pesos;
   _Estilo _estilo = _Estilo.barras;
+  bool _verCola = false;
   Timer? _ticker;
+
+  // Filtros combinados (gap 5: drill-down desde gráfico + chips).
+  String? _dia;
+  String? _pago;
+  String? _producto;
+
+  // Polling de alertas integrado (gap 2: 4 s).
+  Timer? _alertasTicker;
 
   @override
   void initState() {
     super.initState();
     _reprogramarTicker();
+    _alertasTicker = Timer.periodic(const Duration(seconds: 4), (_) {
+      if (!mounted) return;
+      ref.invalidate(alertasProvider);
+    });
   }
 
   @override
   void dispose() {
     _ticker?.cancel();
+    _alertasTicker?.cancel();
     super.dispose();
   }
 
@@ -65,62 +87,58 @@ class _DashboardPaneState extends ConsumerState<DashboardPane> {
     final vivo = dias == 1;
 
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            if (vivo) const _EnVivo(),
+            const _ClimaDolar(),
+            _Seg<int>(
+              key: const Key('dashboard_periodo'),
+              value: dias,
+              options: const [(1, 'Hoy'), (7, '7 días'), (30, '30 días')],
+              onChanged: (v) {
+                ref.read(dashboardDiasProvider.notifier).setDias(v);
+                setState(() => _verCola = false);
+                _reprogramarTicker();
+              },
+            ),
+            _Seg<_Estilo>(
+              key: const Key('dashboard_serie_estilo'),
+              value: _estilo,
+              options: const [
+                (_Estilo.barras, 'Barras'),
+                (_Estilo.linea, 'Línea'),
+                (_Estilo.area, 'Área'),
+              ],
+              onChanged: (v) => setState(() => _estilo = v),
+            ),
+            _Seg<_Metrica>(
+              key: const Key('dashboard_serie_metrica'),
+              value: _metrica,
+              options: const [
+                (_Metrica.pesos, 'Pesos'),
+                (_Metrica.tickets, 'Tickets'),
+              ],
+              onChanged: (v) => setState(() => _metrica = v),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-          child: Row(
-            children: [
-              Expanded(
-                child: Row(
-                  children: [
-                    const Text(
-                      'Dashboard',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style:
-                          TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-                    ),
-                    if (vivo) ...[
-                      const SizedBox(width: 10),
-                      const _PuntoVivo(),
-                      const SizedBox(width: 4),
-                      Text('en vivo',
-                          style: Theme.of(context).textTheme.bodySmall),
-                    ],
-                    const SizedBox(width: 12),
-                    const Flexible(child: _ClimaDolar()),
-                  ],
-                ),
-              ),
-              SegmentedButton<int>(
-                key: const Key('dashboard_periodo'),
-                segments: const [
-                  ButtonSegment(value: 1, label: Text('Hoy')),
-                  ButtonSegment(value: 7, label: Text('7d')),
-                  ButtonSegment(value: 30, label: Text('30d')),
-                ],
-                selected: {dias},
-                onSelectionChanged: (seleccion) {
-                  ref
-                      .read(dashboardDiasProvider.notifier)
-                      .setDias(seleccion.first);
-                  _reprogramarTicker();
-                },
-              ),
-              const SizedBox(width: 8),
-              IconButton(
-                key: const Key('dashboard_refresh'),
-                tooltip: 'Actualizar',
-                onPressed: () => ref.invalidate(dashboardProvider),
-                icon: const Icon(Icons.refresh),
-              ),
-            ],
+          padding: const EdgeInsets.only(left: 2),
+          child: Text(
+            dias == 1 ? 'Datos de hoy' : 'Datos de los últimos $dias días',
+            style: TextStyle(fontSize: 12, color: context.tokens.muted),
           ),
         ),
+        const SizedBox(height: 12),
         Expanded(
           child: resumen.when(
-            loading: () =>
-                const Center(child: CircularProgressIndicator()),
+            loading: () => const Center(child: CircularProgressIndicator()),
             error: (error, _) => Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -142,8 +160,25 @@ class _DashboardPaneState extends ConsumerState<DashboardPane> {
               dias: dias,
               metrica: _metrica,
               estilo: _estilo,
+              verCola: _verCola,
+              dia: _dia,
+              pago: _pago,
+              producto: _producto,
               onMetrica: (m) => setState(() => _metrica = m),
-              onEstilo: (e) => setState(() => _estilo = e),
+              onVerCola: () => setState(() => _verCola = !_verCola),
+              onBarTap: (d) => setState(() {
+                _dia = _dia == d ? null : d;
+                _verCola = false;
+              }),
+              onProductoTap: (nombre) => setState(() {
+                _producto = _producto == nombre ? null : nombre;
+              }),
+              onPagoTap: (fp) => setState(() {
+                _pago = _pago == fp ? null : fp;
+              }),
+              onClearDia: () => setState(() => _dia = null),
+              onClearPago: () => setState(() => _pago = null),
+              onClearProducto: () => setState(() => _producto = null),
             ),
           ),
         ),
@@ -152,17 +187,145 @@ class _DashboardPaneState extends ConsumerState<DashboardPane> {
   }
 }
 
-class _PuntoVivo extends StatelessWidget {
-  const _PuntoVivo();
+/// Píldora "En vivo" (punto ok + texto) con animación pulse, como el
+/// indicador de la web (`animate-pulse rounded-full bg-ok`).
+class _EnVivo extends StatefulWidget {
+  const _EnVivo();
+
+  @override
+  State<_EnVivo> createState() => _EnVivoState();
+}
+
+class _EnVivoState extends State<_EnVivo>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1200),
+  )..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (context, _) {
+        final opacidad = 0.4 + 0.6 * _ctrl.value;
+        final escala = 0.85 + 0.15 * _ctrl.value;
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Transform.scale(
+              scale: escala,
+              child: Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: tokens.ok.withValues(alpha: opacidad),
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              'En vivo',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: tokens.ok,
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// Control segmentado estilo web (`Seg` de dashboard.tsx): fondo paper-2,
+/// píldoras de 32 px, la activa sobre surface con sombra suave.
+class _Seg<T> extends StatelessWidget {
+  const _Seg({
+    super.key,
+    required this.value,
+    required this.options,
+    required this.onChanged,
+  });
+
+  final T value;
+  final List<(T, String)> options;
+  final ValueChanged<T> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
     return Container(
-      width: 8,
-      height: 8,
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.tertiary,
-        shape: BoxShape.circle,
+        color: tokens.paper2,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      padding: const EdgeInsets.all(2),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final (id, label) in options)
+            _SegBoton(
+              label: label,
+              activo: id == value,
+              onTap: () => onChanged(id),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SegBoton extends StatelessWidget {
+  const _SegBoton({
+    required this.label,
+    required this.activo,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool activo;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        height: 32,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: activo ? tokens.surface : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+          boxShadow: activo
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.08),
+                    blurRadius: 2,
+                    offset: const Offset(0, 1),
+                  ),
+                ]
+              : null,
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+            color: activo ? tokens.ink : tokens.muted,
+          ),
+        ),
       ),
     );
   }
@@ -174,304 +337,457 @@ class _DashboardBody extends StatelessWidget {
     required this.dias,
     required this.metrica,
     required this.estilo,
+    required this.verCola,
+    required this.dia,
+    required this.pago,
+    required this.producto,
     required this.onMetrica,
-    required this.onEstilo,
+    required this.onVerCola,
+    required this.onBarTap,
+    required this.onProductoTap,
+    required this.onPagoTap,
+    required this.onClearDia,
+    required this.onClearPago,
+    required this.onClearProducto,
   });
 
   final DashboardResumen data;
   final int dias;
   final _Metrica metrica;
   final _Estilo estilo;
+  final bool verCola;
+  final String? dia;
+  final String? pago;
+  final String? producto;
   final ValueChanged<_Metrica> onMetrica;
-  final ValueChanged<_Estilo> onEstilo;
+  final VoidCallback onVerCola;
+  final ValueChanged<String> onBarTap;
+  final ValueChanged<String> onProductoTap;
+  final ValueChanged<String> onPagoTap;
+  final VoidCallback onClearDia;
+  final VoidCallback onClearPago;
+  final VoidCallback onClearProducto;
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final tarjetas = <Widget>[
-      _KpiCard(
-        clave: 'dashboard_kpi_ventas',
-        icono: Icons.trending_up,
-        titulo: 'Ventas',
-        valor: moneda(data.ventas),
-        deltaPct: data.deltaVentasPct(),
-        color: colorScheme.primary,
-      ),
-      _KpiCard(
-        clave: 'dashboard_kpi_tickets',
-        icono: Icons.receipt_long_outlined,
-        titulo: 'Tickets',
-        valor: '${data.tickets}',
-        deltaPct: data.deltaTicketsPct(),
-        color: Colors.blue,
-      ),
-      _KpiCard(
-        clave: 'dashboard_kpi_ticket_promedio',
-        icono: Icons.calculate_outlined,
-        titulo: 'Ticket prom.',
-        valor: moneda(data.ticketPromedio),
-        color: colorScheme.secondary,
-      ),
-      _KpiCard(
-        clave: 'dashboard_kpi_cola',
-        icono: Icons.hourglass_top_outlined,
-        titulo: 'En cola',
-        valor: '${data.enCola}',
-        color: data.enCola > 0 ? Colors.orange : colorScheme.onSurfaceVariant,
-      ),
-    ];
-
-    return ListView(
-      key: const Key('dashboard_lista'),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      children: [
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final columnas = constraints.maxWidth >= 900
-                ? 4
-                : constraints.maxWidth >= 600
-                    ? 2
-                    : 1;
-            return GridView.count(
-              crossAxisCount: columnas,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-              childAspectRatio: 2.4,
-              children: tarjetas,
-            );
-          },
-        ),
-        const SizedBox(height: 16),
-        const _TurnoCard(),
-        const SizedBox(height: 24),
-        _SerieCard(
-          data: data,
-          dias: dias,
-          metrica: metrica,
-          estilo: estilo,
-          onMetrica: onMetrica,
-          onEstilo: onEstilo,
-        ),
-        const SizedBox(height: 24),
-        if (data.formas.isNotEmpty)
-          _FormasCard(formas: data.formas, ventas: data.ventas),
-        if (data.top.isNotEmpty) ...[
-          const SizedBox(height: 24),
-          _TopCard(top: data.top),
-        ],
-        if (data.cola.isNotEmpty) ...[
-          const SizedBox(height: 24),
-          _ColaCard(cola: data.cola),
-        ],
-        const SizedBox(height: 24),
-        const _StockBoardCard(),
-        if (data.movimientos.isNotEmpty) ...[
-          const SizedBox(height: 24),
-          _MovimientosCard(movimientos: data.movimientos),
-        ],
-        const SizedBox(height: 24),
-        Text(
-          dias == 1
-              ? 'Serie horaria · hoy'
-              : 'Serie diaria · últimos $dias días',
-          textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
-        const SizedBox(height: 16),
-      ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final ancho = constraints.maxWidth >= 820;
+        final hayFiltros = dia != null || pago != null || producto != null;
+        return ListView(
+          key: const Key('dashboard_lista'),
+          padding: const EdgeInsets.only(bottom: 24),
+          children: [
+            // Gap 1: Vitrina (slider productos destacados + trial).
+            _VitrinaCard(
+              trial: data.trial,
+              productos: data.top.take(3).toList(),
+              onProducto: onProductoTap,
+            ),
+            const SizedBox(height: 16),
+            _KpiCard(
+              data: data,
+              dias: dias,
+              verCola: verCola,
+              onMetrica: onMetrica,
+              onVerCola: onVerCola,
+            ),
+            const SizedBox(height: 16),
+            const _TurnoCard(),
+            const SizedBox(height: 16),
+            // Gap 4: Sucursales mini-widget.
+            const _SucursalesCard(),
+            const SizedBox(height: 16),
+            _GraficoCard(
+              data: data,
+              dias: dias,
+              metrica: metrica,
+              estilo: estilo,
+              diaSeleccionada: dia,
+              onBarTap: onBarTap,
+            ),
+            // Gap 5: Chips de filtros combinados.
+            if (hayFiltros)
+              Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: _FiltroChips(
+                  dias: dias,
+                  dia: dia,
+                  pago: pago,
+                  producto: producto,
+                  onClearDia: onClearDia,
+                  onClearPago: onClearPago,
+                  onClearProducto: onClearProducto,
+                ),
+              ),
+            const SizedBox(height: 16),
+            if (ancho)
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Expanded(flex: 3, child: _StockBoardCard()),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    flex: 2,
+                    child: _MovimientosCard(
+                      movimientos: data.movimientos,
+                      cola: data.cola,
+                      verCola: verCola,
+                      dia: dia,
+                      pago: pago,
+                      producto: producto,
+                    ),
+                  ),
+                ],
+              )
+            else ...[
+              const _StockBoardCard(),
+              const SizedBox(height: 16),
+              _MovimientosCard(
+                movimientos: data.movimientos,
+                cola: data.cola,
+                verCola: verCola,
+                dia: dia,
+                pago: pago,
+                producto: producto,
+              ),
+            ],
+            const SizedBox(height: 16),
+            // Riel inferior: 5 tarjetas como la web
+            // (Cola | Medios | Alertas | Productos | Cargadores).
+            if (ancho)
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: _RailCola(
+                      cola: data.cola,
+                      enCola: data.enCola,
+                      verCola: verCola,
+                      onVerCola: onVerCola,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _MediosRailCard(
+                      formas: data.formas,
+                      activo: pago,
+                      onPick: onPagoTap,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(child: _AlertasCard()),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _RailProductos(
+                      top: data.top,
+                      activo: producto,
+                      onPick: onProductoTap,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(child: _RankingCargadoresCard()),
+                ],
+              )
+            else ...[
+              _RailCola(
+                cola: data.cola,
+                enCola: data.enCola,
+                verCola: verCola,
+                onVerCola: onVerCola,
+              ),
+              const SizedBox(height: 12),
+              _MediosRailCard(
+                formas: data.formas,
+                activo: pago,
+                onPick: onPagoTap,
+              ),
+              const SizedBox(height: 12),
+              const _AlertasCard(),
+              const SizedBox(height: 12),
+              _RailProductos(
+                top: data.top,
+                activo: producto,
+                onPick: onProductoTap,
+              ),
+              const SizedBox(height: 12),
+              const _RankingCargadoresCard(),
+            ],
+          ],
+        );
+      },
     );
   }
 }
 
+/// Tarjeta única de KPIs 2×2 con divisores en cruz y borde izquierdo de tono
+/// (`border-l-4` de la web). Ventas/Tickets fijan la métrica del gráfico;
+/// "En cola" alterna la cola en el panel de movimientos.
 class _KpiCard extends StatelessWidget {
   const _KpiCard({
-    required this.clave,
-    required this.icono,
-    required this.titulo,
-    required this.valor,
-    required this.color,
-    this.deltaPct,
+    required this.data,
+    required this.dias,
+    required this.verCola,
+    required this.onMetrica,
+    required this.onVerCola,
   });
 
-  final String clave;
-  final IconData icono;
-  final String titulo;
-  final String valor;
-  final Color color;
-  final double? deltaPct;
+  final DashboardResumen data;
+  final int dias;
+  final bool verCola;
+  final ValueChanged<_Metrica> onMetrica;
+  final VoidCallback onVerCola;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final delta = deltaPct;
-    final Color? deltaColor = delta == null
-        ? null
-        : delta > 0
-            ? Colors.green
-            : delta < 0
-                ? Colors.red
-                : theme.colorScheme.onSurfaceVariant;
-    return Card(
-      key: Key(clave),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Row(
+    final tokens = context.tokens;
+    final rangoLabel = dias == 1 ? 'hoy' : '$dias días';
+    final deltaVentas = data.ventas - data.ventasPrev;
+    final deltaTickets = data.tickets - data.ticketsPrev;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: tokens.surface,
+        border: Border.all(color: tokens.line),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Icon(icono, size: 18, color: color),
-                const SizedBox(width: 6),
                 Expanded(
-                  child: Text(
-                    titulo,
-                    style: theme.textTheme.bodySmall,
-                    overflow: TextOverflow.ellipsis,
+                  child: _celda(
+                    context,
+                    etiqueta: 'Ventas · $rangoLabel',
+                    valor: moneda(data.ventas),
+                    valorKey: const Key('dashboard_total_ventas'),
+                    clave: const Key('dashboard_kpi_ventas'),
+                    pista: '${_conSigno(deltaVentas, moneda)} vs el anterior',
+                    onTap: () => onMetrica(_Metrica.pesos),
+                    tonoBorder: tokens.leaf,
+                    tonoFondo: tokens.okBg,
+                  ),
+                ),
+                _divisorVertical(tokens),
+                Expanded(
+                  child: _celda(
+                    context,
+                    etiqueta: 'Tickets',
+                    valor: '${data.tickets}',
+                    clave: const Key('dashboard_kpi_tickets'),
+                    pista: '${_conSignoInt(deltaTickets)} vs el anterior',
+                    onTap: () => onMetrica(_Metrica.tickets),
+                    tonoBorder: tokens.terra,
+                    tonoFondo: tokens.warnBg,
                   ),
                 ),
               ],
             ),
-            Text(
-              valor,
-              style: theme.textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.bold,
-                color: color,
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+          ),
+          Container(height: 1, color: tokens.line),
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  child: _celda(
+                    context,
+                    etiqueta: 'Ticket promedio',
+                    valor: moneda(data.ticketPromedio),
+                    clave: const Key('dashboard_kpi_ticket_promedio'),
+                    pista: '${data.tickets} cobrados',
+                    tonoBorder: tokens.naranja,
+                    tonoFondo: tokens.naranja.withValues(alpha: 0.10),
+                  ),
+                ),
+                _divisorVertical(tokens),
+                Expanded(
+                  child: _celda(
+                    context,
+                    etiqueta: 'En cola',
+                    valor: '${data.enCola}',
+                    clave: const Key('dashboard_kpi_cola'),
+                    pista:
+                        verCola ? 'Abajo está la cola' : 'Tocá para verla abajo',
+                    onTap: onVerCola,
+                    tonoBorder: tokens.ambar,
+                    tonoFondo: tokens.ambar.withValues(alpha: 0.15),
+                  ),
+                ),
+              ],
             ),
-            if (delta != null)
-              Row(
-                children: [
-                  Icon(
-                    delta >= 0 ? Icons.arrow_upward : Icons.arrow_downward,
-                    size: 14,
-                    color: deltaColor,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    '${delta.abs().toStringAsFixed(1)}% vs período anterior',
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: deltaColor, fontSize: 11),
-                  ),
-                ],
-              )
-            else
-              const SizedBox.shrink(),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
+
+  static Widget _divisorVertical(TokensMostrador tokens) =>
+      Container(width: 1, color: tokens.line);
+
+  Widget _celda(
+    BuildContext context, {
+    required String etiqueta,
+    required String valor,
+    required String pista,
+    required Key clave,
+    required Color tonoBorder,
+    required Color tonoFondo,
+    Key? valorKey,
+    VoidCallback? onTap,
+  }) {
+    final tokens = context.tokens;
+    final contenido = Container(
+      key: clave,
+      decoration: BoxDecoration(
+        border: Border(left: BorderSide(color: tonoBorder, width: 4)),
+        color: tonoFondo,
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.start,
+        children: [
+          Text(
+            etiqueta.toUpperCase(),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+              letterSpacing: 1.2,
+              color: tokens.muted,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            valor,
+            key: valorKey,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontFamily: 'Fraunces',
+              fontSize: 24,
+              fontWeight: FontWeight.w600,
+              height: 1.0,
+              letterSpacing: -0.3,
+            ).copyWith(color: tokens.ink),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            pista,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 11, color: tokens.muted),
+          ),
+        ],
+      ),
+    );
+    if (onTap == null) return contenido;
+    return InkWell(onTap: onTap, child: contenido);
+  }
+
+  static String _conSigno(double v, String Function(double) fmt) =>
+      '${v >= 0 ? '+' : '-'}${fmt(v.abs())}';
+
+  static String _conSignoInt(int v) => '${v >= 0 ? '+' : '-'}${v.abs()}';
 }
 
-class _SerieCard extends StatelessWidget {
-  const _SerieCard({
+/// Gráfico de la serie (tarjeta de 256 px, como el `h-64` de la web).
+/// Gap 5: tap en barra → filtra por día.
+class _GraficoCard extends StatelessWidget {
+  const _GraficoCard({
     required this.data,
     required this.dias,
     required this.metrica,
     required this.estilo,
-    required this.onMetrica,
-    required this.onEstilo,
+    required this.diaSeleccionada,
+    required this.onBarTap,
   });
 
   final DashboardResumen data;
   final int dias;
   final _Metrica metrica;
   final _Estilo estilo;
-  final ValueChanged<_Metrica> onMetrica;
-  final ValueChanged<_Estilo> onEstilo;
+  final String? diaSeleccionada;
+  final ValueChanged<String> onBarTap;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final tokens = context.tokens;
     final valores = data.series
-        .map((p) => metrica == _Metrica.ventas ? p.total : p.n.toDouble())
+        .map((p) => metrica == _Metrica.pesos ? p.total : p.n.toDouble())
         .toList(growable: false);
     final etiquetas = data.series.map(_etiquetaPunto).toList(growable: false);
     final vacio = data.series.isEmpty || valores.every((v) => v == 0);
+    final esPesos = metrica == _Metrica.pesos;
+    final titulo = dias == 1
+        ? (esPesos ? 'Ventas por hora' : 'Tickets por hora')
+        : (esPesos ? 'Ventas' : 'Tickets');
 
-    return Card(
+    return Container(
       key: const Key('dashboard_serie_card'),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    dias == 1 ? 'Ventas por hora' : 'Ventas por día',
-                    style: theme.textTheme.titleSmall,
+      decoration: BoxDecoration(
+        color: tokens.surface,
+        border: Border.all(color: tokens.line),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  titulo,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: tokens.ink,
                   ),
                 ),
-                SegmentedButton<_Metrica>(
-                  key: const Key('dashboard_serie_metrica'),
-                  showSelectedIcon: false,
-                  style: const ButtonStyle(
-                    visualDensity: VisualDensity.compact,
-                  ),
-                  segments: const [
-                    ButtonSegment(
-                      value: _Metrica.ventas,
-                      label: Text('Pesos'),
+              ),
+              Text(
+                'Tocá una barra para filtrar.',
+                style: TextStyle(fontSize: 11, color: tokens.muted),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 256,
+            child: vacio
+                ? Center(
+                    child: Text(
+                      'Sin movimientos en el período.',
+                      style: TextStyle(fontSize: 13, color: tokens.muted),
                     ),
-                    ButtonSegment(
-                      value: _Metrica.tickets,
-                      label: Text('Tickets'),
-                    ),
-                  ],
-                  selected: {metrica},
-                  onSelectionChanged: (s) => onMetrica(s.first),
-                ),
-                const SizedBox(width: 8),
-                SegmentedButton<_Estilo>(
-                  key: const Key('dashboard_serie_estilo'),
-                  showSelectedIcon: false,
-                  style: const ButtonStyle(
-                    visualDensity: VisualDensity.compact,
-                  ),
-                  segments: const [
-                    ButtonSegment(
-                      value: _Estilo.barras,
-                      icon: Icon(Icons.bar_chart, size: 16),
-                    ),
-                    ButtonSegment(
-                      value: _Estilo.linea,
-                      icon: Icon(Icons.show_chart, size: 16),
-                    ),
-                  ],
-                  selected: {estilo},
-                  onSelectionChanged: (s) => onEstilo(s.first),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            if (vacio)
-              const SizedBox(
-                height: 160,
-                child: Center(child: Text('Sin movimientos en el período.')),
-              )
-            else
-              SizedBox(
-                height: 220,
-                child: estilo == _Estilo.barras
-                    ? _BarChart(
+                  )
+                : switch (estilo) {
+                    _Estilo.barras => _BarChart(
                         valores: valores,
                         etiquetas: etiquetas,
-                        esPesos: metrica == _Metrica.ventas,
-                      )
-                    : _LineChart(
-                        valores: valores,
-                        esPesos: metrica == _Metrica.ventas,
+                        esPesos: esPesos,
+                        diaSeleccionada: diaSeleccionada,
+                        series: data.series,
+                        onBarTap: onBarTap,
                       ),
-              ),
-          ],
-        ),
+                    _Estilo.linea => _LineChart(
+                        valores: valores,
+                        esPesos: esPesos,
+                      ),
+                    _Estilo.area => _LineChart(
+                        valores: valores,
+                        esPesos: esPesos,
+                        relleno: true,
+                      ),
+                  },
+          ),
+        ],
       ),
     );
   }
@@ -491,15 +807,21 @@ class _BarChart extends StatelessWidget {
     required this.valores,
     required this.etiquetas,
     required this.esPesos,
+    required this.diaSeleccionada,
+    required this.series,
+    required this.onBarTap,
   });
 
   final List<double> valores;
   final List<String> etiquetas;
   final bool esPesos;
+  final String? diaSeleccionada;
+  final List<PuntoSerie> series;
+  final ValueChanged<String> onBarTap;
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
+    final tokens = context.tokens;
     final maximo = valores.fold<double>(0, (a, b) => b > a ? b : a);
     // Margen del 15% arriba para que el valor no toque el borde.
     final topeY = maximo == 0 ? 1.0 : maximo * 1.15;
@@ -513,7 +835,7 @@ class _BarChart extends StatelessWidget {
           drawVerticalLine: false,
           horizontalInterval: topeY / 4,
           getDrawingHorizontalLine: (_) =>
-              FlLine(color: colorScheme.outlineVariant, strokeWidth: 0.5),
+              FlLine(color: tokens.line, strokeWidth: 0.5),
         ),
         titlesData: FlTitlesData(
           topTitles:
@@ -527,10 +849,7 @@ class _BarChart extends StatelessWidget {
               interval: topeY / 4,
               getTitlesWidget: (value, meta) => Text(
                 _abreviar(value),
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      fontSize: 10,
-                      color: colorScheme.onSurfaceVariant,
-                    ),
+                style: TextStyle(fontSize: 10, color: tokens.muted),
               ),
             ),
           ),
@@ -547,10 +866,7 @@ class _BarChart extends StatelessWidget {
                   padding: const EdgeInsets.only(top: 4),
                   child: Text(
                     etiquetas[i],
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          fontSize: 9,
-                          color: colorScheme.onSurfaceVariant,
-                        ),
+                    style: TextStyle(fontSize: 9, color: tokens.muted),
                   ),
                 );
               },
@@ -559,14 +875,22 @@ class _BarChart extends StatelessWidget {
         ),
         barTouchData: BarTouchData(
           touchTooltipData: BarTouchTooltipData(
+            getTooltipColor: (_) => tokens.leaf2,
             getTooltipItem: (group, _, rod, _) {
               final v = rod.toY;
               return BarTooltipItem(
                 esPesos ? moneda(v) : '${v.toStringAsFixed(0)} tickets',
-                TextStyle(color: colorScheme.onInverseSurface, fontSize: 11),
+                TextStyle(color: tokens.leafFg, fontSize: 11),
               );
             },
           ),
+          touchCallback: (event, response) {
+            if (response == null || response.spot == null) return;
+            final idx = response.spot!.touchedBarGroupIndex;
+            if (idx >= 0 && idx < series.length) {
+              onBarTap(series[idx].dia);
+            }
+          },
         ),
         barGroups: [
           for (var i = 0; i < valores.length; i++)
@@ -576,8 +900,12 @@ class _BarChart extends StatelessWidget {
                 BarChartRodData(
                   toY: valores[i],
                   width: 12,
-                  color: colorScheme.primary,
-                  borderRadius: BorderRadius.circular(3),
+                  color: series.isNotEmpty &&
+                          diaSeleccionada == series[i].dia
+                      ? tokens.terra
+                      : tokens.leaf,
+                  borderRadius:
+                      const BorderRadius.vertical(top: Radius.circular(4)),
                 ),
               ],
             ),
@@ -594,14 +922,19 @@ class _BarChart extends StatelessWidget {
 }
 
 class _LineChart extends StatelessWidget {
-  const _LineChart({required this.valores, required this.esPesos});
+  const _LineChart({
+    required this.valores,
+    required this.esPesos,
+    this.relleno = false,
+  });
 
   final List<double> valores;
   final bool esPesos;
+  final bool relleno;
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
+    final tokens = context.tokens;
     final maximo = valores.fold<double>(0, (a, b) => b > a ? b : a);
     final topeY = maximo == 0 ? 1.0 : maximo * 1.15;
     return LineChart(
@@ -614,7 +947,7 @@ class _LineChart extends StatelessWidget {
           drawVerticalLine: false,
           horizontalInterval: topeY / 4,
           getDrawingHorizontalLine: (_) =>
-              FlLine(color: colorScheme.outlineVariant, strokeWidth: 0.5),
+              FlLine(color: tokens.line, strokeWidth: 0.5),
         ),
         titlesData: FlTitlesData(
           topTitles:
@@ -628,10 +961,7 @@ class _LineChart extends StatelessWidget {
               interval: topeY / 4,
               getTitlesWidget: (value, meta) => Text(
                 _BarChart._abreviar(value),
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      fontSize: 10,
-                      color: colorScheme.onSurfaceVariant,
-                    ),
+                style: TextStyle(fontSize: 10, color: tokens.muted),
               ),
             ),
           ),
@@ -641,11 +971,12 @@ class _LineChart extends StatelessWidget {
         ),
         lineTouchData: LineTouchData(
           touchTooltipData: LineTouchTooltipData(
+            getTooltipColor: (_) => tokens.leaf2,
             getTooltipItems: (touched) => touched.map((spot) {
               final v = spot.y;
               return LineTooltipItem(
                 esPesos ? moneda(v) : '${v.toStringAsFixed(0)} tickets',
-                TextStyle(color: colorScheme.onInverseSurface, fontSize: 11),
+                TextStyle(color: tokens.leafFg, fontSize: 11),
               );
             }).toList(),
           ),
@@ -657,15 +988,12 @@ class _LineChart extends StatelessWidget {
                 FlSpot(i.toDouble(), valores[i]),
             ],
             isCurved: true,
-            color: colorScheme.primary,
-            barWidth: 2.5,
-            dotData: FlDotData(
-              getDotPainter: (_, _, _, _) =>
-                  FlDotCirclePainter(radius: 3, color: colorScheme.primary),
-            ),
+            color: tokens.leaf,
+            barWidth: 2,
+            dotData: const FlDotData(show: false),
             belowBarData: BarAreaData(
-              show: true,
-              color: colorScheme.primary.withValues(alpha: 0.15),
+              show: relleno,
+              color: tokens.leaf.withValues(alpha: 0.16),
             ),
           ),
         ],
@@ -674,270 +1002,350 @@ class _LineChart extends StatelessWidget {
   }
 }
 
-class _FormasCard extends StatelessWidget {
-  const _FormasCard({required this.formas, required this.ventas});
+/// Tarjeta plana con borde `line` y radio 10, como las secciones de la web.
+class _Tarjeta extends StatelessWidget {
+  const _Tarjeta({required this.child, this.clave, this.padding});
+
+  final Widget child;
+  final Key? clave;
+  final EdgeInsetsGeometry? padding;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    return Container(
+      key: clave,
+      decoration: BoxDecoration(
+        color: tokens.surface,
+        border: Border.all(color: tokens.line),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      padding: padding ?? const EdgeInsets.fromLTRB(12, 12, 12, 14),
+      child: child,
+    );
+  }
+}
+
+/// Medios de pago en el riel inferior (gap 2: reemplaza el _FormasCard
+/// separado). Pie chart interactivo + lista con tap para filtrar.
+class _MediosRailCard extends StatelessWidget {
+  const _MediosRailCard({
+    required this.formas,
+    required this.activo,
+    required this.onPick,
+  });
 
   final List<FormaPagoTotal> formas;
-  final double ventas;
+  final String? activo;
+  final ValueChanged<String> onPick;
 
   static const _paleta = <Color>[
-    Color(0xFF1E88E5),
-    Color(0xFF43A047),
-    Color(0xFFFB8C00),
-    Color(0xFF8E24AA),
-    Color(0xFFE53935),
-    Color(0xFF00897B),
+    Color(0xFF263449),
+    Color(0xFF1D5FD4),
+    Color(0xFF9A4708),
+    Color(0xFF7D5800),
   ];
 
   @override
   Widget build(BuildContext context) {
-    final total = formas.fold<double>(0, (a, f) => a + f.total);
-    final theme = Theme.of(context);
-    return Card(
-      key: const Key('dashboard_formas_card'),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text('Por forma de pago', style: theme.textTheme.titleSmall),
-            const SizedBox(height: 12),
-            if (total == 0)
-              const Text('Sin cobros registrados.')
-            else
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  SizedBox(
-                    width: 160,
-                    height: 160,
+    final tokens = context.tokens;
+    return _TarjetaRail(
+      clave: const Key('dashboard_medios_card'),
+      titulo: 'Medios',
+      child: formas.isEmpty
+          ? Text('Sin cobros en el período.',
+              style: TextStyle(fontSize: 12, color: tokens.muted))
+          : Column(
+              children: [
+                Expanded(
+                  child: SizedBox(
+                    height: 70,
                     child: PieChart(
                       PieChartData(
                         sectionsSpace: 2,
-                        centerSpaceRadius: 32,
+                        centerSpaceRadius: 16,
                         sections: [
                           for (var i = 0; i < formas.length; i++)
                             PieChartSectionData(
                               value: formas[i].total,
                               color: _paleta[i % _paleta.length],
-                              radius: 44,
-                              title: total > 0
-                                  ? '${((formas[i].total / total) * 100).toStringAsFixed(0)}%'
-                                  : '',
-                              titleStyle: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                              ),
+                              radius: 28,
+                              title: '',
                             ),
                         ],
                       ),
                     ),
                   ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        for (var i = 0; i < formas.length; i++)
-                          Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 4),
-                            child: Row(
-                              children: [
-                                Container(
-                                  width: 12,
-                                  height: 12,
-                                  decoration: BoxDecoration(
-                                    color: _paleta[i % _paleta.length],
-                                    borderRadius: BorderRadius.circular(3),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    _formaLabel(formas[i].formaPago),
-                                    style: theme.textTheme.bodyMedium,
-                                  ),
-                                ),
-                                Text(
-                                  '${formas[i].n} · ${moneda(formas[i].total)}',
-                                  style: theme.textTheme.bodySmall
-                                      ?.copyWith(fontWeight: FontWeight.w600),
-                                ),
-                              ],
+                ),
+                const SizedBox(height: 4),
+                for (var i = 0; i < formas.length && i < 3; i++)
+                  GestureDetector(
+                    onTap: () => onPick(formas[i].formaPago),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: activo == formas[i].formaPago
+                            ? tokens.okBg
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 8,
+                            height: 8,
+                            decoration: BoxDecoration(
+                              color: _paleta[i % _paleta.length],
+                              shape: BoxShape.circle,
                             ),
                           ),
-                      ],
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              _formaLabel(formas[i].formaPago),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  fontSize: 10, color: tokens.ink),
+                            ),
+                          ),
+                          Text(
+                            moneda(formas[i].total),
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              color: tokens.ink,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ],
-              ),
-            if (total != 0) ...[
-              const SizedBox(height: 8),
-              Text(
-                'Total del período: ${moneda(ventas)}',
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-              ),
-            ],
-          ],
-        ),
-      ),
+              ],
+            ),
     );
   }
 
   static String _formaLabel(String key) => switch (key) {
         'efectivo' => 'Efectivo',
-        'transferencia' => 'Transferencia',
+        'transferencia' => 'Transfer.',
         'tarjeta' => 'Tarjeta',
-        'cuenta_corriente' => 'Cuenta corriente',
+        'cuenta_corriente' => 'Cta. cte.',
         _ => key,
       };
 }
 
-class _TopCard extends StatelessWidget {
-  const _TopCard({required this.top});
+class _RailCola extends StatelessWidget {
+  const _RailCola({
+    required this.cola,
+    required this.enCola,
+    required this.verCola,
+    required this.onVerCola,
+  });
 
-  final List<ProductoTop> top;
+  final List<PedidoCola> cola;
+  final int enCola;
+  final bool verCola;
+  final VoidCallback onVerCola;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final maximo = top.fold<double>(0, (a, t) => t.total > a ? t.total : a);
-    final visible = top.take(5).toList();
-    return Card(
-      key: const Key('dashboard_top_card'),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text('Top 5 productos', style: theme.textTheme.titleSmall),
-            const SizedBox(height: 8),
-            for (final item in visible)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 6),
-                child: Row(
-                  children: [
-                    SizedBox(
-                      width: 120,
-                      child: Text(
-                        item.nombre,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodyMedium,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: LayoutBuilder(
-                        builder: (context, c) {
-                          final fraccion =
-                              maximo == 0 ? 0.0 : (item.total / maximo).clamp(0.0, 1.0);
-                          return Stack(
-                            children: [
-                              Container(
-                                height: 12,
-                                decoration: BoxDecoration(
-                                  color: theme
-                                      .colorScheme.surfaceContainerHighest,
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                              ),
-                                  FractionallySizedBox(
-                                widthFactor: fraccion,
-                                child: Container(
-                                  height: 12,
-                                  decoration: BoxDecoration(
-                                    color: theme.colorScheme.primary,
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          );
-                        },
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Text(
-                      moneda(item.total),
-                      style: theme.textTheme.bodySmall
-                          ?.copyWith(fontWeight: FontWeight.w600),
-                    ),
-                  ],
+    final tokens = context.tokens;
+    return _TarjetaRail(
+      clave: const Key('dashboard_cola_card'),
+      titulo: 'Cola · $enCola',
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              GestureDetector(
+                onTap: onVerCola,
+                child: Text(
+                  verCola ? 'Cobros' : 'Ver',
+                  style: TextStyle(fontSize: 11, color: tokens.leaf),
                 ),
               ),
-          ],
-        ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Expanded(
+            child: cola.isEmpty
+                ? Text('Nadie esperando.',
+                    style: TextStyle(fontSize: 12, color: tokens.muted))
+                : ListView.separated(
+                    padding: EdgeInsets.zero,
+                    itemCount: cola.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 6),
+                    itemBuilder: (context, i) {
+                      final p = cola[i];
+                      return Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              p.cliente,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  fontSize: 13, color: tokens.ink),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            moneda(p.total),
+                            style: TextStyle(
+                                fontSize: 12, color: tokens.muted),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+          ),
+        ],
       ),
     );
   }
 }
 
-class _ColaCard extends StatelessWidget {
-  const _ColaCard({required this.cola});
+class _RailProductos extends StatelessWidget {
+  const _RailProductos({
+    required this.top,
+    this.activo,
+    this.onPick,
+  });
 
-  final List<PedidoCola> cola;
+  final List<ProductoTop> top;
+  final String? activo;
+  final ValueChanged<String>? onPick;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Card(
-      key: const Key('dashboard_cola_card'),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              'Cola de pedidos (${cola.length})',
-              style: theme.textTheme.titleSmall,
+    final tokens = context.tokens;
+    final maximo = top.fold<double>(0, (a, t) => t.total > a ? t.total : a);
+    return _TarjetaRail(
+      clave: const Key('dashboard_top_card'),
+      titulo: 'Productos',
+      child: top.isEmpty
+          ? Text('Todavía no hay ventas.',
+              style: TextStyle(fontSize: 12, color: tokens.muted))
+          : ListView.separated(
+              padding: EdgeInsets.zero,
+              itemCount: top.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 8),
+              itemBuilder: (context, i) {
+                final t = top[i];
+                final fraccion =
+                    maximo == 0 ? 0.0 : (t.total / maximo).clamp(0.06, 1.0);
+                final on = activo == t.nombre;
+                return GestureDetector(
+                  onTap: onPick != null ? () => onPick!(t.nombre) : null,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              t.nombre,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(fontSize: 13, color: tokens.ink),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            moneda(t.total),
+                            style:
+                                TextStyle(fontSize: 12, color: tokens.muted),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(3),
+                        child: LinearProgressIndicator(
+                          value: fraccion,
+                          minHeight: 6,
+                          backgroundColor: tokens.paper2,
+                          valueColor: AlwaysStoppedAnimation(
+                              on ? tokens.terra : tokens.leaf),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
             ),
-            const SizedBox(height: 8),
-            for (final p in cola)
-              ListTile(
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                leading: Icon(
-                  Icons.circle_outlined,
-                  color: _colorEstado(p.estado, theme.colorScheme),
-                  size: 12,
-                ),
-                title: Text(p.cliente),
-                subtitle: Text(
-                  '${_estadoLabel(p.estado)}'
-                  '${p.vendedor != null ? ' · ${p.vendedor}' : ''}',
-                ),
-                trailing: Text(
-                  moneda(p.total),
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-              ),
-          ],
-        ),
+    );
+  }
+}
+
+/// Tarjeta del riel inferior: altura fija 160 px (`h-40` de la web), título
+/// uppercase y contenido desplazable.
+class _TarjetaRail extends StatelessWidget {
+  const _TarjetaRail({
+    required this.titulo,
+    required this.child,
+    this.clave,
+  });
+
+  final String titulo;
+  final Widget child;
+  final Key? clave;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    return Container(
+      key: clave,
+      height: 160,
+      decoration: BoxDecoration(
+        color: tokens.surface,
+        border: Border.all(color: tokens.line),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      clipBehavior: Clip.antiAlias,
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            titulo.toUpperCase(),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+              letterSpacing: 1.2,
+              color: tokens.muted,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Expanded(child: child),
+        ],
       ),
     );
   }
-
-  static Color _colorEstado(String estado, ColorScheme cs) => switch (estado) {
-        'enviado' => Colors.blue,
-        'en_preparacion' => Colors.orange,
-        'listo' => Colors.green,
-        _ => cs.outline,
-      };
-
-  static String _estadoLabel(String estado) => switch (estado) {
-        'enviado' => 'Enviado',
-        'en_preparacion' => 'En preparación',
-        'listo' => 'Listo',
-        _ => estado,
-      };
 }
 
 class _MovimientosCard extends StatefulWidget {
-  const _MovimientosCard({required this.movimientos});
+  const _MovimientosCard({
+    required this.movimientos,
+    required this.cola,
+    required this.verCola,
+    this.dia,
+    this.pago,
+    this.producto,
+  });
 
   final List<Movimiento> movimientos;
+  final List<PedidoCola> cola;
+  final bool verCola;
+  final String? dia;
+  final String? pago;
+  final String? producto;
 
   @override
   State<_MovimientosCard> createState() => _MovimientosCardState();
@@ -947,120 +1355,207 @@ class _MovimientosCardState extends State<_MovimientosCard> {
   String _filtro = '';
 
   List<Movimiento> get _filtrados {
-    if (_filtro.isEmpty) return widget.movimientos;
-    final q = _filtro.toLowerCase();
-    return widget.movimientos
-        .where((m) =>
-            m.cliente.toLowerCase().contains(q) ||
-            m.productos.toLowerCase().contains(q) ||
-            m.formaPago.toLowerCase().contains(q))
-        .toList();
+    var rows = widget.movimientos;
+    // Filtro por día (gap 5: drill-down desde gráfico).
+    if (widget.dia != null) {
+      rows = rows
+          .where((m) => m.createdAt.replaceFirst('T', ' ').startsWith(widget.dia!))
+          .toList();
+    }
+    // Filtro por forma de pago.
+    if (widget.pago != null) {
+      rows = rows.where((m) => m.formaPago == widget.pago).toList();
+    }
+    // Filtro por producto.
+    if (widget.producto != null) {
+      rows = rows
+          .where((m) =>
+              m.productos.toLowerCase().contains(widget.producto!.toLowerCase()))
+          .toList();
+    }
+    // Filtro de texto libre.
+    if (_filtro.isNotEmpty) {
+      final q = _filtro.toLowerCase();
+      rows = rows
+          .where((m) =>
+              m.cliente.toLowerCase().contains(q) ||
+              m.productos.toLowerCase().contains(q) ||
+              m.formaPago.toLowerCase().contains(q) ||
+              (m.numero?.toString().contains(q) ?? false))
+          .toList();
+    }
+    return rows;
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final visibles = _filtrados.take(10).toList();
-    return Card(
-      key: const Key('dashboard_movimientos_card'),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'Últimos movimientos',
-                    style: theme.textTheme.titleSmall,
-                  ),
-                ),
-                SizedBox(
-                  width: 180,
-                  height: 32,
-                  child: TextField(
-                    key: const Key('dashboard_movimientos_filtro'),
-                    decoration: InputDecoration(
-                      hintText: 'Filtrar…',
-                      prefixIcon: const Icon(Icons.search, size: 16),
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(vertical: 6),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                    style: theme.textTheme.bodySmall,
-                    onChanged: (v) => setState(() => _filtro = v),
-                  ),
-                ),
-              ],
+    final tokens = context.tokens;
+    final visibles = _filtrados.take(12).toList();
+    return _Tarjeta(
+      clave: const Key('dashboard_movimientos_card'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            widget.verCola ? 'Cola ahora' : 'Movimientos',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: tokens.ink,
             ),
-            const SizedBox(height: 4),
-            if (visibles.isEmpty && _filtro.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                child: Text(
-                  'Sin resultados para "$_filtro".',
-                  style: theme.textTheme.bodySmall,
-                  textAlign: TextAlign.center,
+          ),
+          if (!widget.verCola) ...[
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 34,
+              child: TextField(
+                key: const Key('dashboard_movimientos_filtro'),
+                decoration: const InputDecoration(
+                  hintText: 'Cliente o ticket',
+                  prefixIcon: Icon(Icons.search, size: 16),
+                  isDense: true,
+                  contentPadding: EdgeInsets.symmetric(vertical: 6),
                 ),
-              )
-            else
-              for (final m in visibles)
-                ListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  onTap: () => showDialog<void>(
-                    context: context,
-                    builder: (_) => TicketDialog(cobroId: m.id),
-                  ),
-                  leading: CircleAvatar(
-                    radius: 14,
-                    backgroundColor: theme.colorScheme.primaryContainer,
-                    child: Text(
-                      m.numero?.toString() ?? '·',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: theme.colorScheme.onPrimaryContainer,
-                      ),
-                    ),
-                  ),
-                  title: Text(m.cliente),
-                  subtitle: Text(
-                    '${_horaCorta(m.createdAt)} · '
-                    '${m.productos.isEmpty ? '—' : m.productos}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        moneda(m.monto),
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      const SizedBox(width: 4),
-                      Icon(
-                        Icons.receipt_outlined,
-                        size: 14,
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ],
-                  ),
-                ),
-            const SizedBox(height: 4),
+                style: const TextStyle(fontSize: 12),
+                onChanged: (v) => setState(() => _filtro = v),
+              ),
+            ),
           ],
-        ),
+          const SizedBox(height: 8),
+          if (widget.verCola)
+            if (widget.cola.isEmpty)
+              Text('No hay pedidos esperando.',
+                  style: TextStyle(fontSize: 12, color: tokens.muted))
+            else
+              for (final p in widget.cola.take(12))
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: _FilaMovimiento(
+                    tokens: tokens,
+                    titulo: p.cliente,
+                    subtitulo:
+                        '${_estadoLabel(p.estado)} · ${_horaCorta(p.createdAt)}',
+                    monto: moneda(p.total),
+                  ),
+                )
+          else if (visibles.isEmpty && _filtro.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: Text(
+                'Sin resultados para "$_filtro".',
+                style: TextStyle(fontSize: 12, color: tokens.muted),
+                textAlign: TextAlign.center,
+              ),
+            )
+          else if (visibles.isEmpty)
+            Text('Nada para este filtro.',
+                style: TextStyle(fontSize: 12, color: tokens.muted))
+          else
+            for (final m in visibles)
+              InkWell(
+                key: ValueKey('mov_${m.id}'),
+                onTap: () => showDialog<void>(
+                  context: context,
+                  builder: (_) => TicketDialog(cobroId: m.id),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: _FilaMovimiento(
+                    tokens: tokens,
+                    titulo: m.cliente,
+                    subtitulo:
+                        '${m.numero != null ? 'Nº ${m.numero} · ' : ''}${_formaLabel(m.formaPago)} · ${_horaCorta(m.createdAt)}',
+                    monto: moneda(m.monto),
+                  ),
+                ),
+              ),
+        ],
       ),
     );
   }
+
+  static String _formaLabel(String key) => switch (key) {
+        'efectivo' => 'Efectivo',
+        'transferencia' => 'Transferencia',
+        'tarjeta' => 'Tarjeta',
+        'cuenta_corriente' => 'Cta. cte.',
+        _ => key,
+      };
+
+  static String _estadoLabel(String estado) => switch (estado) {
+        'enviado' => 'Enviado',
+        'en_preparacion' => 'En preparación',
+        'listo' => 'Listo',
+        _ => estado,
+      };
 
   static String _horaCorta(String createdAt) {
     final partes = createdAt.split(' ');
     if (partes.length < 2) return createdAt;
     final hora = partes[1];
     return hora.length >= 5 ? hora.substring(0, 5) : hora;
+  }
+}
+
+class _FilaMovimiento extends StatelessWidget {
+  const _FilaMovimiento({
+    required this.tokens,
+    required this.titulo,
+    required this.subtitulo,
+    required this.monto,
+  });
+
+  final TokensMostrador tokens;
+  final String titulo;
+  final String subtitulo;
+  final String monto;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        border: Border.all(color: tokens.line),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  titulo,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: tokens.ink,
+                  ),
+                ),
+                Text(
+                  subtitulo,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 11, color: tokens.muted),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            monto,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: tokens.ink,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -1074,55 +1569,57 @@ class _TurnoCard extends ConsumerWidget {
       loading: () => const SizedBox.shrink(),
       error: (_, _) => const SizedBox.shrink(),
       data: (estado) {
-        final theme = Theme.of(context);
+        final tokens = context.tokens;
         final totalCobrado =
             estado.totales.fold<double>(0, (a, t) => a + t.total);
         final nCobros = estado.totales.fold<int>(0, (a, t) => a + t.n);
-        return Card(
-          key: const Key('dashboard_turno_card'),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            child: Row(
-              children: [
-                Icon(Icons.point_of_sale,
-                    size: 18, color: theme.colorScheme.secondary),
-                const SizedBox(width: 8),
-                Text('Turno', style: theme.textTheme.titleSmall),
-                const SizedBox(width: 16),
-                _TurnoChip(
-                  label: 'Cobrado',
-                  valor: moneda(totalCobrado),
-                  color: theme.colorScheme.primary,
+        return _Tarjeta(
+          clave: const Key('dashboard_turno_card'),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            children: [
+              Icon(Icons.point_of_sale, size: 18, color: tokens.leaf),
+              const SizedBox(width: 8),
+              Text(
+                'Turno',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: tokens.ink,
                 ),
+              ),
+              const SizedBox(width: 16),
+              _TurnoChip(
+                label: 'Cobrado',
+                valor: moneda(totalCobrado),
+                color: tokens.leaf,
+              ),
+              const SizedBox(width: 12),
+              _TurnoChip(
+                label: 'Cobros',
+                valor: '$nCobros',
+                color: tokens.terra,
+              ),
+              if (estado.egresos > 0) ...[
                 const SizedBox(width: 12),
                 _TurnoChip(
-                  label: 'Cobros',
-                  valor: '$nCobros',
-                  color: Colors.blue,
-                ),
-                if (estado.egresos > 0) ...[
-                  const SizedBox(width: 12),
-                  _TurnoChip(
-                    label: 'Egresos',
-                    valor: moneda(estado.egresos),
-                    color: Colors.red,
-                  ),
-                ],
-                const SizedBox(width: 12),
-                _TurnoChip(
-                  label: 'Esperado',
-                  valor: moneda(estado.esperado),
-                  color: theme.colorScheme.secondary,
-                ),
-                const Spacer(),
-                Text(
-                  'Desde ${_horaDesde(estado.abiertoAt)}',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
+                  label: 'Egresos',
+                  valor: moneda(estado.egresos),
+                  color: tokens.alerta,
                 ),
               ],
-            ),
+              const SizedBox(width: 12),
+              _TurnoChip(
+                label: 'Esperado',
+                valor: moneda(estado.esperado),
+                color: tokens.naranja,
+              ),
+              const Spacer(),
+              Text(
+                'Desde ${_horaDesde(estado.abiertoAt)}',
+                style: TextStyle(fontSize: 12, color: tokens.muted),
+              ),
+            ],
           ),
         );
       },
@@ -1150,14 +1647,21 @@ class _TurnoChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(valor,
-            style: theme.textTheme.bodyMedium
-                ?.copyWith(fontWeight: FontWeight.w600, color: color)),
-        Text(label, style: theme.textTheme.bodySmall?.copyWith(fontSize: 10)),
+        Text(
+          valor,
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: color,
+          ),
+        ),
+        Text(
+          label,
+          style: TextStyle(fontSize: 10, color: context.tokens.muted),
+        ),
       ],
     );
   }
@@ -1177,46 +1681,42 @@ class _StockBoardCard extends ConsumerWidget {
             cat.productos.where((p) => p.activo).toList(growable: false);
         if (activos.isEmpty) return const SizedBox.shrink();
         final sinStock = activos.where((p) => p.stock <= 0).length;
-        final theme = Theme.of(context);
-        return Card(
-          key: const Key('dashboard_stock_board'),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
+        final tokens = context.tokens;
+        return _Tarjeta(
+          clave: const Key('dashboard_stock_board'),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text.rich(
+                TextSpan(
                   children: [
-                    Expanded(
-                      child: Text.rich(TextSpan(children: [
-                        TextSpan(
-                          text: 'Stock ',
-                          style: theme.textTheme.titleSmall,
-                        ),
-                        TextSpan(
-                          text: '${activos.length} productos',
-                          style: theme.textTheme.bodySmall,
-                        ),
-                        if (sinStock > 0)
-                          TextSpan(
-                            text: ' · $sinStock sin stock',
-                            style: theme.textTheme.bodySmall
-                                ?.copyWith(color: Colors.red),
-                          ),
-                      ])),
+                    TextSpan(
+                      text: 'Stock ',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: tokens.ink,
+                      ),
                     ),
+                    TextSpan(
+                      text: '${activos.length} productos',
+                      style: TextStyle(fontSize: 12, color: tokens.muted),
+                    ),
+                    if (sinStock > 0)
+                      TextSpan(
+                        text: ' · $sinStock sin stock',
+                        style: TextStyle(fontSize: 12, color: tokens.alerta),
+                      ),
                   ],
                 ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: [
-                    for (final p in activos) _StockCell(producto: p),
-                  ],
-                ),
-              ],
-            ),
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [for (final p in activos) _StockCell(producto: p)],
+              ),
+            ],
           ),
         );
       },
@@ -1233,7 +1733,7 @@ class _StockCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final tokens = context.tokens;
     final capacidad =
         (producto.stockMinimo > 0 ? producto.stockMinimo : 1) * 4;
     final fraccion = (producto.stock / capacidad).clamp(0.0, 1.0);
@@ -1245,21 +1745,21 @@ class _StockCell extends StatelessWidget {
                 ? _StockNivel.mid
                 : _StockNivel.ok;
     final color = switch (nivel) {
-      _StockNivel.ok => Colors.green,
-      _StockNivel.mid => Colors.orange,
-      _StockNivel.low => Colors.amber.shade700,
-      _StockNivel.out => Colors.red,
+      _StockNivel.ok => tokens.ok,
+      _StockNivel.mid => tokens.naranja,
+      _StockNivel.low => tokens.ambar,
+      _StockNivel.out => tokens.alerta,
     };
     return SizedBox(
-      width: 100,
+      width: 104,
       height: 56,
       child: DecoratedBox(
         decoration: BoxDecoration(
-          border: Border.all(color: theme.colorScheme.outlineVariant),
+          border: Border.all(color: tokens.line),
           borderRadius: BorderRadius.circular(6),
         ),
         child: Padding(
-          padding: const EdgeInsets.all(4),
+          padding: const EdgeInsets.all(5),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -1267,7 +1767,7 @@ class _StockCell extends StatelessWidget {
                 producto.nombre,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.bodySmall?.copyWith(fontSize: 10),
+                style: TextStyle(fontSize: 10, color: tokens.ink),
               ),
               const Spacer(),
               Row(
@@ -1278,8 +1778,7 @@ class _StockCell extends StatelessWidget {
                       child: LinearProgressIndicator(
                         value: fraccion,
                         minHeight: 6,
-                        backgroundColor:
-                            theme.colorScheme.surfaceContainerHighest,
+                        backgroundColor: tokens.paper2,
                         valueColor: AlwaysStoppedAnimation(color),
                       ),
                     ),
@@ -1299,6 +1798,680 @@ class _StockCell extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Gap 1: Vitrina (slider productos destacados + trial)
+// ---------------------------------------------------------------------------
+
+/// Tintes para las láminas de la vitrina, equivalentes a los de la web.
+const _vitrinaTintes = <({Color fondo, Color tinta})>[
+  (fondo: Color(0xFFf6e3cf), tinta: Color(0xFF6a2e12)),
+  (fondo: Color(0xFFe7f2e4), tinta: Color(0xFF145c38)),
+  (fondo: Color(0xFFf8efd0), tinta: Color(0xFF6d5310)),
+  (fondo: Color(0xFFf4e4d6), tinta: Color(0xFF7a3418)),
+];
+
+class _VitrinaCard extends StatefulWidget {
+  const _VitrinaCard({
+    required this.trial,
+    required this.productos,
+    required this.onProducto,
+  });
+
+  final TrialInfo? trial;
+  final List<ProductoTop> productos;
+  final ValueChanged<String> onProducto;
+
+  @override
+  State<_VitrinaCard> createState() => _VitrinaCardState();
+}
+
+class _VitrinaCardState extends State<_VitrinaCard> {
+  final _controller = PageController(viewportFraction: 0.92);
+  Timer? _autoTimer;
+  int _pagina = 0;
+
+  List<_VitrinaLamina> get _laminas {
+    final laminas = <_VitrinaLamina>[];
+    for (var i = 0; i < widget.productos.length; i++) {
+      final p = widget.productos[i];
+      final tono = _vitrinaTintes[i % _vitrinaTintes.length];
+      laminas.add(_VitrinaLamina(
+        id: 'prod-${p.nombre}',
+        kicker: i == 0 ? 'Destacado' : 'También salió',
+        titulo: p.nombre,
+        texto: '${moneda(p.total)} en este período. Tocá para ver esos movimientos.',
+        fondo: tono.fondo,
+        tinta: tono.tinta,
+        icono: Icons.storefront_outlined,
+        producto: p.nombre,
+      ));
+    }
+    final trial = widget.trial;
+    if (trial != null) {
+      final puestoTexto = trial.puesto == null
+          ? 'Hoy todavía no cobraste.'
+          : trial.puesto == 1
+              ? 'Hoy vas primero, con ${trial.liderTickets} tickets.'
+              : 'Estás ${trial.puesto}° del día. El líder lleva ${trial.liderTickets} tickets.';
+      laminas.add(_VitrinaLamina(
+        id: 'trial-hoy',
+        kicker: 'Hoy',
+        titulo: '${trial.ticketsHoy} tickets',
+        texto: 'Llevás ${trial.ticketsTrial} en el trial.',
+        fondo: _vitrinaTintes[1].fondo,
+        tinta: _vitrinaTintes[1].tinta,
+        icono: Icons.emoji_events_outlined,
+      ));
+      laminas.add(_VitrinaLamina(
+        id: 'trial-puesto',
+        kicker: 'El mercado',
+        titulo: puestoTexto,
+        texto: '${trial.compradores} compradores con pedido. ${trial.puestos} puestos cobraron.',
+        fondo: _vitrinaTintes[2].fondo,
+        tinta: _vitrinaTintes[2].tinta,
+        icono: Icons.leaderboard_outlined,
+      ));
+      laminas.add(_VitrinaLamina(
+        id: 'trial-dias',
+        kicker: 'Trial Pro',
+        titulo: trial.diasRestantes == 1
+            ? 'Queda 1 día'
+            : 'Quedan ${trial.diasRestantes} días',
+        texto: 'Cuando termina, Pro se contrata desde Add-ons.',
+        fondo: _vitrinaTintes[0].fondo,
+        tinta: _vitrinaTintes[0].tinta,
+        icono: Icons.star_outline,
+      ));
+    }
+    if (laminas.isEmpty) {
+      laminas.add(_VitrinaLamina(
+        id: 'sin-ventas',
+        kicker: 'Tu puesto',
+        titulo: 'Todavía no hay ventas',
+        texto: 'Cuando cobres, acá vas a ver los productos que más salieron.',
+        fondo: _vitrinaTintes[3].fondo,
+        tinta: _vitrinaTintes[3].tinta,
+        icono: Icons.point_of_sale_outlined,
+      ));
+    }
+    return laminas;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _iniciarAutoSlide();
+  }
+
+  void _iniciarAutoSlide() {
+    _autoTimer?.cancel();
+    _autoTimer = Timer.periodic(const Duration(seconds: 7), (_) {
+      if (!mounted || _laminas.length < 2) return;
+      final next = (_pagina + 1) % _laminas.length;
+      _controller.animateToPage(
+        next,
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.easeInOut,
+      );
+    });
+  }
+
+  @override
+  void dispose() {
+    _autoTimer?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final laminas = _laminas;
+    return SizedBox(
+      height: 148,
+      child: Stack(
+        children: [
+          PageView.builder(
+            controller: _controller,
+            itemCount: laminas.length,
+            onPageChanged: (i) => setState(() => _pagina = i),
+            itemBuilder: (context, i) {
+              final lam = laminas[i];
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: _VitrinaLaminaWidget(
+                  lamina: lam,
+                  onTap: lam.producto != null
+                      ? () => widget.onProducto(lam.producto!)
+                      : null,
+                ),
+              );
+            },
+          ),
+          if (laminas.length > 1)
+            Positioned(
+              right: 12,
+              bottom: 8,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (var i = 0; i < laminas.length; i++)
+                    Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 2),
+                      width: _pagina == i ? 16 : 6,
+                      height: 6,
+                      decoration: BoxDecoration(
+                        color: _pagina == i
+                            ? const Color(0xFFf6e7c4)
+                            : Colors.white.withValues(alpha: 0.5),
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _VitrinaLamina {
+  const _VitrinaLamina({
+    required this.id,
+    required this.kicker,
+    required this.titulo,
+    required this.texto,
+    required this.fondo,
+    required this.tinta,
+    required this.icono,
+    this.producto,
+  });
+
+  final String id;
+  final String kicker;
+  final String titulo;
+  final String texto;
+  final Color fondo;
+  final Color tinta;
+  final IconData icono;
+  final String? producto;
+}
+
+class _VitrinaLaminaWidget extends StatelessWidget {
+  const _VitrinaLaminaWidget({required this.lamina, this.onTap});
+
+  final _VitrinaLamina lamina;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        decoration: BoxDecoration(
+          color: lamina.fondo,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // Gradiente diagonal simulado.
+            Positioned(
+              right: -30,
+              top: -30,
+              child: Container(
+                width: 140,
+                height: 140,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: lamina.tinta.withValues(alpha: 0.08),
+                ),
+              ),
+            ),
+            Positioned(
+              left: 0,
+              bottom: 0,
+              right: 0,
+              child: Container(
+                height: 90,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.centerLeft,
+                    end: Alignment.centerRight,
+                    colors: [
+                      lamina.tinta.withValues(alpha: 0.72),
+                      lamina.tinta.withValues(alpha: 0.35),
+                      Colors.transparent,
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              right: 14,
+              top: 14,
+              child: Icon(lamina.icono, size: 36, color: lamina.tinta.withValues(alpha: 0.25)),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Text(
+                    lamina.kicker.toUpperCase(),
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w500,
+                      letterSpacing: 1.6,
+                      color: lamina.tinta.withValues(alpha: 0.8),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    lamina.titulo,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontFamily: 'Fraunces',
+                      fontSize: 20,
+                      fontWeight: FontWeight.w600,
+                      color: lamina.tinta,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    lamina.texto,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: lamina.tinta.withValues(alpha: 0.8),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Gap 2: Alertas integradas en el riel inferior
+// ---------------------------------------------------------------------------
+
+class _AlertasCard extends ConsumerWidget {
+  const _AlertasCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final tokens = context.tokens;
+    final alertas = ref.watch(alertasProvider);
+    return _TarjetaRail(
+      clave: const Key('dashboard_alertas_card'),
+      titulo: 'Alertas',
+      child: alertas.when(
+        loading: () => const Center(
+          child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+        ),
+        error: (_, _) => Text('No se pudieron cargar.',
+            style: TextStyle(fontSize: 11, color: tokens.muted)),
+        data: (lista) {
+          if (lista.isEmpty) {
+            return Text('Nada pendiente.',
+                style: TextStyle(fontSize: 12, color: tokens.muted));
+          }
+          return ListView.separated(
+            padding: EdgeInsets.zero,
+            itemCount: lista.length > 5 ? 5 : lista.length,
+            separatorBuilder: (_, _) => const SizedBox(height: 6),
+            itemBuilder: (context, i) {
+              final a = lista[i];
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Text(
+                      a.mensaje,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: a.leida ? tokens.muted : tokens.ink,
+                      ),
+                    ),
+                  ),
+                  if (!a.leida) ...[
+                    const SizedBox(width: 4),
+                    GestureDetector(
+                      onTap: () async {
+                        try {
+                          await ref.read(alertasServiceProvider).marcarLeida(a.id);
+                          ref.invalidate(alertasProvider);
+                        } catch (_) {}
+                      },
+                      child: Text(
+                        'Leída',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                          color: tokens.leaf,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Gap 3: Ranking de cargadores en el riel inferior
+// ---------------------------------------------------------------------------
+
+class _RankingCargadoresCard extends ConsumerWidget {
+  const _RankingCargadoresCard();
+
+  static String _etiquetaNivel(String codigo) => switch (codigo) {
+        'nuevo' => 'Nuevo',
+        'bronce' => 'Bronce',
+        'plata' => 'Plata',
+        'oro' => 'Oro',
+        'elite' => 'Elite',
+        _ => codigo,
+      };
+
+  static Color _colorNivel(String codigo, TokensMostrador tokens) => switch (codigo) {
+        'elite' => tokens.leaf,
+        'oro' => tokens.ambar,
+        'plata' => tokens.muted,
+        'bronce' => tokens.naranja,
+        _ => tokens.inkSoft,
+      };
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final tokens = context.tokens;
+    final ranking = ref.watch(rankingCargadoresProvider);
+    return _TarjetaRail(
+      clave: const Key('dashboard_cargadores_card'),
+      titulo: 'Cargadores',
+      child: ranking.when(
+        loading: () => const Center(
+          child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+        ),
+        error: (_, _) => Text('No se pudo cargar.',
+            style: TextStyle(fontSize: 11, color: tokens.muted)),
+        data: (data) {
+          if (data.ranking.isEmpty) {
+            return Text('Todavía no hay cargadores.',
+                style: TextStyle(fontSize: 12, color: tokens.muted));
+          }
+          return ListView.separated(
+            padding: EdgeInsets.zero,
+            itemCount: data.ranking.length > 8 ? 8 : data.ranking.length,
+            separatorBuilder: (_, _) => const SizedBox(height: 4),
+            itemBuilder: (context, i) {
+              final item = data.ranking[i];
+              return Row(
+                children: [
+                  SizedBox(
+                    width: 18,
+                    child: Text(
+                      '${item.puesto}',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        color: tokens.muted,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: Text(
+                      item.nombre,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 12, color: tokens.ink),
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: _colorNivel(item.nivel, tokens).withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      _etiquetaNivel(item.nivel),
+                      style: TextStyle(
+                        fontSize: 9,
+                        fontWeight: FontWeight.w600,
+                        color: _colorNivel(item.nivel, tokens),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Gap 4: Sucursales mini-widget
+// ---------------------------------------------------------------------------
+
+class _SucursalesCard extends ConsumerWidget {
+  const _SucursalesCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final tokens = context.tokens;
+    final sucursalesAsync = ref.watch(sucursalesProvider);
+    return Container(
+      decoration: BoxDecoration(
+        color: tokens.surface,
+        border: Border.all(color: tokens.line),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      child: sucursalesAsync.when(
+        loading: () => Row(
+          children: [
+            Icon(Icons.store_outlined, size: 18, color: tokens.leaf),
+            const SizedBox(width: 10),
+            Text('Cargando sucursales…',
+                style: TextStyle(fontSize: 12, color: tokens.muted)),
+          ],
+        ),
+        error: (_, _) => Row(
+          children: [
+            Icon(Icons.store_outlined, size: 18, color: tokens.leaf),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text('Sucursales',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.ink)),
+            ),
+          ],
+        ),
+        data: (data) {
+          return Row(
+            children: [
+              Icon(Icons.store_outlined, size: 18, color: tokens.leaf),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Sucursales',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: tokens.ink,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${data.sucursales.length} activa${data.sucursales.length == 1 ? '' : 's'} · ${data.cruce.length} en comparación',
+                      style: TextStyle(fontSize: 11, color: tokens.muted),
+                    ),
+                  ],
+                ),
+              ),
+              if (data.cruce.isNotEmpty)
+                ...data.cruce.take(2).map((c) => Padding(
+                      padding: const EdgeInsets.only(left: 10),
+                      child: Column(
+                        children: [
+                          Text(
+                            moneda(c.ventas),
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: tokens.ink,
+                            ),
+                          ),
+                          Text(
+                            c.nombre,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontSize: 10, color: tokens.muted),
+                          ),
+                        ],
+                      ),
+                    )),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Gap 5: Chips de filtros combinados
+// ---------------------------------------------------------------------------
+
+class _FiltroChips extends StatelessWidget {
+  const _FiltroChips({
+    required this.dias,
+    this.dia,
+    this.pago,
+    this.producto,
+    required this.onClearDia,
+    required this.onClearPago,
+    required this.onClearProducto,
+  });
+
+  final int dias;
+  final String? dia;
+  final String? pago;
+  final String? producto;
+  final VoidCallback onClearDia;
+  final VoidCallback onClearPago;
+  final VoidCallback onClearProducto;
+
+  static String _diaCorto(String iso) {
+    if (iso.length > 10) {
+      final hora = iso.length > 11 ? iso.substring(11, 13) : '';
+      return '${hora}h';
+    }
+    final parts = iso.split('-');
+    if (parts.length == 3) return '${parts[2]}/${parts[1]}';
+    return iso;
+  }
+
+  static String _pagoLabel(String key) => switch (key) {
+        'efectivo' => 'Efectivo',
+        'transferencia' => 'Transferencia',
+        'tarjeta' => 'Tarjeta',
+        'cuenta_corriente' => 'Cuenta corriente',
+        _ => key,
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    return Wrap(
+      spacing: 8,
+      runSpacing: 6,
+      children: [
+        if (dia != null)
+          _ChipRemovable(
+            label: dias == 1 ? 'Hora ${_diaCorto(dia!)}' : 'Día ${_diaCorto(dia!)}',
+            onClear: onClearDia,
+            color: tokens.leaf,
+          ),
+        if (pago != null)
+          _ChipRemovable(
+            label: _pagoLabel(pago!),
+            onClear: onClearPago,
+            color: tokens.leaf,
+          ),
+        if (producto != null)
+          _ChipRemovable(
+            label: producto!,
+            onClear: onClearProducto,
+            color: tokens.leaf,
+          ),
+      ],
+    );
+  }
+}
+
+class _ChipRemovable extends StatelessWidget {
+  const _ChipRemovable({
+    required this.label,
+    required this.onClear,
+    required this.color,
+  });
+
+  final String label;
+  final VoidCallback onClear;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: tokens.okBg,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: color),
+          ),
+          const SizedBox(width: 4),
+          GestureDetector(
+            onTap: onClear,
+            child: Text(
+              '×',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: color),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1400,39 +2573,38 @@ class _ClimaDolarState extends State<_ClimaDolar> {
     if (_cargando) return const SizedBox.shrink();
     final d = _dato;
     if (d == null) return const SizedBox.shrink();
-    final style = Theme.of(context).textTheme.bodySmall;
+    final tokens = context.tokens;
+    final style = TextStyle(fontSize: 12, color: tokens.inkSoft);
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           decoration: BoxDecoration(
-            border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+            border: Border.all(color: tokens.line),
             borderRadius: BorderRadius.circular(12),
+            color: tokens.surface,
           ),
           child: Text.rich(
-            TextSpan(children: [
-              const TextSpan(text: 'Oficial '),
-              TextSpan(
-                text: '\$${d.venta}',
-                style: style?.copyWith(fontWeight: FontWeight.w600),
-              ),
-              if (d.compra != null)
+            TextSpan(
+              children: [
+                const TextSpan(text: 'Oficial '),
                 TextSpan(
-                  text: ' · compra \$${d.compra}',
-                  style: style?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
+                  text: '\$${d.venta}',
+                  style: style.copyWith(fontWeight: FontWeight.w600),
                 ),
-            ]),
+                if (d.compra != null)
+                  TextSpan(
+                    text: ' · compra \$${d.compra}',
+                    style: style.copyWith(color: tokens.muted),
+                  ),
+              ],
+            ),
             style: style,
           ),
         ),
         const SizedBox(width: 8),
-        Text(
-          '${d.temp}° ${d.cielo}',
-          style: style,
-        ),
+        Text('${d.temp}° ${d.cielo}', style: style),
       ],
     );
   }

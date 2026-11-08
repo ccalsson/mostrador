@@ -9,8 +9,10 @@ import '../../models/staff_session.dart';
 import '../../services/pedidos_service.dart';
 import '../caja/editar_items_dialog.dart';
 import '../caja/edicion_items_controller.dart';
+import '../carrito/carrito_controller.dart';
 import 'checklist_pane.dart';
 import 'entrega_controller.dart';
+import 'entrega_lista_dialog.dart';
 import 'pedido_mensajes_pane.dart';
 
 /// Detalle de un pedido (`GET /api/v1/pedidos/:id`) con tres pestanas:
@@ -214,18 +216,50 @@ class _Detalle extends ConsumerWidget {
               label: Text(entrega.enviando ? 'Entregando…' : 'Entregar pedido'),
             ),
           ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+          child: OutlinedButton.icon(
+            key: const Key('pedido_duplicar'),
+            onPressed: () => _duplicar(context, ref, pedido),
+            icon: const Icon(Icons.copy_outlined),
+            label: const Text('Duplicar pedido'),
+          ),
+        ),
         const SizedBox(height: 24),
       ],
     );
   }
 
   Future<void> _confirmar(BuildContext context, WidgetRef ref) async {
-    final aceptado = await showDialog<bool>(
+    final resultado = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) => const _DialogoEntrega(),
+      builder: (dialogContext) => EntregaListaDialog(pedido: pedido),
     );
-    if (aceptado != true) return;
-    await ref.read(entregaControllerProvider(pedidoId).notifier).entregar();
+    if (resultado != true) return;
+    // El EntregaListaDialog ya disparó la entrega y mostró el snackbar de éxito.
+  }
+
+  /// Carga los ítems de este pedido en el carrito actual para duplicarlo.
+  void _duplicar(BuildContext context, WidgetRef ref, Pedido pedido) {
+    final carrito = ref.read(carritoControllerProvider.notifier);
+    carrito.reiniciar();
+    for (final item in pedido.items) {
+      carrito.agregarDesdeDuplicado(
+        productoId: item.productoId,
+        nombre: item.nombre,
+        unidadLabel: item.unidadLabel,
+        precio: item.precioUnitario,
+        cantidad: item.cantidad.toInt(),
+      );
+    }
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Pedido duplicado en el carrito'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
   }
 
   Future<void> _abrirEdicion(
@@ -252,45 +286,6 @@ bool _puedeEditar(Pedido pedido, StaffSession? sesion) {
   }
   final staff = sesion.staff;
   return staff.rol != Rol.vendedor || pedido.vendedorId == staff.id;
-}
-
-/// Diálogo con guard local: un doble tap no dispara dos `pop` (el segundo
-/// cerraría también el detalle).
-class _DialogoEntrega extends StatefulWidget {
-  const _DialogoEntrega();
-
-  @override
-  State<_DialogoEntrega> createState() => _DialogoEntregaState();
-}
-
-class _DialogoEntregaState extends State<_DialogoEntrega> {
-  bool _cerrado = false;
-
-  void _responder(bool valor) {
-    if (_cerrado) return;
-    _cerrado = true;
-    Navigator.pop(context, valor);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Confirmar entrega'),
-      content: const Text('¿Confirmar entrega del pedido?'),
-      actions: [
-        TextButton(
-          key: const Key('entrega_cancelar'),
-          onPressed: () => _responder(false),
-          child: const Text('Cancelar'),
-        ),
-        FilledButton(
-          key: const Key('entrega_confirmar'),
-          onPressed: () => _responder(true),
-          child: const Text('Confirmar entrega'),
-        ),
-      ],
-    );
-  }
 }
 
 class _ErrorEntrega extends StatelessWidget {

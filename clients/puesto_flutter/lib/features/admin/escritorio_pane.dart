@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/format.dart';
 import '../../models/escritorio.dart';
+import '../../services/catalogo_service.dart';
 import '../../services/escritorio_service.dart';
+import 'mensajes_tab.dart';
 
 /// Formatea un monto en pesos argentinos sin depender de locale intl.
 String _ars(double value) {
@@ -31,7 +34,8 @@ String _fechaCorta(String iso) {
   return '$dow ${dt.day} $mes, $hh:$mm';
 }
 
-/// Pantalla Escritorio del dueño — 3 tabs: Margen, Deudas, Cierres.
+/// Pantalla Escritorio del dueño — 5 tabs: Comprador, Margen, Deudas, Cierres,
+/// Lista publicada.
 ///
 /// Paridad con la web (escritorio.tsx). Solo admin.
 class EscritorioPane extends ConsumerStatefulWidget {
@@ -44,7 +48,7 @@ class EscritorioPane extends ConsumerStatefulWidget {
 class _EscritorioPaneState extends ConsumerState<EscritorioPane>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController =
-      TabController(length: 3, vsync: this);
+      TabController(length: 5, vsync: this);
 
   @override
   void dispose() {
@@ -63,22 +67,45 @@ class _EscritorioPaneState extends ConsumerState<EscritorioPane>
       children: [
         _TabBar(controller: _tabController),
         Expanded(
-          child: resumenAsync.when(
-            loading: () => const Center(child: CircularProgressIndicator()),
-            error: (error, stack) => _ErrorView(error: error, onRetry: _recargar),
-            data: (data) {
-              if (!data.premium) {
-                return const _PremiumRequerido();
-              }
-              return TabBarView(
-                controller: _tabController,
-                children: [
-                  _MargenTab(margen: data.margen),
-                  _DeudasTab(deudas: data.deudas),
-                  _CierresTab(cierres: data.cierres),
-                ],
-              );
-            },
+          child: TabBarView(
+            controller: _tabController,
+            children: [
+              // Tab 0: Comprador (mensajes) — no requiere premium
+              const MensajesTab(),
+              // Tabs 1-3: requieren premium
+              resumenAsync.when(
+                loading: () =>
+                    const Center(child: CircularProgressIndicator()),
+                error: (error, stack) =>
+                    _ErrorView(error: error, onRetry: _recargar),
+                data: (data) {
+                  if (!data.premium) return const _PremiumRequerido();
+                  return _MargenTab(margen: data.margen);
+                },
+              ),
+              resumenAsync.when(
+                loading: () =>
+                    const Center(child: CircularProgressIndicator()),
+                error: (error, stack) =>
+                    _ErrorView(error: error, onRetry: _recargar),
+                data: (data) {
+                  if (!data.premium) return const _PremiumRequerido();
+                  return _DeudasTab(deudas: data.deudas);
+                },
+              ),
+              resumenAsync.when(
+                loading: () =>
+                    const Center(child: CircularProgressIndicator()),
+                error: (error, stack) =>
+                    _ErrorView(error: error, onRetry: _recargar),
+                data: (data) {
+                  if (!data.premium) return const _PremiumRequerido();
+                  return _CierresTab(cierres: data.cierres);
+                },
+              ),
+              // Tab 4: Lista publicada — no requiere premium
+              const _ListaPublicaTab(),
+            ],
           ),
         ),
       ],
@@ -106,9 +133,11 @@ class _TabBar extends StatelessWidget {
         indicatorColor: cs.primary,
         indicatorSize: TabBarIndicatorSize.label,
         tabs: const [
+          Tab(text: 'Comprador'),
           Tab(text: 'Margen'),
           Tab(text: 'Deudas'),
           Tab(text: 'Cierres'),
+          Tab(text: 'Lista publicada'),
         ],
       ),
     );
@@ -365,6 +394,115 @@ class _CierresTab extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
+// Lista publicada tab
+// ---------------------------------------------------------------------------
+
+class _ListaPublicaTab extends ConsumerWidget {
+  const _ListaPublicaTab();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final catalogo = ref.watch(catalogoProvider);
+    final cs = Theme.of(context).colorScheme;
+
+    return catalogo.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (e, _) => Center(child: Text('Error al cargar: $e')),
+      data: (data) {
+        final publicados =
+            data.productos.where((p) => p.activo && p.publicadoOnline).toList();
+        final ocultos =
+            data.productos.where((p) => p.activo && !p.publicadoOnline).length;
+
+        return ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: cs.surface,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: cs.outlineVariant),
+              ),
+              child: Text(
+                publicados.isEmpty
+                    ? 'No hay productos publicados en Mercado.'
+                    : 'El comprador ve estos ${publicados.length} productos. '
+                        '$ocultos activos siguen fuera de Mercado.',
+                style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant),
+              ),
+            ),
+            const SizedBox(height: 12),
+            if (publicados.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 24),
+                child: Center(
+                  child: Text(
+                    'Sin productos publicados.',
+                    style: TextStyle(color: cs.onSurface.withValues(alpha: 0.5)),
+                  ),
+                ),
+              )
+            else
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: publicados.map((p) {
+                  return SizedBox(
+                    width: _cardWidth(context),
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: cs.surface,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: cs.outlineVariant),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  p.nombre,
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.w500),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              Text(moneda(p.precio)),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'por ${p.unidad} · '
+                            '${p.stock > 0 ? '${cantidadNum(p.stock)} en el puesto' : 'sin stock, el comprador igual puede pedirlo'}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: cs.onSurface.withValues(alpha: 0.5),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  double _cardWidth(BuildContext context) {
+    final w = MediaQuery.sizeOf(context).width;
+    if (w > 600) return (w - 48 - 8) / 2;
+    return w - 32;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Shared widgets
 // ---------------------------------------------------------------------------
 
@@ -493,7 +631,7 @@ class _PremiumRequerido extends StatelessWidget {
             border: Border.all(color: cs.outlineVariant),
           ),
           child: Text(
-            'Margen, deudas y cierres son del plan Premium.',
+            'Margen, deudas y cierres son del plan Premium. Los mensajes con el comprador y la lista publicada siguen en todos los planes.',
             style: TextStyle(color: cs.onSurface.withValues(alpha: 0.6)),
             textAlign: TextAlign.center,
           ),

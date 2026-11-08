@@ -40,6 +40,9 @@ enum PedidoEstado {
 }
 
 /// Línea de pedido tal como la devuelve el backend (subtotal incluido).
+///
+/// [cantidadEntregada] y [notaEntrega] llegan del backend al cargar el detalle;
+/// en pedidos recién creados son 0 y null respectivamente.
 class PedidoItem {
   const PedidoItem({
     required this.id,
@@ -50,6 +53,8 @@ class PedidoItem {
     required this.unidad,
     required this.unidadLabel,
     required this.subtotal,
+    this.cantidadEntregada = 0,
+    this.notaEntrega,
   });
 
   final String id;
@@ -60,6 +65,11 @@ class PedidoItem {
   final String unidad;
   final String unidadLabel;
   final double subtotal;
+  final double cantidadEntregada;
+  final String? notaEntrega;
+
+  /// Cantidad que falta entregar (redondeo por tolerancia de punto flotante).
+  double get pendiente => (cantidad - cantidadEntregada).clamp(0, double.infinity);
 
   factory PedidoItem.fromJson(Map<String, dynamic> json) {
     return PedidoItem(
@@ -71,6 +81,8 @@ class PedidoItem {
       unidad: json['unidad'] as String? ?? 'kg',
       unidadLabel: json['unidadLabel'] as String? ?? '',
       subtotal: (json['subtotal'] as num?)?.toDouble() ?? 0,
+      cantidadEntregada: (json['cantidadEntregada'] as num?)?.toDouble() ?? 0,
+      notaEntrega: json['notaEntrega'] as String?,
     );
   }
 }

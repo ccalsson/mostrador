@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/errors/api_exceptions.dart';
@@ -18,10 +20,12 @@ class PedidosService {
     required String clientUuid,
     required List<({String productoId, int cantidad})> items,
     String clienteNombre = 'Mostrador',
+    String? clienteId,
     String? nota,
   }) async {
     final data = await _client.post('/api/v1/pedidos', body: {
       'clientUuid': clientUuid,
+      'clienteId': ?clienteId,
       'clienteNombre': clienteNombre,
       'nota': ?nota,
       'items': [
@@ -53,6 +57,37 @@ class PedidosService {
         await _client.post('/api/v1/pedidos/$id/entregar') as Map<String, dynamic>;
     final ok = (data['data'] as Map<String, dynamic>?)?['ok'] == true;
     if (!ok) throw const ApiException('El servidor no confirmó la entrega.');
+  }
+
+  /// `POST /api/v1/pedidos/:id/entregar-parcial` con body `{items: [...]}`.
+  /// Cada item lleva `itemId`, `cantidad` y `nota` opcional. El backend valida
+  /// que el pedido esté `cobrado` y que las cantidades no superen lo pendiente.
+  Future<Pedido> entregarParcial(
+    String id, {
+    required List<({String itemId, double cantidad, String? nota})> items,
+  }) async {
+    final data = await _client.post(
+      '/api/v1/pedidos/$id/entregar-parcial',
+      body: {
+        'items': [
+          for (final item in items)
+            {
+              'itemId': item.itemId,
+              'cantidad': item.cantidad,
+              if (item.nota != null && item.nota!.isNotEmpty) 'nota': item.nota,
+            },
+        ],
+      },
+    ) as Map<String, dynamic>;
+    final resultado = data['data'] as Map<String, dynamic>?;
+    if (resultado == null || resultado['ok'] != true) {
+      throw const ApiException('El servidor no confirmó la entrega parcial.');
+    }
+    // El backend devuelve el pedido actualizado dentro de `pedido`.
+    final pedidoJson = resultado['pedido'] as Map<String, dynamic>?;
+    if (pedidoJson != null) return Pedido.fromJson(pedidoJson);
+    // Fallback: releer el detalle desde el backend.
+    return detalle(id);
   }
 
   /// `mine: true` limita a los pedidos del vendedor autenticado;
@@ -101,6 +136,12 @@ class PedidosService {
       ],
     }) as Map<String, dynamic>;
     return _pedidoDe(data);
+  }
+
+  /// `GET /api/v1/pedidos/:id/comprobante` — bytes del comprobante de
+  /// transferencia (imagen o PDF).
+  Future<Uint8List> comprobante(String pedidoId) async {
+    return await _client.getBytes('/api/v1/pedidos/$pedidoId/comprobante');
   }
 
   /// `GET /api/v1/cobros/:id/ticket`.

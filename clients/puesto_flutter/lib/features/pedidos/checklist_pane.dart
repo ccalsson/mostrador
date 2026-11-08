@@ -125,7 +125,7 @@ class _ChecklistPaneState extends ConsumerState<ChecklistPane> {
                     child: Padding(
                       padding: EdgeInsets.all(32),
                       child: Text(
-                        'No hay items en el checklist.\nAgrega items para verificar antes de entregar.',
+                        'No hay ítems en el checklist.\nAgregá ítems para verificar antes de entregar.',
                         textAlign: TextAlign.center,
                       ),
                     ),
@@ -239,7 +239,7 @@ class _Progreso extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.only(top: 6),
               child: Text(
-                'Completa todos los items para habilitar la entrega.',
+                'Completá todos los ítems para habilitar la entrega.',
                 style: tema.textTheme.bodySmall?.copyWith(
                   color: tema.colorScheme.outline,
                 ),

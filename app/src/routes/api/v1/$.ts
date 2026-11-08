@@ -11,7 +11,7 @@ import {
   type CrearPedidoInput,
   type PedidoLineaInput,
 } from "@/lib/server/catalog-pedidos";
-import { createClienteForStaff, anotarPagoCuentaForStaff, cuentaClienteForStaff, listClientesForStaff, updateClienteForStaff } from "@/lib/server/clientes";
+import { createClienteForStaff, anotarPagoCuentaForStaff, cuentaClienteForStaff, listClientesForStaff, updateClienteForStaff, listarCompradoresAppForStaff, estadisticasCompradorAppForStaff, sumarCompradorAppForStaff, updateCompradorAppForStaff } from "@/lib/server/clientes";
 import { CreativosError, estadoCreativosForStaff, pedirCreativosForStaff } from "@/lib/server/creativos";
 import {
   emitirFacturaForStaff,
@@ -66,7 +66,7 @@ import {
   listChecklistTemplatesForStaff,
   toggleChecklistItemForStaff,
 } from "@/lib/server/checklist";
-import { ordenarProductosForStaff, quitarProductoForStaff, saveProductoForStaff, validarCosto, type SaveProductoInput } from "@/lib/server/productos";
+import { batchCostosForStaff, ordenarProductosForStaff, quitarProductoForStaff, saveProductoForStaff, validarCosto, type SaveProductoInput } from "@/lib/server/productos";
 import { borrarFotoProductoForStaff, FotoProductoError, subirFotoProductoForStaff } from "@/lib/server/productos-foto";
 import {
   asignarProveedorRemitoForStaff,
@@ -620,6 +620,41 @@ const ROUTES: Entry[] = [
       });
     },
   },
+  // ---- Compradores de la app (Mercado al Toque) — solo admin
+  {
+    method: "GET",
+    path: ["compradores-app"],
+    handler: async ({ url, staff }) => {
+      const busca = url.searchParams.get("busca") ?? undefined;
+      return json({ data: await listarCompradoresAppForStaff(staff, busca) });
+    },
+  },
+  {
+    method: "GET",
+    path: ["compradores-app", ":", "estadisticas"],
+    handler: async ({ segments, staff }) =>
+      json({ data: await estadisticasCompradorAppForStaff(staff, segments[1]) }),
+  },
+  {
+    method: "POST",
+    path: ["compradores-app", ":", "sumar"],
+    handler: async ({ segments, staff }) =>
+      json({ data: await sumarCompradorAppForStaff(staff, segments[1]) }, { status: 201 }),
+  },
+  {
+    method: "PATCH",
+    path: ["compradores-app", ":"],
+    handler: async ({ request, segments, staff }) => {
+      const body = asRecord(await readJson(request));
+      return json({
+        data: await updateCompradorAppForStaff(staff, segments[1], {
+          nombre: asString(body.nombre, "nombre", 120),
+          telefono: asOptionalString(body.telefono, 40),
+          direccion: asOptionalString(body.direccion, 200),
+        }),
+      });
+    },
+  },
   {
     method: "POST",
     path: ["productos"],
@@ -673,6 +708,25 @@ const ROUTES: Entry[] = [
       if (!Array.isArray(raw)) throw new HttpError(400, "invalid_request", "Envía una lista de ids.");
       const ids = raw.filter((id): id is string => typeof id === "string" && id.length > 0);
       return json({ data: await ordenarProductosForStaff(staff, ids) });
+    },
+  },
+  {
+    method: "PATCH",
+    path: ["productos", "batch-costos"],
+    handler: async ({ request, staff }) => {
+      const body = asRecord(await readJson(request));
+      const items = body.items;
+      if (!Array.isArray(items) || items.length === 0) {
+        throw new HttpError(400, "invalid_request", "items debe ser una lista no vacía.");
+      }
+      const parsed = items.map((raw) => {
+        const item = asRecord(raw);
+        const productoId = asString(item.productoId, "productoId", 80);
+        const costoResult = validarCosto(item.costo);
+        if (!costoResult.ok) throw new HttpError(400, "invalid_request", costoResult.error);
+        return { productoId, costo: costoResult.costo };
+      });
+      return json({ data: await batchCostosForStaff(staff, parsed) });
     },
   },
   {

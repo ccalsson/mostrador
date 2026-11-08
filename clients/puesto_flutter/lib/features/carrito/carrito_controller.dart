@@ -47,6 +47,32 @@ class CarritoController extends Notifier<Carrito> {
     _conLineas(lineas);
   }
 
+  /// Agrega un ítem al carrito desde un pedido duplicado. No requiere un
+  /// [Producto] completo: solo los datos que vienen en el [PedidoItem].
+  void agregarDesdeDuplicado({
+    required String productoId,
+    required String nombre,
+    required String unidadLabel,
+    required double precio,
+    int cantidad = 1,
+  }) {
+    if (_enviando) return;
+    final lineas = [...state.lineas];
+    final indice = lineas.indexWhere((l) => l.productoId == productoId);
+    if (indice >= 0) {
+      lineas[indice] = lineas[indice].conCantidad(lineas[indice].cantidad + cantidad);
+    } else {
+      lineas.add(CarritoLinea(
+        productoId: productoId,
+        nombre: nombre,
+        unidadLabel: unidadLabel,
+        precio: precio,
+        cantidad: cantidad,
+      ));
+    }
+    _conLineas(lineas);
+  }
+
   void fijarCantidad(String productoId, int cantidad) {
     if (_enviando) return;
     if (cantidad <= 0) {
@@ -73,6 +99,13 @@ class CarritoController extends Notifier<Carrito> {
     state = const Carrito();
   }
 
+  /// Fija el cliente del carrito. El backend acepta `clienteId` nulo para
+  /// "Mostrador"; se conserva en el estado aunque se vacíen las líneas.
+  void fijarCliente({String? clienteId, String clienteNombre = 'Mostrador'}) {
+    if (_enviando) return;
+    state = state.conCliente(clienteId: clienteId, clienteNombre: clienteNombre);
+  }
+
   /// Confirma el pedido con el `clientUuid` del intento lógico en curso.
   /// Un reintento reenvía exactamente el mismo valor.
   ///
@@ -82,6 +115,8 @@ class CarritoController extends Notifier<Carrito> {
     if (_enviando || state.vacio) return;
     final clientUuid = state.clientUuid ?? generarUuidV4();
     final lineas = List<CarritoLinea>.unmodifiable(state.lineas);
+    final clienteId = state.clienteId;
+    final clienteNombre = state.clienteNombre;
 
     // Marcar como enviando ANTES del await para evitar race conditions
     // con llamadas paralelas.
@@ -89,12 +124,14 @@ class CarritoController extends Notifier<Carrito> {
       lineas: lineas,
       clientUuid: clientUuid,
       envio: EnvioEstado.enviando,
+      clienteId: clienteId,
+      clienteNombre: clienteNombre,
     );
 
     // Verificar conectividad antes de intentar enviar.
     final hayConexion = await ref.read(conectividadServiceProvider).hayConexion();
     if (!hayConexion) {
-      await _guardarOffline(clientUuid, lineas);
+      await _guardarOffline(clientUuid, lineas, clienteNombre);
       return;
     }
 
@@ -105,6 +142,8 @@ class CarritoController extends Notifier<Carrito> {
               for (final linea in lineas)
                 (productoId: linea.productoId, cantidad: linea.cantidad),
             ],
+            clienteNombre: clienteNombre,
+            clienteId: clienteId,
           );
       if (!ref.mounted) return;
       state = Carrito(envio: EnvioEstado.creado, pedido: pedido);
@@ -112,7 +151,7 @@ class CarritoController extends Notifier<Carrito> {
       if (!ref.mounted) return;
       // Si es error de red, guardar offline en lugar de mostrar error.
       if (error is NetworkException) {
-        await _guardarOffline(clientUuid, lineas);
+        await _guardarOffline(clientUuid, lineas, clienteNombre);
         return;
       }
       state = Carrito(
@@ -120,6 +159,8 @@ class CarritoController extends Notifier<Carrito> {
         clientUuid: clientUuid,
         envio: EnvioEstado.error,
         errorMensaje: error.message,
+        clienteId: clienteId,
+        clienteNombre: clienteNombre,
       );
     } catch (_) {
       if (!ref.mounted) return;
@@ -128,6 +169,8 @@ class CarritoController extends Notifier<Carrito> {
         clientUuid: clientUuid,
         envio: EnvioEstado.error,
         errorMensaje: 'No se pudo crear el pedido.',
+        clienteId: clienteId,
+        clienteNombre: clienteNombre,
       );
     }
   }
@@ -136,6 +179,7 @@ class CarritoController extends Notifier<Carrito> {
   Future<void> _guardarOffline(
     String clientUuid,
     List<CarritoLinea> lineas,
+    String clienteNombre,
   ) async {
     final pendiente = PedidoPendiente(
       clientUuid: clientUuid,
@@ -147,7 +191,7 @@ class CarritoController extends Notifier<Carrito> {
           ),
       ],
       timestamp: DateTime.now(),
-      clienteNombre: 'Mostrador',
+      clienteNombre: clienteNombre,
     );
     await ref.read(offlineQueueServiceProvider).agregar(pendiente);
     if (!ref.mounted) return;
@@ -155,6 +199,8 @@ class CarritoController extends Notifier<Carrito> {
       lineas: lineas,
       clientUuid: clientUuid,
       envio: EnvioEstado.guardadoOffline,
+      clienteId: state.clienteId,
+      clienteNombre: clienteNombre,
     );
   }
 
@@ -239,7 +285,12 @@ class CarritoController extends Notifier<Carrito> {
   /// Aplica una edición: conserva el `clientUuid` del intento en curso y
   /// limpia el error anterior (el reintento vuelve por "Confirmar").
   void _conLineas(List<CarritoLinea> lineas) {
-    state = Carrito(lineas: lineas, clientUuid: state.clientUuid);
+    state = Carrito(
+      lineas: lineas,
+      clientUuid: state.clientUuid,
+      clienteId: state.clienteId,
+      clienteNombre: state.clienteNombre,
+    );
   }
 }
 

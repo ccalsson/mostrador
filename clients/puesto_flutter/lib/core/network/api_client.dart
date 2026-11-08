@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
@@ -96,6 +97,37 @@ class ApiClient {
 
   Future<dynamic> patch(String path, {Object? body}) =>
       _send('PATCH', path, body: body);
+
+  /// GET que devuelve los bytes crudos (para imágenes/PDF de comprobantes).
+  Future<Uint8List> getBytes(String path) async {
+    final generation = _generation;
+    final tenantId = _tenantId;
+    _checkActive(generation);
+    final token = await tokenProvider();
+    _checkActive(generation);
+    final uri = Uri.parse(baseUrl).replace(path: path);
+    final headers = <String, String>{
+      if (token != null) 'authorization': 'Bearer $token',
+      if (tenantId != null && path.startsWith('/api/v1/'))
+        'x-mostrador-tenant': tenantId,
+    };
+    late final http.Response response;
+    try {
+      response = await _http.get(uri, headers: headers).timeout(timeout);
+    } on TimeoutException {
+      _checkActive(generation);
+      throw NetworkException();
+    } on SocketException {
+      _checkActive(generation);
+      throw NetworkException();
+    }
+    _checkActive(generation);
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return response.bodyBytes;
+    }
+    final message = _extractMessage(_tryDecode(response.bodyBytes));
+    throw ApiException(message ?? 'Error inesperado (${response.statusCode}).');
+  }
 
   Future<dynamic> postMultipart(
     String path, {
