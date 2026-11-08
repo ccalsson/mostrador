@@ -8,6 +8,7 @@ import '../../core/tema.dart';
 import '../../core/widgets/tabla_web.dart';
 import '../../models/producto.dart';
 import '../../models/reportes.dart';
+import '../../services/canal_mercado_service.dart';
 import '../../services/catalogo_service.dart';
 import '../../services/reportes_service.dart';
 import 'ajuste_stock_dialog.dart';
@@ -91,6 +92,8 @@ class _ProductosPaneState extends ConsumerState<ProductosPane> {
                 ),
               ],
             ),
+            const SizedBox(height: 8),
+            _BarraCanalMercado(),
             const SizedBox(height: 12),
             Expanded(
               child: catalogo.when(
@@ -642,6 +645,101 @@ class _FilaRanking extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _BarraCanalMercado extends ConsumerStatefulWidget {
+  @override
+  ConsumerState<_BarraCanalMercado> createState() => _BarraCanalMercadoState();
+}
+
+class _BarraCanalMercadoState extends ConsumerState<_BarraCanalMercado> {
+  bool _guardando = false;
+
+  Future<void> _toggle(bool valor) async {
+    setState(() => _guardando = true);
+    try {
+      await ref.read(canalMercadoServiceProvider).guardar(valor);
+      ref.invalidate(canalMercadoProvider);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..removeCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..removeCurrentSnackBar()
+        ..showSnackBar(
+            const SnackBar(content: Text('No se pudo actualizar el canal.')));
+    } finally {
+      if (mounted) setState(() => _guardando = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final canal = ref.watch(canalMercadoProvider);
+    final theme = Theme.of(context);
+
+    return canal.when(
+      loading: () => const SizedBox.shrink(),
+      error: (_, _) => const SizedBox.shrink(),
+      data: (canal) {
+        final puedeToggle = canal.presencia && !_guardando;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: Checkbox(
+                    key: const Key('canal_mercado_toggle'),
+                    value: canal.activo,
+                    onChanged: puedeToggle ? (v) => _toggle(v ?? false) : null,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Este puesto aparece en Mercado al Toque',
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                ),
+              ],
+            ),
+            if (canal.activo) ...[
+              const SizedBox(height: 4),
+              Text(
+                'Este puesto está en Mercado. El cartel se imprime en QR.',
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: theme.colorScheme.primary),
+              ),
+            ],
+            if (!canal.presencia) ...[
+              const SizedBox(height: 4),
+              Text(
+                'Este puesto no tiene Presencia ni Pro. '
+                'Publicar no alcanza para aparecer en Mercado.',
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: theme.colorScheme.error),
+              ),
+            ],
+            if (canal.presencia) ...[
+              const SizedBox(height: 4),
+              Text(
+                'El plan cubre la caja y el stock de todas las sucursales. '
+                'Mercado es de cada puesto.',
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              ),
+            ],
+          ],
+        );
+      },
     );
   }
 }
