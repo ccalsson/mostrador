@@ -30,6 +30,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
   PedidoComprador? _pedido;
   Object? _error;
   bool _loading = true;
+  bool _cancelando = false;
 
   @override
   void initState() {
@@ -74,6 +75,42 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
 
   String _cuando(String iso) =>
       iso.length >= 16 ? '${iso.substring(0, 10)} ${iso.substring(11, 16)}' : iso;
+
+  Future<void> _cancelar() async {
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('¿Cancelar pedido?'),
+        content: const Text(
+          'Se liberará el stock reservado. Esta acción no se puede deshacer.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('No'),
+          ),
+          FilledButton.tonal(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Sí, cancelar'),
+          ),
+        ],
+      ),
+    );
+    if (confirmar != true || !mounted) return;
+    setState(() => _cancelando = true);
+    try {
+      await widget.api.cancelarPedido(widget.pedidoId);
+      if (!mounted) return;
+      setState(() => _cancelando = false);
+      await _load();
+    } on MercadoApiException catch (error) {
+      if (!mounted) return;
+      setState(() => _cancelando = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.message)),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -178,6 +215,21 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                   title: Text(titulo),
                   subtitle: Text(_cuando(momento)),
                 ),
+            if (pedido.estado == EstadoPedidoComprador.confirmado)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                child: FilledButton.tonalIcon(
+                  onPressed: _cancelando ? null : _cancelar,
+                  icon: _cancelando
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.cancel_outlined),
+                  label: Text(_cancelando ? 'Cancelando…' : 'Cancelar pedido'),
+                ),
+              ),
           ],
         ),
       ),

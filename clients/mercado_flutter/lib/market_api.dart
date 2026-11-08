@@ -509,6 +509,10 @@ class MercadoApi {
     return PedidoComprador.fromJson(_campo(response['pedido']));
   }
 
+  Future<void> cancelarPedido(String pedidoId) async {
+    await post('pedidos/${Uri.encodeComponent(pedidoId)}/cancelar');
+  }
+
   Future<List<Cargador>> listarCargadores() async {
     final response = await couriers();
     return _tipos(response['cargadores'], Cargador.fromJson);
