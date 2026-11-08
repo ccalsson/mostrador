@@ -36,7 +36,7 @@ class EntregaController extends Notifier<EntregaEstado> {
       if (!ref.mounted) return;
       // Refrescar desde el backend: nada de mutación optimista.
       ref.invalidate(pedidoDetalleProvider(pedidoId));
-      ref.invalidate(pedidosMineProvider);
+      ref.invalidate(pedidosColaProvider);
       state = const EntregaEstado(fase: EntregaFase.exito);
     } on ApiException catch (error) {
       if (!ref.mounted) return;

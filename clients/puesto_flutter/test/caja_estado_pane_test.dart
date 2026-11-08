@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:puesto_flutter/core/errors/api_exceptions.dart';
+import 'package:puesto_flutter/core/tema.dart';
 import 'package:puesto_flutter/features/caja/caja_estado_pane.dart';
 import 'package:puesto_flutter/features/caja/caja_pane.dart';
 import 'package:puesto_flutter/models/caja.dart';
@@ -173,7 +174,7 @@ Future<void> _montarEstado(
         if (anulaciones != null)
           anulacionesServiceProvider.overrideWithValue(anulaciones),
       ],
-      child: const MaterialApp(home: Scaffold(body: CajaEstadoPane())),
+      child: MaterialApp(theme: temaClaro(), home: const Scaffold(body: CajaEstadoPane())),
     ),
   );
   await tester.pump();
@@ -309,10 +310,13 @@ void main() {
           pedidosServiceProvider.overrideWithValue(_PedidosVacioFake()),
           cajaServiceProvider.overrideWithValue(caja),
         ],
-        child: const MaterialApp(home: Scaffold(body: CajaPane())),
+        child: MaterialApp(
+          theme: temaClaro(),
+          home: const Scaffold(body: CajaPane(intervalo: null)),
+        ),
       ),
     );
-    await _esperar(tester, find.byKey(const Key('caja_filtro')));
+    await _esperar(tester, find.byKey(const Key('caja_vacio')));
 
     expect(find.byKey(const Key('caja_estado_contenido')), findsNothing);
     expect(
@@ -324,11 +328,11 @@ void main() {
     await tester.tap(find.text('Estado de caja'));
     await _esperar(tester, find.byKey(const Key('caja_estado_contenido')));
 
-    expect(find.byKey(const Key('caja_filtro')), findsNothing);
+    expect(find.byKey(const Key('caja_vacio')), findsNothing);
     expect(caja.llamadas, 1);
 
     await tester.tap(find.text('Pedidos'));
-    await _esperar(tester, find.byKey(const Key('caja_filtro')));
+    await _esperar(tester, find.byKey(const Key('caja_vacio')));
 
     expect(find.byKey(const Key('caja_estado_contenido')), findsNothing);
   });

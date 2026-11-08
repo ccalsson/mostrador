@@ -40,7 +40,7 @@ class EdicionItemsController extends Notifier<EdicionEstado> {
           await ref.read(pedidosServiceProvider).actualizarItems(pedidoId, items);
       if (!ref.mounted) return;
       ref.invalidate(pedidoDetalleProvider(pedidoId));
-      ref.invalidate(pedidosCajaProvider);
+      ref.invalidate(pedidosColaProvider);
       state = EdicionEstado(fase: EdicionFase.exito, pedido: pedido);
     } on ApiException catch (error) {
       if (!ref.mounted) return;

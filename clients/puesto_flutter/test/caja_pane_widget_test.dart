@@ -3,10 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:puesto_flutter/core/errors/api_exceptions.dart';
 import 'package:puesto_flutter/core/format.dart';
+import 'package:puesto_flutter/core/tema.dart';
 import 'package:puesto_flutter/features/caja/caja_pane.dart';
+import 'package:puesto_flutter/models/caja.dart';
 import 'package:puesto_flutter/models/cobro.dart';
 import 'package:puesto_flutter/models/pedido.dart';
 import 'package:puesto_flutter/models/ticket.dart';
+import 'package:puesto_flutter/services/caja_service.dart';
 import 'package:puesto_flutter/services/pedidos_service.dart';
 import 'package:puesto_flutter/services/anulaciones_service.dart';
 
@@ -240,11 +243,24 @@ Future<void> _esperarSin(
   fail('No desapareció de pantalla: $finder');
 }
 
+const _cajaEstadoTest = CajaEstado(
+  id: 'caja_test',
+  abiertoAt: '2026-10-01 08:00:00+00',
+  esperado: 0,
+  egresos: 0,
+  totales: [],
+  ultimos: [],
+);
+
 Future<void> _montar(
   WidgetTester tester,
   _PedidosFake fake, {
   _AnulacionesFake? anulaciones,
 }) async {
+  tester.view.physicalSize = const Size(1280, 900);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
@@ -252,8 +268,14 @@ Future<void> _montar(
         anulacionesServiceProvider.overrideWithValue(
           anulaciones ?? _AnulacionesFake(),
         ),
+        cajaEstadoProvider.overrideWithValue(
+          AsyncValue.data(_cajaEstadoTest),
+        ),
       ],
-      child: const MaterialApp(home: Scaffold(body: CajaPane())),
+      child: MaterialApp(
+        theme: temaClaro(),
+        home: const Scaffold(body: CajaPane(intervalo: null)),
+      ),
     ),
   );
   await _esperar(tester, find.byKey(const Key('caja_lista')));
@@ -302,7 +324,7 @@ void main() {
     expect(find.byKey(const Key('caja_editar_items')), findsOneWidget);
   });
 
-  testWidgets('pedido cobrado: sin acciones de cobro ni edición', (
+  testWidgets('el tablero mueve el pedido cobrado a "Para entregar"', (
     tester,
   ) async {
     final fake = _PedidosFake([
@@ -310,16 +332,19 @@ void main() {
       _pedido('ped_2', estado: PedidoEstado.cobrado),
     ]);
     await _montar(tester, fake);
-    expect(
-      find.byKey(const Key('caja_tile_ped_2')),
-      findsNothing,
-      reason: 'el filtro por cobrar excluye los cobrados',
-    );
 
-    await tester.tap(find.text('Cobrados'));
+    expect(
+      fake.estadosConsultados,
+      containsAll(<String?>['cobrado', 'entregado']),
+      reason: 'el tablero consulta cada sección del recorrido por separado',
+    );
     await _esperar(tester, find.byKey(const Key('caja_tile_ped_2')));
-    expect(fake.estadosConsultados.contains('cobrado,entregado'), isTrue);
-    expect(find.byKey(const Key('caja_tile_ped_1')), findsNothing);
+    expect(
+      find.byKey(const Key('caja_tile_ped_1')),
+      findsOneWidget,
+      reason: 'la cola y lo que falta entregar se ven a la vez',
+    );
+    expect(find.text('PARA ENTREGAR'), findsOneWidget);
 
     await _abrirDetalle(tester, 'ped_2');
     expect(

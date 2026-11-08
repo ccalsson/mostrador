@@ -12,6 +12,10 @@ String cantidadNum(double valor) {
 String fechaCorta(String valor) =>
     valor.length >= 16 ? valor.substring(0, 16) : valor;
 
+/// Sólo la hora (HH:mm), como muestra la web en la cola del puesto.
+String horaCorta(String valor) =>
+    valor.length >= 16 ? valor.substring(11, 16) : valor;
+
 /// Convierte texto del operador en decimal seguro: acepta `,` o `.` como
 /// separador y hasta dos decimales; rechaza agrupadores de miles (`1.500`).
 double? parseDecimal(String entrada) {

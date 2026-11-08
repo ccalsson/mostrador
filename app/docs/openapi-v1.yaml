@@ -124,7 +124,7 @@ paths:
     get:
       tags: [Pedidos]
       summary: Listar pedidos
-      description: Cualquier staff. `mine=1` filtra los propios del vendedor; `estados` filtra por cola de armado.
+      description: Cualquier staff. `mine=1` filtra los propios del vendedor; `estados` filtra por cola de armado. Se pueden combinar.
       parameters:
         - name: mine
           in: query
@@ -213,7 +213,7 @@ paths:
     post:
       tags: [Pedidos]
       summary: Editar ítems de un pedido no cobrado
-      description: admin o cajero. Reemplaza el listado y ajusta reservas de stock. Rechaza pedidos cobrados o anulados.
+      description: admin, cajero o el vendedor dueño del pedido. Reemplaza el listado y ajusta reservas de stock. Rechaza pedidos cobrados o anulados y, para el vendedor, pedidos ajenos o de Mercado al Toque (403).
       parameters:
         - $ref: '#/components/parameters/IdPedido'
       requestBody:

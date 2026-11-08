@@ -288,8 +288,7 @@ class _FilaCobroState extends ConsumerState<_FilaCobro> {
           .cobro(cobro.id, motivo: motivo);
       if (!mounted) return;
       ref.invalidate(cajaEstadoProvider);
-      ref.invalidate(pedidosCajaProvider);
-      ref.invalidate(pedidosMineProvider);
+      ref.invalidate(pedidosColaProvider);
       ref.invalidate(catalogoProvider);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Venta anulada. Volvió el stock.')),

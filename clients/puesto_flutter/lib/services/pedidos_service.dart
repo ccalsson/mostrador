@@ -126,18 +126,18 @@ final pedidoDetalleProvider = FutureProvider.family<Pedido, String>(
   retry: _sinReintentos,
 );
 
-/// Pedidos del vendedor autenticado (`GET /api/v1/pedidos?mine=1`).
-final pedidosMineProvider = FutureProvider<List<Pedido>>(
-  (ref) => ref.watch(pedidosServiceProvider).listar(mine: true),
-  retry: _sinReintentos,
-);
+/// Filtro del tablero de cola: `mine` acota a los pedidos propios y `estados`
+/// a una sección. En el contrato v1 son filtros independientes y combinables.
+typedef FiltroCola = ({bool mine, String estados});
 
-/// Pedidos para caja filtrados por estado. El argumento es la lista separada
-/// por comas tal cual la espera el contrato; `null` = todos.
-final pedidosCajaProvider = FutureProvider.family<List<Pedido>, String?>(
-  (ref, estados) => ref.watch(pedidosServiceProvider).listar(estados: estados),
-  retry: _sinReintentos,
-);
+/// Pedidos de una sección del tablero (`GET /api/v1/pedidos?mine=&estados=`).
+final pedidosColaProvider =
+    FutureProvider.family<List<Pedido>, FiltroCola>(
+      (ref, filtro) => ref
+          .watch(pedidosServiceProvider)
+          .listar(mine: filtro.mine, estados: filtro.estados),
+      retry: _sinReintentos,
+    );
 
 /// Ticket de un cobro (`GET /api/v1/cobros/:id/ticket`).
 final ticketProvider = FutureProvider.family<Ticket, String>(

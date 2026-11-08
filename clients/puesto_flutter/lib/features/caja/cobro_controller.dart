@@ -56,7 +56,7 @@ class CobroController extends Notifier<CobroEstado> {
       // Refrescar desde el backend: el cobro descuenta stock y el estado del
       // pedido pasa a `cobrado` del lado del servidor.
       ref.invalidate(pedidoDetalleProvider(pedidoId));
-      ref.invalidate(pedidosCajaProvider);
+      ref.invalidate(pedidosColaProvider);
       ref.invalidate(catalogoProvider);
       state = CobroEstado(fase: CobroFase.exito, resultado: resultado);
     } on ApiException catch (error) {

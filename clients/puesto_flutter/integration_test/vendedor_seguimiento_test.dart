@@ -165,16 +165,35 @@ Future<void> _loginYIrAPedidos(WidgetTester tester) async {
   await _esperar(tester, find.byKey(const Key('login_email')));
   await tester.enterText(find.byKey(const Key('login_email')), _emailVenta);
   await tester.enterText(find.byKey(const Key('login_password')), _password);
-  await tocaLoginHasta(tester, find.byKey(const Key('catalogo_lista')));
+  // El shell aterriza por rol (vendedor → Puesto); sólo se comprueba que
+  // cargó la carcasa y recién ahí se navega al listado.
+  await tocaLoginHasta(tester, find.byKey(const Key('logout_button')));
 
-  await tester.tap(find.text('Pedidos'));
-  await tester.pump();
+  await irASeccion(tester, 'Pedidos');
   await _esperar(tester, find.byKey(const Key('pedidos_lista')));
+}
+
+/// El tablero arma sus filas en un `ListView`, que sólo construye lo que entra
+/// en la ventana: un pedido cobrado vive en "Para entregar", debajo de toda la
+/// cola, y hay que scrollear hasta él como hace cualquier persona.
+Future<void> _bajarHasta(WidgetTester tester, Finder finder) async {
+  final lista = find.byKey(const Key('pedidos_lista'));
+  await _esperar(tester, lista);
+  await tester.scrollUntilVisible(
+    finder,
+    120,
+    scrollable: find
+        .descendant(
+          of: lista,
+          matching: find.byType(Scrollable),
+        )
+        .first,
+  );
 }
 
 Future<void> _abrirDetalle(WidgetTester tester, String pedidoId) async {
   final tile = find.byKey(Key('pedido_tile_$pedidoId'));
-  await _esperar(tester, tile);
+  await _bajarHasta(tester, tile);
   await tester.tap(tile);
   await tester.pump();
   await _esperar(tester, find.byKey(const Key('pedido_detalle')));

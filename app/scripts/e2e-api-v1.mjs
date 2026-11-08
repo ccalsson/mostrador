@@ -980,6 +980,106 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
     }
   });
 
+  it("6d. el vendedor edita su pedido mientras espera en la cola de caja", async () => {
+    const prod = `prod-${randomUUID()}`;
+    const otro = `staff-otro-vendedor-${randomUUID()}`;
+    const ids = [];
+    const insertarPedido = (opts) =>
+      state.pool.query(
+        `insert into pedidos (id, tenant_id, client_uuid, vendedor_id, cliente_nombre, estado, origen)
+         values ($1, $2, $3, $4, 'E2E 6d', $5, $6)`,
+        [opts.id, TENANT, `e2e-6d-${opts.id}`, opts.vendedorId, opts.estado, opts.origen],
+      );
+    await state.pool.query(
+      `insert into productos (id, tenant_id, nombre, unidad, unidad_label, precio, moneda, stock, stock_minimo, activo)
+       values ($1, $2, 'Zapallo E2E 6d', 'bulto', 'bulto', 900, 'ARS', 100, 0, true)`,
+      [prod, TENANT],
+    );
+    try {
+      // Propio y en cola → habilitado. Es la regla del pedido: sólo cobrado/anulado cierra la edición.
+      const alto = await api("POST", "/pedidos", {
+        token: state.tokens.vendedor,
+        body: { clientUuid: `e2e-6d-mio`, clienteNombre: "E2E 6d", items: [{ productoId: prod, cantidad: 1 }] },
+      });
+      assert.equal(alto.status, 201, JSON.stringify(alto.data));
+      const mio = alto.data.data.id;
+      ids.push(mio);
+
+      const edit = await api("POST", `/pedidos/${mio}/items`, {
+        token: state.tokens.vendedor,
+        body: { items: [{ productoId: prod, cantidad: 4 }] },
+      });
+      assert.equal(edit.status, 200, JSON.stringify(edit.data));
+      approx(edit.data.data.total, 3600, "el vendedor reemplaza las cantidades de su pedido");
+
+      // Ajenos, de Mercado y ya cobrados siguen cerrados para el vendedor.
+      const ajeno = `ped-${randomUUID()}`;
+      const mercado = `ped-${randomUUID()}`;
+      const cobrado = `ped-${randomUUID()}`;
+      ids.push(ajeno, mercado, cobrado);
+      await insertarPedido({ id: ajeno, vendedorId: otro, estado: "enviado", origen: "mostrador" });
+      await insertarPedido({ id: mercado, vendedorId: state.staffIds.vendedor, estado: "enviado", origen: "mercado_al_toque" });
+      await insertarPedido({ id: cobrado, vendedorId: state.staffIds.vendedor, estado: "cobrado", origen: "mostrador" });
+
+      const cuerpo = { items: [{ productoId: prod, cantidad: 2 }] };
+      expectError(
+        await api("POST", `/pedidos/${ajeno}/items`, { token: state.tokens.vendedor, body: cuerpo }),
+        403,
+        /propios/,
+      );
+      expectError(
+        await api("POST", `/pedidos/${mercado}/items`, { token: state.tokens.vendedor, body: cuerpo }),
+        403,
+        /propios/,
+      );
+      expectError(
+        await api("POST", `/pedidos/${cobrado}/items`, { token: state.tokens.vendedor, body: cuerpo }),
+        400,
+        /no se puede editar/,
+      );
+
+      // El cajero no perdió ningún permiso: edita el pedido de otro vendedor.
+      const delCajero = await api("POST", `/pedidos/${ajeno}/items`, {
+        token: state.tokens.cajero,
+        body: cuerpo,
+      });
+      assert.equal(delCajero.status, 200, JSON.stringify(delCajero.data));
+    } finally {
+      await state.pool.query("delete from pedido_items where pedido_id = any($1::text[])", [ids]);
+      await state.pool.query("delete from pedidos where id = any($1::text[])", [ids]);
+      await state.pool.query("delete from productos where id = $1", [prod]);
+    }
+  });
+
+  it("6e. ?mine=1 y ?estados= se combinan en vez de anularse", async () => {
+    const propio = `ped-${randomUUID()}`;
+    const ajeno = `ped-${randomUUID()}`;
+    const insertar = (id, vendedorId) =>
+      state.pool.query(
+        `insert into pedidos (id, tenant_id, client_uuid, vendedor_id, cliente_nombre, estado, origen)
+         values ($1, $2, $3, $4, 'E2E 6e', 'enviado', 'mostrador')`,
+        [id, TENANT, `e2e-6e-${id}`, vendedorId],
+      );
+    try {
+      await insertar(propio, state.staffIds.vendedor);
+      await insertar(ajeno, `staff-otro-vendedor-${randomUUID()}`);
+      const ids = (res) => res.data.data.map((p) => p.id);
+
+      const combinado = await api("GET", "/pedidos?mine=1&estados=enviado", { token: state.tokens.vendedor });
+      assert.equal(combinado.status, 200, JSON.stringify(combinado.data));
+      assert.ok(ids(combinado).includes(propio), "mine + estados debe devolver el pedido propio en ese estado");
+      assert.ok(!ids(combinado).includes(ajeno), "mine sigue filtrando cuando se combina con estados");
+
+      const otroEstado = await api("GET", "/pedidos?mine=1&estados=cobrado", { token: state.tokens.vendedor });
+      assert.ok(!ids(otroEstado).includes(propio), "el filtro de estado se respeta junto con mine");
+
+      const sinMine = await api("GET", "/pedidos?estados=enviado", { token: state.tokens.vendedor });
+      assert.ok(ids(sinMine).includes(ajeno), "sin mine la cola del puesto es completa");
+    } finally {
+      await state.pool.query("delete from pedidos where id = any($1::text[])", [[propio, ajeno]]);
+    }
+  });
+
   it("6c. preparar y cobrar un pedido de Mercado habilita el pago (paridad con la web)", async () => {
     const prod = `prod-${randomUUID()}`;
     await state.pool.query(

@@ -3,11 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/errors/api_exceptions.dart';
 import '../../core/format.dart';
+import '../../core/tema.dart';
 import '../../models/cobro.dart';
 import '../../models/pedido.dart';
 import '../../services/anulaciones_service.dart';
 import '../../services/catalogo_service.dart';
 import '../../services/pedidos_service.dart';
+import '../pedidos/cola_pedidos.dart';
 import 'anulacion_dialog.dart';
 import 'caja_estado_pane.dart';
 import 'cobro_controller.dart';
@@ -17,18 +19,6 @@ import 'editar_items_dialog.dart';
 import 'egresos_pane.dart';
 import 'error_caja.dart';
 import 'ticket_dialog.dart';
-
-/// Filtro de la lista de caja; cada opción mapea al `?estados=` del contrato.
-enum CajaFiltro {
-  porCobrar('borrador,enviado,en_preparacion,listo', 'Por cobrar'),
-  cobrados('cobrado,entregado', 'Cobrados'),
-  todos(null, 'Todos');
-
-  const CajaFiltro(this.estados, this.label);
-
-  final String? estados;
-  final String label;
-}
 
 /// Vistas del área Caja: pedidos (cobro), estado del turno y egresos.
 enum CajaVista {
@@ -41,11 +31,21 @@ enum CajaVista {
   final String label;
 }
 
-/// Caja (desktop): vista de pedidos (lista a la izquierda, detalle con cobro a
-/// la derecha) y vista del estado del turno. Sólo usa las rutas del contrato
-/// v1; ningún estado ni valor se inventa localmente.
+/// A partir de este ancho la ficha queda al lado de la lista, como en la web.
+/// En pantallas angostas se abre en un diálogo.
+const _quiebreFicha = 1024.0;
+
+/// Ancho del rail de la ficha de caja.
+const _anchoFicha = 420.0;
+
+/// Caja (desktop): tablero de cola a la izquierda y ficha con el cobro a la
+/// derecha. Sólo usa las rutas del contrato v1; ningún estado ni valor se
+/// inventa localmente.
 class CajaPane extends ConsumerStatefulWidget {
-  const CajaPane({super.key});
+  const CajaPane({super.key, this.intervalo = kSondeoCola});
+
+  /// `null` congela el sondeo del tablero, como en los widget tests.
+  final Duration? intervalo;
 
   @override
   ConsumerState<CajaPane> createState() => _CajaPaneState();
@@ -53,7 +53,6 @@ class CajaPane extends ConsumerStatefulWidget {
 
 class _CajaPaneState extends ConsumerState<CajaPane> {
   CajaVista _vista = CajaVista.pedidos;
-  CajaFiltro _filtro = CajaFiltro.porCobrar;
   String? _seleccionado;
 
   @override
@@ -90,113 +89,67 @@ class _CajaPaneState extends ConsumerState<CajaPane> {
   }
 
   Widget _vistaPedidos(BuildContext context, WidgetRef ref) {
-    final pedidos = ref.watch(pedidosCajaProvider(_filtro.estados));
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
-          child: Row(
-            children: [
-              Expanded(
-                child: SegmentedButton<CajaFiltro>(
-                  key: const Key('caja_filtro'),
-                  segments: [
-                    for (final filtro in CajaFiltro.values)
-                      ButtonSegment(value: filtro, label: Text(filtro.label)),
-                  ],
-                  selected: {_filtro},
-                  onSelectionChanged: (seleccion) =>
-                      setState(() => _filtro = seleccion.first),
-                ),
-              ),
-              const SizedBox(width: 8),
-              IconButton(
-                key: const Key('caja_refrescar'),
-                tooltip: 'Actualizar pedidos',
-                onPressed: pedidos.isRefreshing
-                    ? null
-                    : () =>
-                          ref.invalidate(pedidosCajaProvider(_filtro.estados)),
-                icon: const Icon(Icons.refresh),
-              ),
-            ],
-          ),
-        ),
-        if (pedidos.isRefreshing)
-          const LinearProgressIndicator(key: Key('caja_refrescando')),
-        Expanded(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              SizedBox(width: 380, child: _lista(context, ref, pedidos)),
-              const VerticalDivider(width: 1),
-              Expanded(
-                child: _seleccionado == null
-                    ? const _SinSeleccion()
-                    : _CajaDetalle(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final enRail = constraints.maxWidth >= _quiebreFicha;
+        final listado = ColaPedidos(
+          contexto: ColaContexto.caja,
+          puedeFiltrarPropios: false,
+          pedidoIdActivo: _seleccionado,
+          intervalo: widget.intervalo,
+          onSeleccionar: (pedido) =>
+              _seleccionarPedido(pedido.id, enRail: enRail),
+        );
+        if (!enRail) return listado;
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: listado),
+            const VerticalDivider(width: 1),
+            SizedBox(
+              width: _anchoFicha,
+              child: _seleccionado == null
+                  ? const _SinSeleccion()
+                  : _TarjetaFicha(
+                      child: _CajaDetalle(
                         pedidoId: _seleccionado!,
-                        onEstadoActualizado: () => ref.invalidate(
-                          pedidosCajaProvider(_filtro.estados),
-                        ),
+                        onEstadoActualizado: _refrescarCola,
                       ),
-              ),
-            ],
-          ),
-        ),
-      ],
+                    ),
+            ),
+          ],
+        );
+      },
     );
   }
 
-  Widget _lista(
-    BuildContext context,
-    WidgetRef ref,
-    AsyncValue<List<Pedido>> pedidos,
-  ) {
-    if (pedidos.isLoading && !pedidos.hasValue) {
-      return const Center(
-        child: CircularProgressIndicator(key: Key('caja_cargando')),
-      );
-    }
-    final lista = pedidos.value;
-    if (lista == null) {
-      final error = pedidos.error;
-      return ErrorCaja(
-        mensaje: error is ApiException
-            ? error.message
-            : 'No se pudieron cargar los pedidos.',
-        onReintentar: () =>
-            ref.invalidate(pedidosCajaProvider(_filtro.estados)),
-      );
-    }
-    if (lista.isEmpty) {
-      return const _SinPedidosCaja();
-    }
-    return ListView.separated(
-      key: const Key('caja_lista'),
-      itemCount: lista.length,
-      separatorBuilder: (context, index) => const Divider(height: 1),
-      itemBuilder: (context, index) {
-        final pedido = lista[index];
-        return ListTile(
-          key: Key('caja_tile_${pedido.id}'),
-          selected: pedido.id == _seleccionado,
-          leading: const Icon(Icons.receipt_long_outlined),
-          title: Text('Nº ${pedido.id}'),
-          subtitle: Text(
-            pedido.pickedUpAt != null
-                ? '${pedido.clienteNombre} · ${pedido.estado.label} · '
-                      'Retirado · ${pedido.cargadorNombre ?? 'Cargador'} · '
-                      '${fechaCorta(pedido.pickedUpAt!)}'
-                : '${pedido.clienteNombre} · ${pedido.estado.label}',
+  /// Toda mutación de un pedido relee las cuatro secciones desde el backend:
+  /// el tablero no hace mutación optimista.
+  void _refrescarCola() => ref.invalidate(pedidosColaProvider);
+
+  void _seleccionarPedido(String id, {required bool enRail}) {
+    setState(() => _seleccionado = id);
+    if (!enRail) _abrirFicha(id);
+  }
+
+  Future<void> _abrirFicha(String pedidoId) async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogo) => Dialog(
+        insetPadding: const EdgeInsets.all(16),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 480, maxHeight: 640),
+          child: _TarjetaFicha(
+            child: _CajaDetalle(
+              pedidoId: pedidoId,
+              onEstadoActualizado: _refrescarCola,
+              onCerrar: () {
+                if (dialogo.mounted) Navigator.of(dialogo).pop();
+              },
+            ),
           ),
-          trailing: Text(
-            moneda(pedido.total),
-            style: Theme.of(context).textTheme.titleSmall,
-          ),
-          onTap: () => setState(() => _seleccionado = pedido.id),
-        );
-      },
+        ),
+      ),
     );
   }
 }
@@ -218,34 +171,7 @@ class _SinSeleccion extends StatelessWidget {
             color: tema.colorScheme.outline,
           ),
           const SizedBox(height: 12),
-          const Text('Elegí un pedido de la lista'),
-        ],
-      ),
-    );
-  }
-}
-
-class _SinPedidosCaja extends StatelessWidget {
-  const _SinPedidosCaja();
-
-  @override
-  Widget build(BuildContext context) {
-    final tema = Theme.of(context);
-    return Center(
-      key: const Key('caja_vacio'),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            Icons.receipt_long_outlined,
-            size: 56,
-            color: tema.colorScheme.outline,
-          ),
-          const SizedBox(height: 12),
-          const Text(
-            'No hay pedidos con este filtro',
-            textAlign: TextAlign.center,
-          ),
+          const Text('Elegí un pedido de la lista.'),
         ],
       ),
     );
@@ -256,10 +182,12 @@ class _CajaDetalle extends ConsumerStatefulWidget {
   const _CajaDetalle({
     required this.pedidoId,
     required this.onEstadoActualizado,
+    this.onCerrar,
   });
 
   final String pedidoId;
   final VoidCallback onEstadoActualizado;
+  final VoidCallback? onCerrar;
 
   @override
   ConsumerState<_CajaDetalle> createState() => _CajaDetalleState();
@@ -306,12 +234,14 @@ class _CajaDetalleState extends ConsumerState<_CajaDetalle> {
     }
     final resultado = cobro.resultado;
     return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
         if (detalle.isRefreshing)
           const LinearProgressIndicator(key: Key('caja_detalle_refrescando')),
-        Expanded(
+        Flexible(
           child: ListView(
             key: const Key('caja_detalle'),
+            shrinkWrap: true,
             children: [
               ListTile(
                 title: Text(
@@ -340,6 +270,13 @@ class _CajaDetalleState extends ConsumerState<_CajaDetalle> {
                             ),
                       icon: const Icon(Icons.refresh),
                     ),
+                    if (widget.onCerrar != null)
+                      IconButton(
+                        key: const Key('caja_detalle_cerrar'),
+                        tooltip: 'Cerrar',
+                        onPressed: widget.onCerrar,
+                        icon: const Icon(Icons.close),
+                      ),
                   ],
                 ),
               ),
@@ -503,8 +440,7 @@ class _CajaDetalleState extends ConsumerState<_CajaDetalle> {
           .pedido(widget.pedidoId, motivo: motivo);
       if (!mounted) return;
       ref.invalidate(pedidoDetalleProvider(widget.pedidoId));
-      ref.invalidate(pedidosCajaProvider);
-      ref.invalidate(pedidosMineProvider);
+      widget.onEstadoActualizado();
       ref.invalidate(catalogoProvider);
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('Pedido anulado.')));
@@ -567,6 +503,37 @@ class _ExitoCobro extends StatelessWidget {
             ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Borde superior naranja y cuerpo liso (patrón ficha web)
+// ---------------------------------------------------------------------------
+
+class _TarjetaFicha extends StatelessWidget {
+  const _TarjetaFicha({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    return Container(
+      decoration: BoxDecoration(
+        color: tokens.surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: tokens.line),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(height: 2, color: tokens.naranja),
+          Flexible(child: child),
+        ],
       ),
     );
   }

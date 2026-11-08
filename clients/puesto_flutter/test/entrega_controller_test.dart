@@ -90,6 +90,12 @@ Pedido _pedido(String id, {PedidoEstado estado = PedidoEstado.cobrado}) => Pedid
       comprobanteNombre: null,
     );
 
+/// Filtro de la sección "En cola" del tablero del puesto.
+const _enCola = (
+  mine: true,
+  estados: 'borrador,enviado,en_preparacion,listo',
+);
+
 void main() {
   late _PedidosFake pedidos;
   late ProviderContainer container;
@@ -104,20 +110,20 @@ void main() {
   tearDown(() => container.dispose());
 
   test('listado: devuelve los pedidos del vendedor', () async {
-    final lista = await container.read(pedidosMineProvider.future);
+    final lista = await container.read(pedidosColaProvider(_enCola).future);
     expect(lista.single.id, 'ped_1');
   });
 
   test('listado vacío: devuelve una lista sin elementos', () async {
     pedidos.pedidos = [];
-    final lista = await container.read(pedidosMineProvider.future);
+    final lista = await container.read(pedidosColaProvider(_enCola).future);
     expect(lista, isEmpty);
   });
 
   test('listado con error: propaga la excepción al consumidor', () async {
     pedidos.listarError = NetworkException();
     await expectLater(
-      container.read(pedidosMineProvider.future),
+      container.read(pedidosColaProvider(_enCola).future),
       throwsA(isA<NetworkException>()),
     );
   });

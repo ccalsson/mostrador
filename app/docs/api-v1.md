@@ -49,11 +49,11 @@ enviar un cuerpo válido.
 | `GET` | `/api/v1/session` | cualquier staff | Identidad, rol y tenant verificados por servidor. |
 | `GET` | `/api/v1/catalogo` | cualquier staff | Catálogo completo; `?since=<ISO-8601>` incremental. |
 | `POST` | `/api/v1/pedidos` | cualquier staff | Crea/reintenta un pedido idempotente. |
-| `GET` | `/api/v1/pedidos` | cualquier staff | Lista; `?mine=1` propios, `?estados=a,b` por cola. |
+| `GET` | `/api/v1/pedidos` | cualquier staff | Lista; `?mine=1` propios, `?estados=a,b` por cola. Se combinan (`?mine=1&estados=cobrado`). |
 | `GET` | `/api/v1/pedidos/:id` | cualquier staff | Detalle con ítems. |
 | `POST` | `/api/v1/pedidos/:id/estado` | admin, cajero | Cambia el estado de la cola de armado. |
 | `POST` | `/api/v1/pedidos/:id/entregar` | admin, cajero, vendedor | Marca entregado (pedido ya cobrado). |
-| `POST` | `/api/v1/pedidos/:id/items` | admin, cajero | Reemplaza ítems y ajusta reservas. |
+| `POST` | `/api/v1/pedidos/:id/items` | admin, cajero, vendedor | Reemplaza ítems y ajusta reservas. El vendedor sólo los de su propio pedido y mientras no esté cobrado ni anulado. |
 | `POST` | `/api/v1/pedidos/:id/cobrar` | admin, cajero | Cobra e idempotente; ticket + stock. |
 | `POST` | `/api/v1/pedidos/:id/anular` | admin, cajero | Anula pedido con motivo; repone stock o libera reserva. |
 | `GET` | `/api/v1/cobros/:id/ticket` | cualquier staff | Contenido del ticket emitido. |

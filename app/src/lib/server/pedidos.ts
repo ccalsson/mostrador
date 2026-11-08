@@ -12,31 +12,27 @@ export async function listPedidosForStaff(
   input: { mine?: boolean; estados?: PedidoEstado[] } = {},
 ): Promise<Pedido[]> {
   const sql = await getSql();
-  const estados = input.estados;
-  let rows: { id: string }[] = [];
+  const estados = input.estados?.length ? input.estados : undefined;
+  // `mine` y `estados` son filtros independientes: el tablero del puesto pide
+  // los pedidos propios agrupados por estado en una sola consulta.
+  const condiciones = ["tenant_id = $1"];
+  const params: unknown[] = [staff.tenantId];
   if (input.mine) {
-    rows = await sql<{ id: string }>`
-      select id from pedidos
-      where tenant_id = ${staff.tenantId} and vendedor_id = ${staff.id}
-      order by created_at desc
-      limit 40
-    `;
-  } else if (estados && estados.length) {
-    rows = await sql.query<{ id: string }>(
-      `select id from pedidos
-       where tenant_id = $1 and estado = any($2::text[])
-       order by created_at desc
-       limit 60`,
-      [staff.tenantId, estados],
-    );
-  } else {
-    rows = await sql<{ id: string }>`
-      select id from pedidos
-      where tenant_id = ${staff.tenantId}
-      order by created_at desc
-      limit 40
-    `;
+    params.push(staff.id);
+    condiciones.push(`vendedor_id = $${params.length}`);
   }
+  if (estados) {
+    params.push(estados);
+    condiciones.push(`estado = any($${params.length}::text[])`);
+  }
+  params.push(estados ? 60 : 40);
+  const rows = await sql.query<{ id: string }>(
+    `select id from pedidos
+     where ${condiciones.join(" and ")}
+     order by created_at desc
+     limit $${params.length}`,
+    params,
+  );
   return loadPedidos(
     rows.map((r) => r.id),
     staff.tenantId,
@@ -180,10 +176,24 @@ export async function updatePedidoItemsForStaff(
   staff: Staff,
   input: { id: string; items: PedidoLineaInput[] },
 ): Promise<Pedido | null> {
-  assertRole(staff, ["admin", "cajero"]);
+  assertRole(staff, ["admin", "cajero", "vendedor"]);
   const sql = await getSql();
   const pedido = await loadPedido(input.id, staff.tenantId);
   if (!pedido) throw new Error("Pedido no encontrado.");
+  // El vendedor edita su pedido mientras espera en la cola de caja. Los de
+  // Mercado al Toque los gestiona el puesto desde su propio recorrido.
+  if (staff.rol === "vendedor") {
+    const origen = await sql<{ origen: string }>`
+      select origen from pedidos
+      where id = ${input.id} and tenant_id = ${staff.tenantId}
+      limit 1
+    `;
+    if (pedido.vendedorId !== staff.id || origen[0]?.origen === "mercado_al_toque") {
+      const error = new Error("Sólo podés editar tus propios pedidos.");
+      Object.assign(error, { status: 403 });
+      throw error;
+    }
+  }
   if (pedido.estado === "cobrado" || pedido.estado === "anulado") {
     throw new Error("Este pedido ya no se puede editar.");
   }

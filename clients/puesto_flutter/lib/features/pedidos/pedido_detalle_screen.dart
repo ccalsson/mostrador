@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/auth/auth_controller.dart';
 import '../../core/errors/api_exceptions.dart';
 import '../../core/format.dart';
 import '../../models/pedido.dart';
+import '../../models/staff_session.dart';
 import '../../services/pedidos_service.dart';
+import '../caja/editar_items_dialog.dart';
+import '../caja/edicion_items_controller.dart';
 import 'checklist_pane.dart';
 import 'entrega_controller.dart';
 import 'pedido_mensajes_pane.dart';
@@ -120,6 +124,8 @@ class _Detalle extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final tema = Theme.of(context);
     final entrega = ref.watch(entregaControllerProvider(pedidoId));
+    final sesion = ref.watch(authControllerProvider).sesion;
+    final puedeEditar = _puedeEditar(pedido, sesion);
     ref.listen(entregaControllerProvider(pedidoId), (anterior, siguiente) {
       if (siguiente.exito && anterior?.exito != true) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -180,6 +186,16 @@ class _Detalle extends ConsumerWidget {
           ),
         ),
         if (entrega.fase == EntregaFase.error) _ErrorEntrega(mensaje: entrega.errorMensaje),
+        if (puedeEditar)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: OutlinedButton.icon(
+              key: const Key('pedido_editar_items'),
+              onPressed: () => _abrirEdicion(context, ref, pedido),
+              icon: const Icon(Icons.edit_outlined),
+              label: const Text('Editar ítems'),
+            ),
+          ),
         if (pedido.estado == PedidoEstado.cobrado)
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
@@ -211,6 +227,31 @@ class _Detalle extends ConsumerWidget {
     if (aceptado != true) return;
     await ref.read(entregaControllerProvider(pedidoId).notifier).entregar();
   }
+
+  Future<void> _abrirEdicion(
+    BuildContext context,
+    WidgetRef ref,
+    Pedido pedido,
+  ) async {
+    ref.invalidate(edicionItemsControllerProvider(pedidoId));
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => EditarItemsDialog(pedido: pedido),
+    );
+  }
+}
+
+/// Dueño y cajero editan cualquier pedido de la cola; el vendedor sólo los
+/// suyos. Nadie edita un pedido ya cobrado o anulado, y un entregado ya pasó
+/// por caja: el endpoint lo admitiría, la UI no lo ofrece.
+bool _puedeEditar(Pedido pedido, StaffSession? sesion) {
+  if (!pedido.estado.editable ||
+      pedido.estado == PedidoEstado.entregado ||
+      sesion == null) {
+    return false;
+  }
+  final staff = sesion.staff;
+  return staff.rol != Rol.vendedor || pedido.vendedorId == staff.id;
 }
 
 /// Diálogo con guard local: un doble tap no dispara dos `pop` (el segundo

@@ -37,7 +37,7 @@ exigen `authMiddleware` salvo `prepareDemo`.
 | `getPedido` | pedidos | Detalle de pedido con ítems | cualquier staff | pedidos, pedido_items | GET /pedidos/:id |
 | `updatePedidoEstado` | pedidos | Avanzar estado en la cola de armado | admin, cajero | pedidos, auditoria | POST /pedidos/:id/estado |
 | `marcarEntregado` | pedidos | Marcar entregado (pedido ya cobrado) | admin, cajero, vendedor | pedidos, auditoria | POST /pedidos/:id/entregar |
-| `updatePedidoItems` | pedidos | Editar ítems de un pedido no cobrado | admin, cajero | pedidos, pedido_items, stock_movimientos, auditoria | POST /pedidos/:id/items |
+| `updatePedidoItems` | pedidos | Editar ítems de un pedido no cobrado | admin, cajero, vendedor (sólo los propios) | pedidos, pedido_items, stock_movimientos, auditoria | POST /pedidos/:id/items |
 | `cobrarPedido` | cobros | Cobrar + ticket correlativo + descuento de stock | admin, cajero | pedidos, cobros, tickets, ticket_seq, stock_movimientos, cuenta_movimientos, alertas, auditoria | POST /pedidos/:id/cobrar |
 | `anularPedido` | cobros | Anular pedido (restituye stock o libera reserva) | admin, cajero | pedidos, cobros, stock_movimientos, auditoria | POST /pedidos/:id/anular |
 | `anularCobro` | cobros | Anular cobro/ticket (restituye stock y CC) | admin, cajero | cobros, pedidos, stock_movimientos, cuenta_movimientos, auditoria | POST /cobros/:id/anular |

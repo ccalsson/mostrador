@@ -173,22 +173,31 @@ Future<void> _loginYIrACaja(WidgetTester tester) async {
   await _esperar(tester, find.byKey(const Key('login_email')));
   await tester.enterText(find.byKey(const Key('login_email')), _emailCaja);
   await tester.enterText(find.byKey(const Key('login_password')), _password);
-  await tocaLoginHasta(tester, find.byKey(const Key('catalogo_lista')));
+  // El cajero aterriza directo en Caja (como /caja en la web).
+  await tocaLoginHasta(tester, find.byKey(const Key('caja_lista')));
+}
 
-  // El chip de rol del header también dice "Caja": la píldora se acota al
-  // menú horizontal de secciones.
-  await tester.tap(find.descendant(
-    of: find.byWidgetPredicate(
-        (widget) => widget is ListView && widget.scrollDirection == Axis.horizontal),
-    matching: find.text('Caja'),
-  ));
-  await tester.pump();
-  await _esperar(tester, find.byKey(const Key('caja_lista')));
+/// El tablero arma sus filas en un `ListView`, que sólo construye lo que entra
+/// en la ventana: con la cola llena hay que scrollear hasta la fila, igual que
+/// hace una persona.
+Future<void> _bajarHastaCaja(WidgetTester tester, Finder finder) async {
+  final lista = find.byKey(const Key('caja_lista'));
+  await _esperar(tester, lista);
+  await tester.scrollUntilVisible(
+    finder,
+    120,
+    scrollable: find
+        .descendant(
+          of: lista,
+          matching: find.byType(Scrollable),
+        )
+        .first,
+  );
 }
 
 Future<void> _abrirDetalleCaja(WidgetTester tester, String pedidoId) async {
   final tile = find.byKey(Key('caja_tile_$pedidoId'));
-  await _esperar(tester, tile);
+  await _bajarHastaCaja(tester, tile);
   await tester.tap(tile);
   await tester.pump();
   await _esperar(tester, find.byKey(const Key('caja_detalle')));
@@ -386,8 +395,9 @@ void main() {
     await tester.pump();
     await _loginYIrACaja(tester);
 
-    await tester.tap(find.text('Cobrados'));
-    await tester.pump();
+    // El tablero muestra todas las secciones a la vez: el cobrado aparece en
+    // "Para entregar" sin cambiar ningún filtro.
+    await _bajarHastaCaja(tester, find.text('PARA ENTREGAR'));
     await _abrirDetalleCaja(tester, id);
     await _esperarTexto(
       tester,
