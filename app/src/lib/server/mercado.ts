@@ -10,7 +10,12 @@ import { cupoFirme } from "@/lib/seguridad/cupo-db";
 import { getCotizacion, precioEnArs } from "@/lib/server/moneda";
 import { reservarLineas, soltarReserva } from "@/lib/server/stock";
 import { textoCondicion, tierContratado } from "@/lib/torre/condiciones";
-import { avisosDe, comisionDePuesto, lineasPorPuesto, puedeAparecer } from "@/lib/torre/presencia";
+import {
+  bannersPublicados,
+  comisionDePuesto,
+  lineasPorPuesto,
+  puedeAparecer,
+} from "@/lib/torre/presencia";
 
 export type MercadoPerfil = "comprador" | "cargador";
 export type MercadoActor = {
@@ -822,7 +827,7 @@ export async function getBuyerOrder(actor: MercadoActor, id: string) {
 }
 
 export async function listAvisos() {
-  return { avisos: await avisosDe() };
+  return { avisos: await bannersPublicados() };
 }
 
 export async function cancelBuyerOrder(actor: MercadoActor, pedidoId: string) {

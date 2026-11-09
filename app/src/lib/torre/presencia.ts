@@ -1,4 +1,9 @@
 import { getSql } from "@/lib/db";
+import {
+  armarBanner,
+  leerBanners,
+  type PlantillaId,
+} from "@/lib/mercado/plantillas";
 import { num } from "@/lib/money";
 import {
   apareceEnMercado,
@@ -125,6 +130,50 @@ export async function avisosDe(operationalTenantId?: string) {
     tenantId: row.tenant_id,
     tenantNombre: row.nombre,
   }));
+}
+
+export async function bannersPublicados() {
+  const avisos = await avisosDe();
+  if (avisos.length === 0) return [];
+  const sql = await getSql();
+  const tenants = [...new Set(avisos.map((aviso) => aviso.tenantId))];
+  const configs = await sql<{ id: string; config: unknown }>`
+    select id, config from tenants where id = any(${tenants}::text[])
+  `;
+  const porTenant = new Map(configs.map((row) => [row.id, leerBanners(row.config)]));
+  const elegidos = avisos.flatMap((aviso) => {
+    const banner = porTenant.get(aviso.tenantId)?.find((item) => item.adId === aviso.id);
+    return banner ? [{ aviso, banner }] : [];
+  });
+  const productos = [...new Set(elegidos.flatMap((item) => (item.banner.productoId ? [item.banner.productoId] : [])))];
+  const fichas = productos.length
+    ? await sql<{ id: string; nombre: string; unidad_label: string; precio: unknown }>`
+        select id, nombre, unidad_label, precio
+        from productos
+        where id = any(${productos}::text[]) and activo = true and publicado_online = true
+      `
+    : [];
+  const porProducto = new Map(fichas.map((row) => [row.id, row]));
+  return elegidos.flatMap(({ aviso, banner }) => {
+    const producto = banner.productoId ? porProducto.get(banner.productoId) : undefined;
+    const texto = armarBanner({
+      plantilla: banner.plantilla,
+      puesto: aviso.tenantNombre,
+      producto: producto ? { nombre: producto.nombre, unidadLabel: producto.unidad_label } : null,
+      frase: banner.frase,
+    });
+    if (!texto) return [];
+    return [{
+      id: aviso.id,
+      tenantNombre: aviso.tenantNombre,
+      plantilla: banner.plantilla as PlantillaId,
+      titulo: texto.titulo,
+      detalle: texto.detalle,
+      precio: banner.plantilla === "precio" && producto ? num(producto.precio) : null,
+      unidadLabel: producto?.unidad_label ?? null,
+      endsOn: aviso.endsOn,
+    }];
+  });
 }
 
 export async function packsDe(operationalTenantId: string) {
