@@ -3,11 +3,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:mercado_al_toque/market_api.dart';
+import 'package:mercado_al_toque/market_home.dart';
 import 'package:mercado_al_toque/models.dart';
 import 'package:mercado_al_toque/screens/buyer_orders_screen.dart';
 import 'package:mercado_al_toque/screens/courier_screen.dart';
 import 'package:mercado_al_toque/screens/order_detail_screen.dart';
 import 'package:mercado_al_toque/screens/profile_screen.dart';
+import 'package:mercado_al_toque/screens/ranking_screen.dart';
 import 'package:mercado_al_toque/screens/stands_screen.dart';
 import 'package:mercado_al_toque/widgets/public_links.dart';
 
@@ -42,6 +44,14 @@ class ApiFalsa extends MercadoApi {
 
   @override
   Future<List<Cargador>> listarCargadores() async => const [];
+
+  @override
+  Future<List<RankingCargador>> listarRankingCargadores() async {
+    rankingLlamadas++;
+    final error = errorRanking;
+    if (error != null) throw error;
+    return rankingFijos;
+  }
 
   @override
   Future<PedidoComprador> obtenerPedidoComprador(String pedidoId) async =>
@@ -149,9 +159,12 @@ Map<String, dynamic> recorridoMap({
 List<PedidoComprador> pedidosFijos = [];
 List<Recorrido> recorridosFijos = [];
 List<DocumentoLegal> documentosFijos = const [];
+List<RankingCargador> rankingFijos = const [];
 DocumentoLegalContenido? contenidoFijo;
 MercadoApiException? errorListado;
 MercadoApiException? errorAceptar;
+MercadoApiException? errorRanking;
+int rankingLlamadas = 0;
 final aceptaciones = <({String documentoId, int version, String hash})>[];
 
 Map<String, dynamic> cargadorPerfilMap() => {
@@ -197,9 +210,12 @@ void main() {
     pedidosFijos = [];
     recorridosFijos = [];
     documentosFijos = const [];
+    rankingFijos = const [];
+    rankingLlamadas = 0;
     contenidoFijo = null;
     errorListado = null;
     errorAceptar = null;
+    errorRanking = null;
     aceptaciones.clear();
   });
 
@@ -323,6 +339,113 @@ void main() {
     // Desmonta para cancelar el timer de seguimiento antes de cerrar el test.
     await tester.pumpWidget(const SizedBox());
   });
+
+  testWidgets('RankingScreen muestra posición, apodo y métricas', (
+    tester,
+  ) async {
+    rankingFijos = RankingCargador.listFromJson([
+      {
+        'id': 'usr_2',
+        'nombre': 'Cari',
+        'nivel': 'Oro',
+        'puntos': 420,
+        'score': 4.75,
+        'recorridosCompletados': 38,
+        'calificacion': 4.6,
+      },
+      {
+        'id': 'usr_3',
+        'nombre': 'Cacho',
+        'nivel': 'Bronce',
+        'puntos': 60,
+        'score': 4.1,
+        'recorridosCompletados': 9,
+        'calificacion': 3,
+      },
+    ]);
+    await tester.pumpWidget(anclado(RankingScreen(api: ApiFalsa())));
+    await tester.pumpAndSettle();
+
+    expect(find.text('1'), findsOneWidget);
+    expect(find.text('2'), findsOneWidget);
+    expect(find.text('Cari'), findsOneWidget);
+    expect(find.text('Oro · 420 pts · 38 entregados'), findsOneWidget);
+    expect(find.text('4.6'), findsOneWidget);
+    expect(rankingLlamadas, 1);
+
+    await tester.tap(find.byIcon(Icons.refresh));
+    await tester.pumpAndSettle();
+    expect(rankingLlamadas, 2);
+  });
+
+  testWidgets('RankingScreen avisa cuando el ranking está vacío', (
+    tester,
+  ) async {
+    await tester.pumpWidget(anclado(RankingScreen(api: ApiFalsa())));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Todavía no hay cargadores activos.'), findsOneWidget);
+  });
+
+  testWidgets('RankingScreen muestra el error del backend y reintenta', (
+    tester,
+  ) async {
+    errorRanking = const MercadoApiException(
+      'No hay conexión con el servidor.',
+      kind: ApiErrorKind.red,
+    );
+    await tester.pumpWidget(anclado(RankingScreen(api: ApiFalsa())));
+    await tester.pumpAndSettle();
+
+    expect(find.text('No hay conexión con el servidor.'), findsOneWidget);
+    expect(find.text('Reintentar'), findsOneWidget);
+
+    errorRanking = null;
+    await tester.tap(find.text('Reintentar'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Todavía no hay cargadores activos.'), findsOneWidget);
+  });
+
+  for (final perfil in ['comprador', 'cargador']) {
+    testWidgets('Home $perfil abre el ranking desde la barra superior', (
+      tester,
+    ) async {
+      rankingFijos = RankingCargador.listFromJson([
+        {
+          'id': 'usr_2',
+          'nombre': 'Cari',
+          'nivel': 'Oro',
+          'puntos': 420,
+          'score': 4.75,
+          'recorridosCompletados': 38,
+          'calificacion': 4.6,
+        },
+      ]);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: MarketHome(
+            api: ApiFalsa(puestos: [puestoFijo]),
+            actor: {
+              'id': 'usr_1',
+              'nombre': 'Ana',
+              'email': 'ana@test',
+              'perfil': perfil,
+            },
+            onSignOut: () async {},
+            onRefreshActor: () async {},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('Ranking de cargadores'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Cari'), findsOneWidget);
+      expect(find.text('Oro · 420 pts · 38 entregados'), findsOneWidget);
+    });
+  }
 
   for (final perfil in ['comprador', 'cargador']) {
     testWidgets('Perfil $perfil ofrece enlaces públicos sin documentos publicados', (tester) async {

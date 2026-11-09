@@ -271,6 +271,59 @@ class Cargador {
       );
 }
 
+/// Ítem del ranking de cargadores (`GET ranking`). El backend ya trae el
+/// listado ordenado por score y no envía la posición: se deriva del índice,
+/// y todo campo ausente cae a un valor por defecto en lugar de romper la
+/// pantalla.
+class RankingCargador {
+  const RankingCargador({
+    required this.puesto,
+    required this.id,
+    required this.nombre,
+    required this.nivel,
+    required this.puntos,
+    required this.score,
+    required this.recorridosCompletados,
+    required this.calificacion,
+  });
+
+  final int puesto;
+  final String id;
+  final String nombre;
+  final String nivel;
+  final int puntos;
+  final double score;
+  final int recorridosCompletados;
+
+  /// Promedio de estrellas; 0 cuando todavía no hay calificaciones.
+  final double calificacion;
+
+  factory RankingCargador.fromJson(Map<String, dynamic> json, {int? puesto}) =>
+      RankingCargador(
+        puesto: _intOpt(json['puesto']) ?? puesto ?? 0,
+        id: _strOpt(json['id']) ?? '',
+        nombre: _strOpt(json['nombre']) ?? 'Cargador',
+        nivel: _strOpt(json['nivel']) ?? 'Inicial',
+        puntos: _intOpt(json['puntos']) ?? 0,
+        score: _doubleOpt(json['score']) ?? 0,
+        recorridosCompletados: _intOpt(json['recorridosCompletados']) ?? 0,
+        calificacion: _doubleOpt(json['calificacion']) ?? 0,
+      );
+
+  /// Acepta el listado en cualquier de las dos claves que usa el backend
+  /// (`cargadores` hoy, `ranking` en el contrato legado) y numera las
+  /// posiciones en el orden recibido.
+  static List<RankingCargador> listFromJson(dynamic value) {
+    if (value is! List) return const [];
+    final result = <RankingCargador>[];
+    for (final entry in value) {
+      if (entry is! Map<String, dynamic>) continue;
+      result.add(RankingCargador.fromJson(entry, puesto: result.length + 1));
+    }
+    return List.unmodifiable(result);
+  }
+}
+
 /// Estados de recorrido (mercado_recorridos.estado en el backend).
 enum EstadoRecorrido {
   asignado('asignado', 'Asignado'),

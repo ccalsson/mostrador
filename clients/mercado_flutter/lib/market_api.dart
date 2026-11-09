@@ -518,6 +518,16 @@ class MercadoApi {
     return _tipos(response['cargadores'], Cargador.fromJson);
   }
 
+  /// `GET ranking`: ranking público de cargadores, ya ordenado por score.
+  /// El backend lo resuelve con la misma forma que `cargadores`; se aceptan
+  /// ambas claves por si el contrato se uniformiza más adelante.
+  Future<List<RankingCargador>> listarRankingCargadores() async {
+    final response = await get('ranking');
+    return RankingCargador.listFromJson(
+      response['cargadores'] ?? response['ranking'],
+    );
+  }
+
   Future<List<Recorrido>> listarRecorridos() async {
     final response = await routes();
     return Recorrido.listFromJson(response['recorridos']);

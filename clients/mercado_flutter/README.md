@@ -84,6 +84,7 @@ Requiere el backend arriba y deja datos de prueba en DEV.
 | Cargador   | `GET cargadores`, `GET recorridos`, `POST cargador/disponibilidad`, `POST recorridos` (con `Idempotency-Key`), `POST recorridos/{id}/aceptar`, `POST recorridos/{id}/rechazar`, `POST recorridos/{id}/retirar`, `POST recorridos/{id}/entregar` |
 | Calificar  | `POST recorridos/{id}/calificar` |
 | Identidad  | `POST identidad` (documento + selfie en base64) |
+| Público    | `GET ranking` (ranking de cargadores; no requiere sesión) |
 
 Las acciones mutantes de recorrido y el checkout usan `Idempotency-Key`
 persistida en el dispositivo: un reintento tras corte de red no duplica
@@ -126,7 +127,7 @@ lib/
   main.dart          shell por perfil (comprador/cargador) + ingreso/registro
   market_api.dart    cliente HTTP tipado + cachés 45 s + idempotencia
   models.dart        modelos del canal (fromWire estricto contra estados crudos)
-  screens/           stands, cart, buyer_orders, courier, profile
+  screens/           stands, cart, buyer_orders, courier, profile, ranking
   widgets/common.dart
 test/                unitarios de modelos y widget tests con MercadoApi falsa
 integration_test/    ciclo completo contra DEV

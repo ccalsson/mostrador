@@ -6,6 +6,7 @@ import 'screens/buyer_orders_screen.dart';
 import 'screens/cart_screen.dart';
 import 'screens/courier_screen.dart';
 import 'screens/profile_screen.dart';
+import 'screens/ranking_screen.dart';
 import 'screens/stands_screen.dart';
 
 class MarketHome extends StatefulWidget {
@@ -89,6 +90,11 @@ class _MarketHomeState extends State<MarketHome> {
             child: Center(child: Text(_isBuyer ? 'Comprador' : 'Cargador')),
           ),
           IconButton(
+            tooltip: 'Ranking de cargadores',
+            onPressed: _openRanking,
+            icon: const Icon(Icons.emoji_events_outlined),
+          ),
+          IconButton(
             tooltip: 'Cambiar tema',
             onPressed: widget.onAlternarTema,
             icon: Icon(Theme.of(context).brightness == Brightness.dark
@@ -113,6 +119,12 @@ class _MarketHomeState extends State<MarketHome> {
             NavigationDestination(icon: Icon(icons[i]), label: labels[i]),
         ],
       ),
+    );
+  }
+
+  void _openRanking() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => RankingScreen(api: widget.api)),
     );
   }
 

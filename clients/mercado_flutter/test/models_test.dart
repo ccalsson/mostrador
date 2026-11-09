@@ -272,6 +272,73 @@ void main() {
     });
   });
 
+  group('RankingCargador', () {
+    const sinMetricas = <String, dynamic>{'nombre': 'Sin Métricas'};
+
+    test('parsea la ficha del ranking y numera por índice', () {
+      final ranking = RankingCargador.listFromJson([
+        {
+          'id': 'usr_2',
+          'nombre': 'Cari',
+          'nivel': 'Oro',
+          'puntos': 420,
+          'score': 4.75,
+          'recorridosCompletados': 38,
+          'calificacion': 4.6,
+        },
+        {
+          'id': 'usr_3',
+          'nombre': 'Cacho',
+          'nivel': 'Bronce',
+          'puntos': 60,
+          'score': 4.1,
+          'recorridosCompletados': 9,
+          'calificacion': 4,
+        },
+      ]);
+
+      expect(ranking, hasLength(2));
+      expect(ranking.first.puesto, 1);
+      expect(ranking.last.puesto, 2);
+      expect(ranking.first.nivel, 'Oro');
+      expect(ranking.first.puntos, 420);
+      expect(ranking.first.score, 4.75);
+      expect(ranking.first.recorridosCompletados, 38);
+      expect(ranking.first.calificacion, 4.6);
+    });
+
+    test('un campo ausente cae al valor por defecto', () {
+      final item = RankingCargador.fromJson(sinMetricas, puesto: 7);
+
+      expect(item.puesto, 7);
+      expect(item.id, isEmpty);
+      expect(item.nombre, 'Sin Métricas');
+      expect(item.nivel, 'Inicial');
+      expect(item.puntos, 0);
+      expect(item.score, 0);
+      expect(item.recorridosCompletados, 0);
+      expect(item.calificacion, 0);
+    });
+
+    test('respeta el puesto del servidor y descarta entradas inválidas', () {
+      final ranking = RankingCargador.listFromJson([
+        {'puesto': 12, 'nombre': 'Cari', 'puntos': '40'},
+        'basura',
+        {'nombre': 'Cacho'},
+      ]);
+
+      expect(ranking, hasLength(2));
+      expect(ranking.first.puesto, 12);
+      expect(ranking.first.puntos, 40);
+      expect(ranking.last.puesto, 2);
+    });
+
+    test('una respuesta sin listado devuelve vacío', () {
+      expect(RankingCargador.listFromJson(null), isEmpty);
+      expect(RankingCargador.listFromJson({'cargadores': []}), isEmpty);
+    });
+  });
+
   group('Estados', () {
     test('fromWire de enums usa labels consistentes', () {
       expect(EstadoParada.retirado.wire, 'retirado');
