@@ -8,6 +8,7 @@ class Usuario {
     required this.email,
     required this.rol,
     required this.activo,
+    this.puedeCambiar = false,
   });
 
   final String id;
@@ -16,6 +17,10 @@ class Usuario {
   final Rol rol;
   final bool activo;
 
+  /// `GET /api/v1/usuarios` devuelve la columna como `puede_cambiar`, aunque el
+  /// body de `cambio-sucursal` usa `puedeCambiar`.
+  final bool puedeCambiar;
+
   factory Usuario.fromJson(Map<String, dynamic> json) {
     return Usuario(
       id: json['id'] as String,
@@ -23,6 +28,7 @@ class Usuario {
       email: json['email'] as String? ?? '',
       rol: Rol.fromApi(json['rol'] as String? ?? 'vendedor'),
       activo: json['activo'] as bool? ?? true,
+      puedeCambiar: json['puede_cambiar'] as bool? ?? false,
     );
   }
 }

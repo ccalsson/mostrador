@@ -141,6 +141,28 @@ class _UsuariosPaneState extends ConsumerState<UsuariosPane> {
     }
   }
 
+  Future<void> _cambiarSucursal(Usuario usuario) async {
+    final nuevoEstado = !usuario.puedeCambiar;
+    try {
+      await ref
+          .read(usuariosServiceProvider)
+          .cambiarSucursal(usuario.id, puedeCambiar: nuevoEstado);
+      ref.invalidate(usuariosProvider);
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..removeCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(error.message)));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..removeCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(content: Text('No se pudo cambiar el permiso de sucursal.')),
+        );
+    }
+  }
+
   Future<void> _cambiarClave(Usuario usuario) async {
     final nuevaController = TextEditingController();
     final confirmarController = TextEditingController();
@@ -283,6 +305,7 @@ class _UsuariosPaneState extends ConsumerState<UsuariosPane> {
     return _FichaUsuario(
       usuario: usuario,
       onToggle: () => _toggle(usuario),
+      onCambiarSucursal: () => _cambiarSucursal(usuario),
       onCambiarClave: () => _cambiarClave(usuario),
       onCerrar: cerrar,
     );
@@ -304,7 +327,7 @@ class _UsuariosPaneState extends ConsumerState<UsuariosPane> {
               children: [
                 Expanded(
                   child: Text(
-                    'Activa o desactiva usuarios. Cambiá la contraseña desde la ficha.',
+                    'Activa o desactiva usuarios. Cambiá la contraseña y el permiso de sucursal desde la ficha.',
                     style: TextStyle(fontSize: 12.5, color: tokens.muted),
                   ),
                 ),
@@ -821,12 +844,14 @@ class _FichaUsuario extends StatelessWidget {
   const _FichaUsuario({
     required this.usuario,
     required this.onToggle,
+    required this.onCambiarSucursal,
     required this.onCambiarClave,
     required this.onCerrar,
   });
 
   final Usuario usuario;
   final VoidCallback onToggle;
+  final VoidCallback onCambiarSucursal;
   final VoidCallback onCambiarClave;
   final VoidCallback onCerrar;
 
@@ -891,6 +916,20 @@ class _FichaUsuario extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 14),
+          // El backend sólo admite habilitar el cambio de sucursal a no-admin.
+          if (usuario.rol != Rol.admin) ...[
+            SwitchListTile(
+              key: Key('admin_usuario_sucursal_${usuario.id}'),
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Puede cambiar de sucursal'),
+              subtitle: const Text(
+                'Desde su sesión elige en qué puesto trabaja.',
+              ),
+              value: usuario.puedeCambiar,
+              onChanged: (_) => onCambiarSucursal(),
+            ),
+            const SizedBox(height: 10),
+          ],
           FilledButton.icon(
             onPressed: onCambiarClave,
             icon: const Icon(Icons.key_outlined, size: 16),

@@ -85,8 +85,10 @@ enviar un cuerpo válido.
 | `POST` | `/api/v1/sucursales/:id/usar` | staff habilitado | Cambia la sucursal activa (matriz o habilitada por el dueño). |
 | `POST` | `/api/v1/sucursales/:id/transferir` | admin | Pasa stock de la matriz a la sucursal (`{ productoId, cantidad }`). |
 | `POST` | `/api/v1/sucursales/:id/importar-clientes` | admin | Copia fichas de clientes de la casa a la sucursal (sin saldos). |
-| `GET` | `/api/v1/creativos` | admin | Saldo de la casa, costo por foto, paquetes, piezas que habilitó Torre y últimos 8 pedidos con sus textos. |
+| `GET` | `/api/v1/creativos` | admin | Saldo de la casa, costo por foto, paquetes, piezas que habilitó Torre y últimos 8 pedidos con sus textos. Excluye los borrados. |
 | `POST` | `/api/v1/creativos` | admin | Pide una foto con hasta cuatro lecturas (`{ formato, brief }`); descuenta 4 créditos sólo si el proveedor devolvió la pieza. |
+| `POST` | `/api/v1/creativos/:id/enviar` | admin | Marca el pedido como `enviado`. Sólo desde `borrador` o `listo`; devuelve 409 `creativo_ya_enviado` si ya salió y 404 `creativo_no_encontrado` si no es del puesto. |
+| `DELETE` | `/api/v1/creativos/:id` | admin | Borrado lógico (`estado = 'eliminado'`): deja de listarse. No devuelve los créditos gastados en la generación. |
 | `GET` | `/api/v1/alertas` | cualquier staff | Alertas (stock bajo, caja, etc.). |
 | `POST` | `/api/v1/alertas/:id/leida` | cualquier staff | Marca alerta como leída. |
 | `GET` | `/api/v1/dashboard` | admin | Resumen; `?dias=N` ajusta la ventana. |

@@ -12,7 +12,7 @@ import {
   type PedidoLineaInput,
 } from "@/lib/server/catalog-pedidos";
 import { createClienteForStaff, anotarPagoCuentaForStaff, cuentaClienteForStaff, listClientesForStaff, updateClienteForStaff, listarCompradoresAppForStaff, estadisticasCompradorAppForStaff, sumarCompradorAppForStaff, updateCompradorAppForStaff } from "@/lib/server/clientes";
-import { CreativosError, estadoCreativosForStaff, pedirCreativosForStaff } from "@/lib/server/creativos";
+import { CreativosError, borrarCreativoForStaff, estadoCreativosForStaff, enviarCreativoForStaff, pedirCreativosForStaff } from "@/lib/server/creativos";
 import {
   emitirFacturaForStaff,
   emitirNotaCreditoForStaff,
@@ -980,6 +980,30 @@ const ROUTES: Entry[] = [
           brief: body.brief,
         });
         return json({ data: pedido });
+      } catch (error) {
+        if (error instanceof CreativosError) throw new HttpError(error.status, error.code, error.message);
+        throw error;
+      }
+    },
+  },
+  {
+    method: "POST",
+    path: ["creativos", ":", "enviar"],
+    handler: async ({ segments, staff }) => {
+      try {
+        return json({ data: await enviarCreativoForStaff(staff, segments[1]) });
+      } catch (error) {
+        if (error instanceof CreativosError) throw new HttpError(error.status, error.code, error.message);
+        throw error;
+      }
+    },
+  },
+  {
+    method: "DELETE",
+    path: ["creativos", ":"],
+    handler: async ({ segments, staff }) => {
+      try {
+        return json({ data: await borrarCreativoForStaff(staff, segments[1]) });
       } catch (error) {
         if (error instanceof CreativosError) throw new HttpError(error.status, error.code, error.message);
         throw error;

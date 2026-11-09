@@ -53,6 +53,15 @@ class UsuariosService {
     await _client.post('/api/v1/usuarios/$id/toggle', body: {'activo': activo});
   }
 
+  /// `POST /api/v1/usuarios/{id}/cambio-sucursal` — habilita o revoca que el
+  /// usuario cambie su sucursal activa.
+  Future<void> cambiarSucursal(String id, {required bool puedeCambiar}) async {
+    await _client.post(
+      '/api/v1/usuarios/$id/cambio-sucursal',
+      body: {'puedeCambiar': puedeCambiar},
+    );
+  }
+
   /// `POST /api/v1/usuarios/{id}/clave` — cambia la contraseña del usuario.
   Future<void> cambiarClave(String id, {required String password}) async {
     await _client.post('/api/v1/usuarios/$id/clave', body: {'password': password});

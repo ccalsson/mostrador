@@ -46,7 +46,7 @@ export async function estadoCreativosForStaff(staff: Staff) {
   }>`
     select id, formato, cantidad, creditos, brief, estado, created_at::text as created_at
     from creativos_pedidos
-    where tenant_id = ${staff.casaId}
+    where tenant_id = ${staff.casaId} and estado <> 'eliminado'
     order by created_at desc
     limit 8
   `;
@@ -142,6 +142,53 @@ export async function pedirCreativosForStaff(
     saldo: Number(descuento[0].creditos),
     variantes: hechas,
   };
+}
+
+export async function enviarCreativoForStaff(staff: Staff, pedidoId: string) {
+  assertRole(staff, ["admin"]);
+  const sql = await getSql();
+  const marcado = await sql<{ id: string; estado: string }>`
+    update creativos_pedidos
+    set estado = 'enviado'
+    where id = ${pedidoId}
+      and tenant_id = ${staff.casaId}
+      and estado in ('borrador', 'listo')
+    returning id, estado
+  `;
+  if (!marcado[0]) throw await errorDeEstado(sql, staff.casaId, pedidoId, "enviado");
+  await audit(staff.casaId, staff, "enviar_creativos", "creativos_pedido", { pedidoId });
+  return { id: marcado[0].id, estado: marcado[0].estado };
+}
+
+export async function borrarCreativoForStaff(staff: Staff, pedidoId: string) {
+  assertRole(staff, ["admin"]);
+  const sql = await getSql();
+  // Borrado lógico: las variantes cuelgan de creativos_pedidos sin
+  // `on delete cascade`, y los créditos ya gastados no se devuelven.
+  const borrado = await sql<{ id: string }>`
+    update creativos_pedidos
+    set estado = 'eliminado'
+    where id = ${pedidoId}
+      and tenant_id = ${staff.casaId}
+      and estado <> 'eliminado'
+    returning id
+  `;
+  if (!borrado[0]) throw await errorDeEstado(sql, staff.casaId, pedidoId, "borrado");
+  await audit(staff.casaId, staff, "borrar_creativos", "creativos_pedido", {
+    pedidoId,
+    nota: "créditos no devueltos",
+  });
+  return { id: borrado[0].id, eliminado: true };
+}
+
+async function errorDeEstado(sql: Sql, casaId: string, pedidoId: string, accion: string) {
+  const existe = await sql<{ estado: string }>`
+    select estado from creativos_pedidos where id = ${pedidoId} and tenant_id = ${casaId} limit 1
+  `;
+  if (!existe[0]) {
+    return new CreativosError(404, "creativo_no_encontrado", "Ese creativo no es de este puesto.");
+  }
+  return new CreativosError(409, `creativo_ya_${accion}`, `Ese creativo ya quedó ${accion}.`);
 }
 
 async function piezasHabilitadas(sql: Sql, casaId: string): Promise<Formato[]> {

@@ -5,8 +5,9 @@ import '../../core/tema.dart';
 import '../../models/clima_dolar.dart';
 import '../../services/clima_dolar_service.dart';
 
-/// Elemento compacto inline con cotización del dólar blue y clima del
-/// Mercado Central. Paridad con `src/components/clima-dolar.tsx`.
+/// Elemento compacto inline con la cotización oficial del dólar (la misma que
+/// usa el ERP, vía `GET /api/v1/cotizacion`) y el clima del Mercado Central.
+/// Paridad con `src/components/clima-dolar.tsx`, que también rotula "Oficial".
 ///
 /// Se coloca dentro del [_TopBar] a la derecha. Si falla la carga muestra
 /// "N/A" en lugar de un error disruptivo.
@@ -89,16 +90,35 @@ class _Contenido extends StatelessWidget {
           color: tokens.leafFg.withValues(alpha: 0.2),
         ),
         const SizedBox(width: 8),
-        // Dólar blue
-        Icon(Icons.attach_money, size: 14, color: tokens.ambar),
-        const SizedBox(width: 2),
-        Text(
-          '\$${dato.dolarBlueVenta.toStringAsFixed(0)}',
-          key: const Key('dolar_blue_venta'),
-          style: theme.textTheme.bodySmall?.copyWith(
-            fontWeight: FontWeight.w600,
-            color: tokens.leafFg,
-            fontSize: 11,
+        // Dólar oficial: el valor USD→ARS del backend, el mismo con el que el
+        // ERP convierte los precios en dólares a pesos.
+        Tooltip(
+          message:
+              'Dólar oficial (USD→ARS) usado por el ERP para convertir precios',
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.attach_money, size: 14, color: tokens.ambar),
+              const SizedBox(width: 2),
+              Text(
+                '\$${dato.usdArs.toStringAsFixed(0)}',
+                key: const Key('dolar_oficial'),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: tokens.leafFg,
+                  fontSize: 11,
+                ),
+              ),
+              const SizedBox(width: 3),
+              Text(
+                'oficial',
+                key: const Key('dolar_oficial_label'),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: tokens.leafFg.withValues(alpha: 0.55),
+                  fontSize: 9,
+                ),
+              ),
+            ],
           ),
         ),
         const SizedBox(width: 4),
