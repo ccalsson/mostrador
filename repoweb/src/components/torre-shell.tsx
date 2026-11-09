@@ -8,6 +8,7 @@ import { signOut } from "@/lib/auth/client";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { torreYo } from "@/lib/torre-fn";
 import { comprobantePago, habilitarPedidoAddon, pedidosAddon } from "@/lib/torre/control-fn";
+import { refrescarPagina, useFrescura } from "@/lib/query-frescura";
 import { cn } from "@/lib/cn";
 
 const GRUPOS = [
@@ -76,7 +77,6 @@ export function TorreShell({ title, children }: { title: string; children: React
     queryKey: ["torre-pedidos-addon"],
     queryFn: () => pedidosAddon(),
     enabled: Boolean(user) && !yo.isError,
-    refetchInterval: 60_000,
   });
   const avisos = pedidos.data?.length ?? 0;
   const path = useRouterState({ select: (s) => s.location.pathname });
@@ -155,9 +155,12 @@ export function TorreShell({ title, children }: { title: string; children: React
               );
             })}
           </nav>
-          <button type="button" className="ml-auto shrink-0 px-2 py-3 text-xs text-[#f4efe4]/70 lg:ml-0" onClick={() => void signOut("/torre/login")}>
-            Salir
-          </button>
+          <div className="ml-auto flex shrink-0 items-center gap-2 lg:ml-0">
+            <Frescura />
+            <button type="button" className="px-2 py-3 text-xs text-[#f4efe4]/70" onClick={() => void signOut("/torre/login")}>
+              Salir
+            </button>
+          </div>
           {abierto ? (
             <div className="order-4 max-h-[60dvh] basis-full overflow-y-auto rounded-[10px] border border-white/10 bg-[#1a1612] py-1 lg:hidden">
               {GRUPOS.find((grupo) => grupo.label === abierto)?.items.map((item) => (
@@ -185,6 +188,25 @@ export function TorreShell({ title, children }: { title: string; children: React
           </div>
         )}
       </main>
+    </div>
+  );
+}
+
+function Frescura() {
+  const qc = useQueryClient();
+  const { etiqueta, cargando } = useFrescura();
+  return (
+    <div className="flex items-center gap-2">
+      <p className="hidden text-[11px] text-[#f4efe4]/60 sm:block" aria-live="polite">
+        {etiqueta}
+      </p>
+      <button
+        type="button"
+        onClick={() => void refrescarPagina(qc)}
+        className="rounded-[10px] border border-white/15 px-3 py-1.5 text-xs text-[#f4efe4]/80 hover:bg-white/10"
+      >
+        {cargando ? "Actualizando…" : "Actualizar"}
+      </button>
     </div>
   );
 }

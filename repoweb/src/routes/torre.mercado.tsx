@@ -7,6 +7,7 @@ import { habilitarCompra, listarComprasPendientes } from "@/lib/mercado/compra";
 import { Bar, BarChart, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { TorreShell } from "@/components/torre-shell";
 import { analiticaOperacion } from "@/lib/torre/operacion-fn";
+import { INTERVALO_TABLERO } from "@/lib/query-frescura";
 import { money } from "@/lib/money";
 import { ESTADO_LABEL, PAGO_LABEL, type FormaPago, type PedidoEstado } from "@/lib/types";
 
@@ -69,7 +70,7 @@ function Page() {
   const data = useQuery({
     queryKey: ["torre-operacion", dias],
     queryFn: () => analiticaOperacion({ data: { dias } }),
-    refetchInterval: 15000,
+    refetchInterval: INTERVALO_TABLERO,
   });
   const d = data.data;
   const g = d?.gente;

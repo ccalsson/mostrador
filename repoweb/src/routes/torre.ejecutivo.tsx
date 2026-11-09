@@ -4,6 +4,7 @@ import { useState } from "react";
 import { TorreShell } from "@/components/torre-shell";
 import { EjecutivoDashboard } from "@/components/ejecutivo-dashboard";
 import { dashboardEjecutivo } from "@/lib/torre/ejecutivo-fn";
+import { INTERVALO_TABLERO } from "@/lib/query-frescura";
 
 export const Route = createFileRoute("/torre/ejecutivo")({
   component: Page,
@@ -16,7 +17,7 @@ function Page() {
   const query = useQuery({
     queryKey: ["dashboard-ejecutivo", dias],
     queryFn: () => dashboardEjecutivo({ data: { dias } }),
-    refetchInterval: 15000,
+    refetchInterval: INTERVALO_TABLERO,
   });
 
   return (

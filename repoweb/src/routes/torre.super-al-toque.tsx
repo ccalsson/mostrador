@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { TorreShell } from "@/components/torre-shell";
 import { kpisSuperAlToque } from "@/lib/torre/super-al-toque-fn";
+import { INTERVALO_TORRE } from "@/lib/query-frescura";
 import { money } from "@/lib/money";
 
 export const Route = createFileRoute("/torre/super-al-toque")({ component: Page });
@@ -19,7 +20,7 @@ function Page() {
   const data = useQuery({
     queryKey: ["torre-super-al-toque", dias],
     queryFn: () => kpisSuperAlToque({ data: { dias } }),
-    refetchInterval: 60000,
+    refetchInterval: INTERVALO_TORRE,
   });
   const d = data.data;
 
