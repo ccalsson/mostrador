@@ -2,16 +2,37 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/errors/api_exceptions.dart';
+import '../../core/refresco.dart';
 import '../../models/mensajes.dart';
 import '../../services/mensajes_service.dart';
 
 /// Pestaña Mensajes del escritorio del dueño: listado de conversaciones por
 /// pedido (con contador de sin-leer) y diálogo para abrir el hilo y responder.
-class MensajesTab extends ConsumerWidget {
-  const MensajesTab({super.key});
+///
+/// La bandeja se sondea sola para que un mensaje nuevo del cliente aparezca
+/// sin recargar la pantalla. Pasar `intervalo: null` congela el sondeo
+/// (widget tests).
+class MensajesTab extends ConsumerStatefulWidget {
+  const MensajesTab({super.key, this.intervalo = kSondeoLento});
+
+  final Duration? intervalo;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<MensajesTab> createState() => _MensajesTabState();
+}
+
+class _MensajesTabState extends ConsumerState<MensajesTab>
+    with RefrescoAutomatico<MensajesTab> {
+  @override
+  Duration? get intervalo => widget.intervalo;
+
+  @override
+  void refrescar() {
+    ref.invalidate(conversacionesProvider);
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final estado = ref.watch(conversacionesProvider);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,

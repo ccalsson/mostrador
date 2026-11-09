@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/errors/api_exceptions.dart';
 import '../../core/format.dart';
+import '../../core/refresco.dart';
 import '../../core/tema.dart';
 import '../../core/widgets/tabla_web.dart';
 import '../../models/alerta.dart';
@@ -13,15 +14,29 @@ import '../../services/alertas_service.dart';
 const _quiebreDetalle = 1024.0;
 
 /// Bandeja de alertas del tablero (últimas 30, no leídas primero).
+///
+/// Se relee sola para que el dueño vea aparecer los avisos de stock sin tocar
+/// nada. Pasar `intervalo: null` congela el sondeo (widget tests).
 class AlertasPane extends ConsumerStatefulWidget {
-  const AlertasPane({super.key});
+  const AlertasPane({super.key, this.intervalo = kSondeoMuyLento});
+
+  final Duration? intervalo;
 
   @override
   ConsumerState<AlertasPane> createState() => _AlertasPaneState();
 }
 
-class _AlertasPaneState extends ConsumerState<AlertasPane> {
+class _AlertasPaneState extends ConsumerState<AlertasPane>
+    with RefrescoAutomatico<AlertasPane> {
   Alerta? _seleccionada;
+
+  @override
+  Duration? get intervalo => widget.intervalo;
+
+  @override
+  void refrescar() {
+    ref.invalidate(alertasProvider);
+  }
 
   void _seleccionar(Alerta alerta, {required bool enRail}) {
     setState(() => _seleccionada = alerta);

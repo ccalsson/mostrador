@@ -5,6 +5,7 @@ import '../../core/config/app_config.dart';
 import '../../core/errors/api_exceptions.dart';
 import '../../core/format.dart';
 import '../../core/auth/auth_controller.dart';
+import '../../core/refresco.dart';
 import '../../models/producto.dart';
 import '../../models/staff_session.dart';
 import '../../services/catalogo_service.dart';
@@ -12,11 +13,39 @@ import '../carrito/carrito_controller.dart';
 
 /// Catálogo compartido por todos los roles. El vendedor además puede agregar
 /// productos al carrito; el servidor decide qué ve cada rol.
-class CatalogoScreen extends ConsumerWidget {
-  const CatalogoScreen({super.key});
+///
+/// El stock se relee solo: lo que ve el mostrador es lo que hay en el depósito.
+/// Pasar `intervalo: null` congela el sondeo (widget tests).
+class CatalogoScreen extends ConsumerStatefulWidget {
+  const CatalogoScreen({super.key, this.intervalo = kSondeoMuyLento});
+
+  final Duration? intervalo;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<CatalogoScreen> createState() => _CatalogoScreenState();
+}
+
+class _CatalogoScreenState extends ConsumerState<CatalogoScreen>
+    with RefrescoAutomatico<CatalogoScreen> {
+  @override
+  Duration? get intervalo => widget.intervalo;
+
+  @override
+  void refrescar() {
+    ref.invalidate(catalogoProvider);
+  }
+
+  Future<void> _recargar() async {
+    refrescar();
+    try {
+      await ref.read(catalogoProvider.future);
+    } on ApiException {
+      // El rebuild de `catalogo` ya muestra el estado de error.
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final catalogo = ref.watch(catalogoProvider);
     final rol = ref.watch(authControllerProvider).sesion?.staff.rol;
     final puedeAgregar = rol == Rol.vendedor;
@@ -25,47 +54,53 @@ class CatalogoScreen extends ConsumerWidget {
       error: (error, _) => _ErrorCatalogo(
         mensaje:
             error is ApiException ? error.message : 'No se pudo cargar el catálogo.',
-        onReintentar: () => ref.invalidate(catalogoProvider),
+        onReintentar: refrescar,
       ),
       data: (data) => RefreshIndicator(
-        onRefresh: () async {
-          ref.invalidate(catalogoProvider);
-          try {
-            await ref.read(catalogoProvider.future);
-          } on ApiException {
-            // El rebuild de `catalogo` ya muestra el estado de error.
-          }
-        },
-        child: ListView.separated(
-          key: const Key('catalogo_lista'),
-          physics: const AlwaysScrollableScrollPhysics(),
-          itemCount: data.productos.length + 1,
-          separatorBuilder: (context, index) => const Divider(height: 1),
-          itemBuilder: (context, index) {
-            if (index == data.productos.length) {
-              return _PieCatalogo(
-                cantidad: data.productos.length,
-                version: data.version,
-              );
-            }
-            final producto = data.productos[index];
-            return _ProductoTile(
-              producto: producto,
-              onAgregar: puedeAgregar && producto.activo
-                  ? () {
-                      ref
-                          .read(carritoControllerProvider.notifier)
-                          .agregar(producto);
-                      ScaffoldMessenger.of(context)
-                        ..removeCurrentSnackBar()
-                        ..showSnackBar(SnackBar(
-                          content: Text('${producto.nombre} agregado al carrito'),
-                          duration: const Duration(seconds: 1),
-                        ));
-                    }
-                  : null,
-            );
-          },
+        onRefresh: _recargar,
+        child: Column(
+          children: [
+            if (catalogo.isRefreshing)
+              const LinearProgressIndicator(
+                key: Key('catalogo_refrescando'),
+                minHeight: 2,
+              ),
+            Expanded(
+              child: ListView.separated(
+                key: const Key('catalogo_lista'),
+                physics: const AlwaysScrollableScrollPhysics(),
+                itemCount: data.productos.length + 1,
+                separatorBuilder: (context, index) => const Divider(height: 1),
+                itemBuilder: (context, index) {
+                  if (index == data.productos.length) {
+                    return _PieCatalogo(
+                      cantidad: data.productos.length,
+                      version: data.version,
+                    );
+                  }
+                  final producto = data.productos[index];
+                  return _ProductoTile(
+                    producto: producto,
+                    onAgregar: puedeAgregar && producto.activo
+                        ? () {
+                            ref
+                                .read(carritoControllerProvider.notifier)
+                                .agregar(producto);
+                            ScaffoldMessenger.of(context)
+                              ..removeCurrentSnackBar()
+                              ..showSnackBar(SnackBar(
+                                content: Text(
+                                  '${producto.nombre} agregado al carrito',
+                                ),
+                                duration: const Duration(seconds: 1),
+                              ));
+                          }
+                        : null,
+                  );
+                },
+              ),
+            ),
+          ],
         ),
       ),
     );

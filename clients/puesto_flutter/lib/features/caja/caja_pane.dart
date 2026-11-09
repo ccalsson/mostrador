@@ -4,9 +4,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/errors/api_exceptions.dart';
 import '../../core/format.dart';
+import '../../core/refresco.dart';
 import '../../models/cobro.dart';
 import '../../models/pedido.dart';
 import '../../services/pedidos_service.dart';
+import '../pedidos/cola_pedidos.dart' show kSondeoCola;
 import 'caja_estado_pane.dart';
 import 'caja_providers.dart';
 import 'cobro_controller.dart';
@@ -68,14 +70,20 @@ class MontoOculto extends StatelessWidget {
 /// Caja (desktop): vista de pedidos (lista a la izquierda, detalle con cobro a
 /// la derecha), vista del estado del turno y vista de egresos. Incluye toggle
 /// de montos y notificación de pedidos nuevos.
+///
+/// La lista y el pedido abierto se releen solos, como en el tablero del
+/// puesto. Pasar `intervalo: null` congela el sondeo (widget tests).
 class CajaPane extends ConsumerStatefulWidget {
-  const CajaPane({super.key});
+  const CajaPane({super.key, this.intervalo = kSondeoCola});
+
+  final Duration? intervalo;
 
   @override
   ConsumerState<CajaPane> createState() => _CajaPaneState();
 }
 
-class _CajaPaneState extends ConsumerState<CajaPane> {
+class _CajaPaneState extends ConsumerState<CajaPane>
+    with RefrescoAutomatico<CajaPane> {
   CajaVista _vista = CajaVista.pedidos;
   CajaFiltro _filtro = CajaFiltro.porCobrar;
   String? _seleccionado;
@@ -84,6 +92,18 @@ class _CajaPaneState extends ConsumerState<CajaPane> {
   /// ahí, cualquier ID nuevo dispara la notificación.
   Set<String> _seenIds = {};
   bool _primeraCarga = true;
+
+  @override
+  Duration? get intervalo => widget.intervalo;
+
+  @override
+  void refrescar() {
+    ref.invalidate(pedidosCajaProvider(_filtro.estados));
+    final seleccionado = _seleccionado;
+    if (seleccionado != null) {
+      ref.invalidate(pedidoDetalleProvider(seleccionado));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {

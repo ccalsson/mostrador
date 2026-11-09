@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/errors/api_exceptions.dart';
 import '../../core/format.dart';
+import '../../core/refresco.dart';
 import '../../models/escritorio.dart';
 import '../../services/catalogo_service.dart';
 import '../../services/escritorio_service.dart';
@@ -38,15 +40,20 @@ String _fechaCorta(String iso) {
 /// Lista publicada.
 ///
 /// Paridad con la web (escritorio.tsx). Solo admin.
+///
+/// Los números del escritorio y la lista publicada se releen solos. Pasar
+/// `intervalo: null` congela el sondeo (widget tests).
 class EscritorioPane extends ConsumerStatefulWidget {
-  const EscritorioPane({super.key});
+  const EscritorioPane({super.key, this.intervalo = kSondeoMuyLento});
+
+  final Duration? intervalo;
 
   @override
   ConsumerState<EscritorioPane> createState() => _EscritorioPaneState();
 }
 
 class _EscritorioPaneState extends ConsumerState<EscritorioPane>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, RefrescoAutomatico<EscritorioPane> {
   late final TabController _tabController =
       TabController(length: 5, vsync: this);
 
@@ -56,8 +63,20 @@ class _EscritorioPaneState extends ConsumerState<EscritorioPane>
     super.dispose();
   }
 
-  void _recargar() {
+  @override
+  Duration? get intervalo => widget.intervalo;
+
+  @override
+  void refrescar() => _recargar();
+
+  Future<void> _recargar() async {
     ref.invalidate(escritorioProvider);
+    ref.invalidate(catalogoProvider);
+    try {
+      await ref.read(escritorioProvider.future);
+    } on ApiException {
+      // El rebuild de `resumenAsync` ya muestra el estado de error.
+    }
   }
 
   @override
@@ -66,6 +85,11 @@ class _EscritorioPaneState extends ConsumerState<EscritorioPane>
     return Column(
       children: [
         _TabBar(controller: _tabController),
+        if (resumenAsync.isRefreshing)
+          const LinearProgressIndicator(
+            key: Key('escritorio_refrescando'),
+            minHeight: 2,
+          ),
         Expanded(
           child: TabBarView(
             controller: _tabController,
@@ -80,7 +104,7 @@ class _EscritorioPaneState extends ConsumerState<EscritorioPane>
                     _ErrorView(error: error, onRetry: _recargar),
                 data: (data) {
                   if (!data.premium) return const _PremiumRequerido();
-                  return _MargenTab(margen: data.margen);
+                  return _MargenTab(margen: data.margen, onRefresh: _recargar);
                 },
               ),
               resumenAsync.when(
@@ -149,14 +173,15 @@ class _TabBar extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class _MargenTab extends StatelessWidget {
-  const _MargenTab({required this.margen});
+  const _MargenTab({required this.margen, required this.onRefresh});
   final MargenDia margen;
+  final Future<void> Function() onRefresh;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return RefreshIndicator(
-      onRefresh: () async {},
+      onRefresh: onRefresh,
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
