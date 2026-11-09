@@ -1,20 +1,21 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 
 import '../market_api.dart';
 import '../models.dart';
+import '../refresco.dart';
 import '../widgets/common.dart';
 
 class OrderDetailScreen extends StatefulWidget {
   const OrderDetailScreen({
     required this.api,
     required this.pedidoId,
+    this.refrescoCada = refrescoDetalle,
     super.key,
   });
 
   final MercadoApi api;
   final String pedidoId;
+  final Duration refrescoCada;
 
   @override
   State<OrderDetailScreen> createState() => _OrderDetailScreenState();
@@ -26,7 +27,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     EstadoPedidoComprador.cancelado,
   };
 
-  late final Timer _timer;
+  late final Refrescador _refrescador;
   PedidoComprador? _pedido;
   Object? _error;
   bool _loading = true;
@@ -35,20 +36,23 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
   @override
   void initState() {
     super.initState();
-    _load();
-    _timer = Timer.periodic(const Duration(seconds: 10), (_) => _load());
+    _refrescador = Refrescador(
+      intervalo: widget.refrescoCada,
+      onRefresco: _load,
+    );
+    _refrescador.ejecutar();
   }
 
   @override
   void dispose() {
-    _timer.cancel();
+    _refrescador.detener();
     super.dispose();
   }
 
   Future<void> _load() async {
     final actual = _pedido;
     if (actual != null && _estadosFinales.contains(actual.estado)) {
-      _timer.cancel();
+      _refrescador.detener();
       return;
     }
     try {
@@ -59,7 +63,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
         _error = null;
         _loading = false;
       });
-      if (_estadosFinales.contains(pedido.estado)) _timer.cancel();
+      if (_estadosFinales.contains(pedido.estado)) _refrescador.detener();
     } catch (error) {
       if (!mounted) return;
       // Con un pedido ya visible, un reintento fallido no borra lo último
@@ -143,7 +147,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     return Scaffold(
       appBar: AppBar(title: Text('Pedido Nº ${pedido.id}')),
       body: RefreshIndicator(
-        onRefresh: _load,
+        onRefresh: _refrescador.ejecutar,
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.symmetric(vertical: 8),

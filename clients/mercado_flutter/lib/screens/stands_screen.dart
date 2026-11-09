@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../market_api.dart';
 import '../models.dart';
+import '../refresco.dart';
 import '../widgets/common.dart';
 
 class StandsScreen extends StatefulWidget {
@@ -9,6 +10,7 @@ class StandsScreen extends StatefulWidget {
     required this.api,
     required this.actor,
     required this.onAdd,
+    this.refrescoCada = refrescoPuestos,
     super.key,
   });
 
@@ -17,6 +19,8 @@ class StandsScreen extends StatefulWidget {
   /// Los avisos del marketplace se piden sólo con la identidad aprobada que
   /// habilita el checkout, igual que en la web.
   final MercadoActor actor;
+
+  final Duration refrescoCada;
 
   final void Function({
     required String tenantId,
@@ -33,6 +37,7 @@ class StandsScreen extends StatefulWidget {
 
 class _StandsScreenState extends State<StandsScreen> {
   late Future<List<Puesto>> _standsFuture;
+  late final Refrescador _refrescador;
   Future<List<Aviso>>? _avisos;
   Puesto? _puesto;
   late Future<ProductRead> _productsFuture;
@@ -42,6 +47,24 @@ class _StandsScreenState extends State<StandsScreen> {
     super.initState();
     _standsFuture = widget.api.listarPuestos();
     if (widget.actor.puedeComprar) _avisos = widget.api.listarAvisos();
+    _refrescador = Refrescador(
+      intervalo: widget.refrescoCada,
+      onRefresco: _refrescarVista,
+    );
+  }
+
+  @override
+  void dispose() {
+    _refrescador.detener();
+    super.dispose();
+  }
+
+  Future<void> _refrescarVista() async {
+    if (_puesto == null) {
+      await _refreshStands();
+    } else {
+      await _refreshProducts();
+    }
   }
 
   Future<void> _refreshStands() async {
@@ -83,7 +106,7 @@ class _StandsScreenState extends State<StandsScreen> {
             title: Text(puesto.nombre),
             trailing: IconButton(
               tooltip: 'Actualizar productos',
-              onPressed: _refreshProducts,
+              onPressed: _refrescador.ejecutar,
               icon: const Icon(Icons.refresh),
             ),
           ),
@@ -123,7 +146,7 @@ class _StandsScreenState extends State<StandsScreen> {
                               child: Text('No hay productos publicados.'),
                             )
                           : RefreshIndicator(
-                              onRefresh: _refreshProducts,
+                              onRefresh: _refrescador.ejecutar,
                               child: ListView.builder(
                                 physics: const AlwaysScrollableScrollPhysics(),
                                 itemCount: result.products.length,
@@ -173,7 +196,7 @@ class _StandsScreenState extends State<StandsScreen> {
         }
         final stands = snapshot.data!;
         return RefreshIndicator(
-          onRefresh: _refreshStands,
+          onRefresh: _refrescador.ejecutar,
           child: ListView(
             physics: const AlwaysScrollableScrollPhysics(),
             children: [

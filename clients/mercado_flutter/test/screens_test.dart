@@ -268,6 +268,7 @@ void main() {
       anclado(
         StandsScreen(
           api: ApiFalsa(puestos: [puestoFijo], catalogo: [banana]),
+          actor: compradorActor(),
           onAdd: ({required tenantId, required tenantName, required product, required readAt, required stale}) =>
               agregado = product,
         ),
@@ -303,6 +304,7 @@ void main() {
               ),
             ],
           ),
+          actor: compradorActor(),
           onAdd: ({required tenantId, required tenantName, required product, required readAt, required stale}) =>
               llamadas++,
         ),

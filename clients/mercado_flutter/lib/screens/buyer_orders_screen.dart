@@ -2,14 +2,21 @@ import 'package:flutter/material.dart';
 
 import '../market_api.dart';
 import '../models.dart';
+import '../refresco.dart';
 import '../widgets/common.dart';
 import 'order_detail_screen.dart';
 
 class BuyerOrdersScreen extends StatefulWidget {
-  const BuyerOrdersScreen({required this.api, required this.actor, super.key});
+  const BuyerOrdersScreen({
+    required this.api,
+    required this.actor,
+    this.refrescoCada = refrescoPedidos,
+    super.key,
+  });
 
   final MercadoApi api;
   final MercadoActor actor;
+  final Duration refrescoCada;
 
   @override
   State<BuyerOrdersScreen> createState() => _BuyerOrdersScreenState();
@@ -18,6 +25,7 @@ class BuyerOrdersScreen extends StatefulWidget {
 class _BuyerOrdersScreenState extends State<BuyerOrdersScreen> {
   late Future<List<PedidoComprador>> _orders;
   late Future<List<Recorrido>> _routes;
+  late final Refrescador _refrescador;
   final Set<String> _selected = {};
   bool _busy = false;
 
@@ -25,6 +33,16 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen> {
   void initState() {
     super.initState();
     _reload();
+    _refrescador = Refrescador(
+      intervalo: widget.refrescoCada,
+      onRefresco: _refresh,
+    );
+  }
+
+  @override
+  void dispose() {
+    _refrescador.detener();
+    super.dispose();
   }
 
   void _reload() {
@@ -180,7 +198,7 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen> {
           .where((order) => order.estado == EstadoPedidoComprador.preparado)
           .toList();
       return RefreshIndicator(
-        onRefresh: _refresh,
+        onRefresh: _refrescador.ejecutar,
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
           children: [

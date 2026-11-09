@@ -2,13 +2,20 @@ import 'package:flutter/material.dart';
 
 import '../market_api.dart';
 import '../models.dart';
+import '../refresco.dart';
 import '../widgets/common.dart';
 
 class CourierScreen extends StatefulWidget {
-  const CourierScreen({required this.api, required this.actor, super.key});
+  const CourierScreen({
+    required this.api,
+    required this.actor,
+    this.refrescoCada = refrescoRecorridos,
+    super.key,
+  });
 
   final MercadoApi api;
   final MercadoActor actor;
+  final Duration refrescoCada;
 
   @override
   State<CourierScreen> createState() => _CourierScreenState();
@@ -16,6 +23,7 @@ class CourierScreen extends StatefulWidget {
 
 class _CourierScreenState extends State<CourierScreen> {
   late Future<List<Recorrido>> _routes;
+  late final Refrescador _refrescador;
   late bool _available;
   bool _busy = false;
 
@@ -24,6 +32,16 @@ class _CourierScreenState extends State<CourierScreen> {
     super.initState();
     _available = widget.actor.estaDisponible;
     _routes = widget.api.listarRecorridos();
+    _refrescador = Refrescador(
+      intervalo: widget.refrescoCada,
+      onRefresco: _refresh,
+    );
+  }
+
+  @override
+  void dispose() {
+    _refrescador.detener();
+    super.dispose();
   }
 
   Future<void> _refresh() async {
@@ -97,7 +115,7 @@ class _CourierScreenState extends State<CourierScreen> {
               return const Center(child: Text('Todavía no tenés recorridos.'));
             }
             return RefreshIndicator(
-              onRefresh: _refresh,
+              onRefresh: _refrescador.ejecutar,
               child: ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
                 children: [
