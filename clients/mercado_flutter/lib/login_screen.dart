@@ -37,7 +37,12 @@ class _LoginScreenState extends State<LoginScreen> {
   final _password = TextEditingController();
   String _profile = 'comprador';
   bool _busy = false;
+  bool _recuperacionEnviada = false;
   String? _error;
+
+  static const _avisoRecuperacion =
+      'Si el correo está registrado, te enviamos un enlace para crear '
+      'una clave nueva.';
 
   @override
   void dispose() {
@@ -61,6 +66,7 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() {
       _busy = true;
       _error = null;
+      _recuperacionEnviada = false;
     });
     try {
       final actor = await widget.api.signIn(
@@ -69,6 +75,30 @@ class _LoginScreenState extends State<LoginScreen> {
         profile: _profile,
       );
       if (mounted) widget.onAuthenticated(actor);
+    } on MercadoApiException catch (error) {
+      if (mounted) setState(() => _error = error.message);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// El backend responde igual exista o no la cuenta: el aviso neutro es el
+  /// único resultado que se muestra, y el restablecimiento se termina de
+  /// hacer en el navegador (el enlace del mail abre la página web).
+  Future<void> _recuperar() async {
+    final email = _email.text.trim();
+    if (!email.contains('@')) {
+      setState(() => _error = 'Ingresá un correo válido.');
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _error = null;
+      _recuperacionEnviada = false;
+    });
+    try {
+      await widget.api.solicitarRecuperacion(email);
+      if (mounted) setState(() => _recuperacionEnviada = true);
     } on MercadoApiException catch (error) {
       if (mounted) setState(() => _error = error.message);
     } finally {
@@ -195,6 +225,21 @@ class _LoginScreenState extends State<LoginScreen> {
                       validator: (value) =>
                           (value?.length ?? 0) >= 8 ? null : 'Usá al menos 8 caracteres.',
                     ),
+                    const SizedBox(height: 4),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        onPressed: _busy ? null : _recuperar,
+                        child: const Text('¿Olvidé mi contraseña?'),
+                      ),
+                    ),
+                    if (_recuperacionEnviada)
+                      Text(
+                        _avisoRecuperacion,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: tokens.inkSoft,
+                        ),
+                      ),
                     if (widget.startupError != null) ...[
                       const SizedBox(height: 12),
                       Text(widget.startupError!,

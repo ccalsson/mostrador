@@ -5,9 +5,19 @@ import '../models.dart';
 import '../widgets/common.dart';
 
 class StandsScreen extends StatefulWidget {
-  const StandsScreen({required this.api, required this.onAdd, super.key});
+  const StandsScreen({
+    required this.api,
+    required this.actor,
+    required this.onAdd,
+    super.key,
+  });
 
   final MercadoApi api;
+
+  /// Los avisos del marketplace se piden sólo con la identidad aprobada que
+  /// habilita el checkout, igual que en la web.
+  final MercadoActor actor;
+
   final void Function({
     required String tenantId,
     required String tenantName,
@@ -23,6 +33,7 @@ class StandsScreen extends StatefulWidget {
 
 class _StandsScreenState extends State<StandsScreen> {
   late Future<List<Puesto>> _standsFuture;
+  Future<List<Aviso>>? _avisos;
   Puesto? _puesto;
   late Future<ProductRead> _productsFuture;
 
@@ -30,6 +41,15 @@ class _StandsScreenState extends State<StandsScreen> {
   void initState() {
     super.initState();
     _standsFuture = widget.api.listarPuestos();
+    if (widget.actor.puedeComprar) _avisos = widget.api.listarAvisos();
+  }
+
+  Future<void> _refreshStands() async {
+    setState(() {
+      _standsFuture = widget.api.listarPuestos(force: true);
+      if (widget.actor.puedeComprar) _avisos = widget.api.listarAvisos();
+    });
+    await _standsFuture;
   }
 
   void _openStand(Puesto stand) {
@@ -146,55 +166,96 @@ class _StandsScreenState extends State<StandsScreen> {
       future: _standsFuture,
       builder: (context, snapshot) {
         if (snapshot.hasError) {
-          return ErrorPanel(
-            error: snapshot.error,
-            onRetry: () async {
-              setState(() {
-                _standsFuture = widget.api.listarPuestos(force: true);
-              });
-              await _standsFuture;
-            },
-          );
+          return ErrorPanel(error: snapshot.error, onRetry: _refreshStands);
         }
         if (!snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
         final stands = snapshot.data!;
-        if (stands.isEmpty) {
-          return const Center(
-            child: Text('Todavía no hay puestos disponibles.'),
-          );
-        }
         return RefreshIndicator(
-          onRefresh: () async {
-            setState(() {
-              _standsFuture = widget.api.listarPuestos(force: true);
-            });
-            await _standsFuture;
-          },
-          child: ListView.separated(
+          onRefresh: _refreshStands,
+          child: ListView(
             physics: const AlwaysScrollableScrollPhysics(),
-            itemCount: stands.length,
-            separatorBuilder: (_, _) => const Divider(height: 1),
-            itemBuilder: (context, index) {
-              final stand = stands[index];
-              return ListTile(
-                leading: const CircleAvatar(
-                  child: Icon(Icons.storefront_outlined),
-                ),
-                title: Text(stand.nombre),
-                subtitle: Text(
-                  stand.bajada.isNotEmpty
-                      ? stand.bajada
-                      : 'Ver productos disponibles',
-                ),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => _openStand(stand),
-              );
-            },
+            children: [
+              _avisosHome(),
+              if (stands.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.all(24),
+                  child: Text('Todavía no hay puestos disponibles.'),
+                )
+              else
+                for (var i = 0; i < stands.length; i++) ...[
+                  if (i > 0) const Divider(height: 1),
+                  ListTile(
+                    leading: const CircleAvatar(
+                      child: Icon(Icons.storefront_outlined),
+                    ),
+                    title: Text(stands[i].nombre),
+                    subtitle: Text(
+                      stands[i].bajada.isNotEmpty
+                          ? stands[i].bajada
+                          : 'Ver productos disponibles',
+                    ),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => _openStand(stands[i]),
+                  ),
+                ],
+            ],
           ),
         );
       },
     );
   }
+
+  /// Cards de avisos arriba del listado, como en la web. Si el endpoint
+  /// falla, la home de puestos sigue intacta: los avisos se ocultan.
+  Widget _avisosHome() => FutureBuilder<List<Aviso>>(
+    future: _avisos,
+    builder: (context, snapshot) {
+      final avisos = snapshot.data;
+      if (avisos == null || avisos.isEmpty) return const SizedBox.shrink();
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (final aviso in avisos)
+            Card(
+              key: Key('aviso_${aviso.id}'),
+              margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      aviso.titulo.toUpperCase(),
+                      style: Theme.of(context).textTheme.labelMedium,
+                    ),
+                    Text(
+                      aviso.tenantNombre,
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                    Text(
+                      aviso.detalle,
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                    if (aviso.precio != null)
+                      Text(
+                        '${money(aviso.precio!)}'
+                        '${aviso.unidadLabel != null ? ' / ${aviso.unidadLabel}' : ''}',
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                    Text(
+                      'Hasta ${aviso.endsOn}',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      );
+    },
+  );
 }

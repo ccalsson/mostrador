@@ -42,7 +42,11 @@ class _MarketHomeState extends State<MarketHome> {
     final actor = MercadoActor.fromJson(widget.actor);
     final pages = _isBuyer
         ? <Widget>[
-            StandsScreen(api: widget.api, onAdd: _addToCart),
+            StandsScreen(
+              api: widget.api,
+              actor: actor,
+              onAdd: _addToCart,
+            ),
             CartScreen(
               api: widget.api,
               actor: actor,

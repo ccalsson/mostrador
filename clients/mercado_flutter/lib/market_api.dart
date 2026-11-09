@@ -212,6 +212,12 @@ class MercadoApi {
     return me();
   }
 
+  /// `POST auth/recuperar`: el servidor genera el enlace y manda el mail.
+  /// Responde igual exista o no la cuenta, así que la UI muestra siempre el
+  /// mismo aviso y no revela si el correo está registrado.
+  Future<void> solicitarRecuperacion(String email) =>
+      post('auth/recuperar', body: {'email': email});
+
   Future<String> startGoogle(String profile) async {
     final result = await post('auth/google', body: {'perfil': profile});
     return result['url'] as String;
@@ -526,6 +532,14 @@ class MercadoApi {
     return RankingCargador.listFromJson(
       response['cargadores'] ?? response['ranking'],
     );
+  }
+
+  /// `GET avisos`: banners de los puestos, ya enriquecidos por el servidor.
+  /// Es ruta pública; la home la pide sólo al comprador con identidad
+  /// aprobada.
+  Future<List<Aviso>> listarAvisos() async {
+    final response = await get('avisos');
+    return Aviso.listFromJson(response['avisos']);
   }
 
   Future<List<Recorrido>> listarRecorridos() async {

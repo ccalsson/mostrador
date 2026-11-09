@@ -106,6 +106,52 @@ class Producto {
       );
 }
 
+/// Aviso publicado por un puesto (`GET avisos`). El backend ya resuelve la
+/// plantilla, arma el texto y trae el precio del producto: acá sólo se
+/// muestra. Un campo ausente cae al valor por defecto en lugar de romper la
+/// home del comprador.
+class Aviso {
+  const Aviso({
+    required this.id,
+    required this.tenantNombre,
+    required this.plantilla,
+    required this.titulo,
+    required this.detalle,
+    this.precio,
+    this.unidadLabel,
+    required this.endsOn,
+  });
+
+  final String id;
+  final String tenantNombre;
+
+  /// 'oferta' | 'llegada' | 'precio' | 'puesto', tal como la eligió el puesto.
+  final String plantilla;
+  final String titulo;
+  final String detalle;
+
+  /// Sólo la plantilla 'precio' lo trae; el resto llega en null.
+  final double? precio;
+  final String? unidadLabel;
+
+  /// 'YYYY-MM-DD' ya formateada por el backend: se muestra sin recalcular.
+  final String endsOn;
+
+  factory Aviso.fromJson(Map<String, dynamic> json) => Aviso(
+        id: _strOpt(json['id']) ?? '',
+        tenantNombre: _strOpt(json['tenantNombre']) ?? '',
+        plantilla: _strOpt(json['plantilla']) ?? '',
+        titulo: _strOpt(json['titulo']) ?? '',
+        detalle: _strOpt(json['detalle']) ?? '',
+        precio: _doubleOpt(json['precio']),
+        unidadLabel: _strOpt(json['unidadLabel']),
+        endsOn: _strOpt(json['endsOn']) ?? '',
+      );
+
+  static List<Aviso> listFromJson(dynamic value) =>
+      _listaSegura(value, Aviso.fromJson);
+}
+
 /// Estados de pedido tal como los publica el backend para el comprador
 /// (buyerOrderState en mercado.ts).
 enum EstadoPedidoComprador {

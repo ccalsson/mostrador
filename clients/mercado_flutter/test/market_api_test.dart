@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -95,6 +97,104 @@ void main() {
           isA<MercadoApiException>()
               .having((e) => e.message, 'message', 'Caída del servidor.')
               .having((e) => e.kind, 'kind', ApiErrorKind.servidor),
+        ),
+      );
+    } finally {
+      api.close();
+    }
+  });
+
+  test('listarAvisos pide GET avisos y parsea el listado enriquecido', () async {
+    final pedidos = <http.BaseRequest>[];
+    final api = _ApiSinToken(
+      MockClient((request) async {
+        pedidos.add(request);
+        return http.Response(
+          '{"avisos":['
+          '{"id":"bnr_1","tenantNombre":"Frutas Roman","plantilla":"precio",'
+          '"titulo":"Bajo precio","detalle":"Banana por kilo",'
+          '"precio":123.45,"unidadLabel":"kg","endsOn":"2026-11-30"},'
+          '{"id":"bnr_2","tenantNombre":"Puesto Sur","plantilla":"llegada",'
+          '"titulo":"Recién llegado","detalle":"Mandarinas",'
+          '"precio":null,"unidadLabel":null,"endsOn":"2026-12-01"}'
+          ']}',
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+
+    final List<Aviso> avisos;
+    try {
+      avisos = await api.listarAvisos();
+    } finally {
+      api.close();
+    }
+
+    expect(pedidos.single.method, 'GET');
+    expect(pedidos.single.url.path.endsWith('/avisos'), isTrue);
+    expect(pedidos.single.headers['authorization'], isNull);
+    expect(avisos, hasLength(2));
+    expect(avisos.first.plantilla, 'precio');
+    expect(avisos.first.precio, 123.45);
+    expect(avisos.first.unidadLabel, 'kg');
+    expect(avisos.first.endsOn, '2026-11-30');
+    expect(avisos.last.precio, isNull);
+    expect(avisos.last.unidadLabel, isNull);
+  });
+
+  test('avisos sin clave o vacío no es un error', () async {
+    final api = _conRespuesta('{"avisos":[]}');
+    try {
+      expect(await api.listarAvisos(), isEmpty);
+    } finally {
+      api.close();
+    }
+  });
+
+  test(
+    'solicitarRecuperacion hace POST auth/recuperar con el correo',
+    () async {
+      final pedidos = <http.BaseRequest>[];
+      var cuerpo = '';
+      final api = _ApiSinToken(
+        MockClient((request) async {
+          pedidos.add(request);
+          cuerpo = request.body;
+          return http.Response(
+            '{"ok":true,"mensaje":"Si el correo tiene una cuenta, '
+            'el enlace fue generado."}',
+            200,
+            headers: {'content-type': 'application/json'},
+          );
+        }),
+      );
+
+      try {
+        await api.solicitarRecuperacion('Eva@Test.com');
+      } finally {
+        api.close();
+      }
+
+      expect(pedidos.single.method, 'POST');
+      expect(pedidos.single.url.path.endsWith('/auth/recuperar'), isTrue);
+      expect(pedidos.single.headers['authorization'], isNull);
+      expect(jsonDecode(cuerpo), {'email': 'Eva@Test.com'});
+    },
+  );
+
+  test('un correo inválido en la recuperación llega como excepción', () async {
+    final api = _conRespuesta(
+      '{"message":"El correo no es válido."}',
+      status: 400,
+    );
+    try {
+      await expectLater(
+        api.solicitarRecuperacion('no-pasa'),
+        throwsA(
+          isA<MercadoApiException>()
+              .having((e) => e.message, 'message', 'El correo no es válido.')
+              .having((e) => e.kind, 'kind', ApiErrorKind.negocio),
         ),
       );
     } finally {

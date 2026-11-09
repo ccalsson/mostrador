@@ -19,14 +19,24 @@ Future<http.Response> _fueraDeRed(http.BaseRequest request) async =>
 /// Extiende MercadoApi y responde datos fijos: las pantallas se prueban sin
 /// red y sin secure storage (ninguna llamada toca los métodos con storage).
 class ApiFalsa extends MercadoApi {
-  ApiFalsa({this.puestos = const [], this.catalogo = const []})
-    : super(client: MockClient(_fueraDeRed));
+  ApiFalsa({
+    this.puestos = const [],
+    this.catalogo = const [],
+    this.avisos = const [],
+  }) : super(client: MockClient(_fueraDeRed));
 
   final List<Puesto> puestos;
   final List<Producto> catalogo;
+  final List<Aviso> avisos;
 
   @override
   Future<List<Puesto>> listarPuestos({bool force = false}) async => puestos;
+
+  @override
+  Future<List<Aviso>> listarAvisos() async {
+    avisosLlamadas++;
+    return avisos;
+  }
 
   @override
   Future<ProductRead> products(String tenantId, {bool force = false}) async =>
@@ -93,6 +103,26 @@ const puestoFijo = Puesto(
   id: 'tnt_1',
   nombre: 'Frutas Roman',
   bajada: 'Frutas de estación',
+);
+
+const avisoPrecio = Aviso(
+  id: 'bnr_1',
+  tenantNombre: 'Puesto La Verde',
+  plantilla: 'precio',
+  titulo: 'Bajo precio',
+  detalle: 'Banana por kilo',
+  precio: 123.45,
+  unidadLabel: 'kg',
+  endsOn: '2026-11-30',
+);
+
+const avisoLlegada = Aviso(
+  id: 'bnr_2',
+  tenantNombre: 'Puesto Sur',
+  plantilla: 'llegada',
+  titulo: 'Recién llegado',
+  detalle: 'Mandarinas de temporada',
+  endsOn: '2026-12-01',
 );
 
 const banana = Producto(
@@ -165,6 +195,7 @@ MercadoApiException? errorListado;
 MercadoApiException? errorAceptar;
 MercadoApiException? errorRanking;
 int rankingLlamadas = 0;
+int avisosLlamadas = 0;
 final aceptaciones = <({String documentoId, int version, String hash})>[];
 
 Map<String, dynamic> cargadorPerfilMap() => {
@@ -201,6 +232,15 @@ MercadoActor cargadorActor() => MercadoActor.fromJson({
   'disponibilidad': 'disponible',
 });
 
+MercadoActor compradorActor({bool identidadCargada = true}) =>
+    MercadoActor.fromJson({
+      'id': 'usr_1',
+      'nombre': 'Ana Pérez',
+      'email': 'ana@test',
+      'perfil': 'comprador',
+      'estadoIdentidad': identidadCargada ? 'documentacion_cargada' : 'pendiente',
+    });
+
 /// Las pantallas van embebidas en el Scaffold de market_home: los tests
 /// reproducen ese anclaje para tener el Material que ListTile exige.
 Widget anclado(Widget screen) => MaterialApp(home: Scaffold(body: screen));
@@ -212,6 +252,7 @@ void main() {
     documentosFijos = const [];
     rankingFijos = const [];
     rankingLlamadas = 0;
+    avisosLlamadas = 0;
     contenidoFijo = null;
     errorListado = null;
     errorAceptar = null;

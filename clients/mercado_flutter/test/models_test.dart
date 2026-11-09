@@ -339,6 +339,66 @@ void main() {
     });
   });
 
+  group('Aviso', () {
+    const avisoLlegada = {
+      'id': 'bnr_1',
+      'tenantNombre': 'Frutas Roman',
+      'plantilla': 'llegada',
+      'titulo': 'Recién llegado',
+      'detalle': 'Mandarinas de temporada',
+      'precio': null,
+      'unidadLabel': null,
+      'endsOn': '2026-12-01',
+    };
+
+    test('parsea el aviso enriquecido con precio y unidad', () {
+      final aviso = Aviso.fromJson({
+        ...avisoLlegada,
+        'plantilla': 'precio',
+        'precio': 123.45,
+        'unidadLabel': 'kg',
+      });
+
+      expect(aviso.id, 'bnr_1');
+      expect(aviso.tenantNombre, 'Frutas Roman');
+      expect(aviso.plantilla, 'precio');
+      expect(aviso.titulo, 'Recién llegado');
+      expect(aviso.detalle, 'Mandarinas de temporada');
+      expect(aviso.precio, 123.45);
+      expect(aviso.unidadLabel, 'kg');
+      expect(aviso.endsOn, '2026-12-01');
+    });
+
+    test('precio y unidadLabel en null no rompen el parseo', () {
+      final aviso = Aviso.fromJson(avisoLlegada);
+
+      expect(aviso.precio, isNull);
+      expect(aviso.unidadLabel, isNull);
+    });
+
+    test('un campo ausente cae al valor por defecto', () {
+      final aviso = Aviso.fromJson({'titulo': 'Oferta'});
+
+      expect(aviso.titulo, 'Oferta');
+      expect(aviso.id, isEmpty);
+      expect(aviso.tenantNombre, isEmpty);
+      expect(aviso.plantilla, isEmpty);
+      expect(aviso.detalle, isEmpty);
+      expect(aviso.endsOn, isEmpty);
+      expect(aviso.precio, isNull);
+    });
+
+    test('el precio numérico en string también parsea', () {
+      expect(Aviso.fromJson({'precio': '900.25'}).precio, 900.25);
+    });
+
+    test('listFromJson descarta entradas inválidas y tolera basura', () {
+      expect(Aviso.listFromJson([avisoLlegada, 'basura']), hasLength(1));
+      expect(Aviso.listFromJson(null), isEmpty);
+      expect(Aviso.listFromJson({'avisos': []}), isEmpty);
+    });
+  });
+
   group('Estados', () {
     test('fromWire de enums usa labels consistentes', () {
       expect(EstadoParada.retirado.wire, 'retirado');
