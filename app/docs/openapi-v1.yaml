@@ -358,7 +358,7 @@ paths:
     get:
       tags: [Clientes]
       summary: Listar clientes
-      description: Cualquier staff. Incluye clientes del puesto más compradores de Mercado que le compraron (filas de solo lectura `origen: mercado`, `id` `merc:<compradorId>`); se excluye al comprador ya dado de alta con el mismo email.
+      description: "Cualquier staff. Incluye clientes del puesto más compradores de Mercado que le compraron (filas de solo lectura `origen: mercado`, `id` `merc:<compradorId>`); se excluye al comprador ya dado de alta con el mismo email."
       responses:
         "200":
           description: Clientes ordenados por nombre.
@@ -1065,6 +1065,86 @@ paths:
         "502": { $ref: '#/components/responses/CreativosProveedor' }
         "503": { $ref: '#/components/responses/CreativosUnavailable' }
 
+  /creativos/{id}/enviar:
+    post:
+      tags: [Creativos]
+      summary: Marcar el pedido como enviado
+      description: >
+        admin. Sólo acepta pedidos en `borrador` o `listo`; el cambio de estado no
+        habla con el proveedor ni gasta créditos. Queda auditado como `enviar_creativos`.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Enviado.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      id: { type: string }
+                      estado: { type: string, enum: [enviado] }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404":
+          description: El pedido no existe o es de otra casa (`creativo_no_encontrado`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example: { error: creativo_no_encontrado, message: Ese creativo no es de este puesto. }
+        "409":
+          description: Ya estaba enviado (`creativo_ya_enviado`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example: { error: creativo_ya_enviado, message: Ese creativo ya quedó enviado. }
+
+  /creativos/{id}:
+    delete:
+      tags: [Creativos]
+      summary: Borrado lógico de un pedido de creativos
+      description: >
+        admin. Deja de listarse pero la fila queda para la auditoría de la casa. No
+        devuelve los créditos gastados en la generación. Audita `borrar_creativos`.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Borrado.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      id: { type: string }
+                      eliminado: { type: boolean }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404":
+          description: El pedido no existe o es de otra casa (`creativo_no_encontrado`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example: { error: creativo_no_encontrado, message: Ese creativo no es de este puesto. }
+        "409":
+          description: Ya estaba borrado (`creativo_ya_borrado`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example: { error: creativo_ya_borrado, message: Ese creativo ya quedó borrado. }
+
   /alertas:
     get:
       tags: [Alertas]
@@ -1410,7 +1490,7 @@ components:
         activo: { type: boolean }
         userId: { type: string, nullable: true, description: Usuario del portal vinculado. }
         saldo: { type: number, description: Suma de movimientos de cuenta corriente (0 sin CC). }
-        origen: { type: string, enum: [puesto, mercado], description: `'mercado'` = comprador de Mercado que le compró al puesto; fila de solo lectura, `id` `merc:<compradorId>`, no editable ni con cuenta corriente. }
+        origen: { type: string, enum: [puesto, mercado], description: "`'mercado'` = comprador de Mercado que le compró al puesto; fila de solo lectura, `id` `merc:<compradorId>`, no editable ni con cuenta corriente." }
     ClienteCreado:
       type: object
       properties:

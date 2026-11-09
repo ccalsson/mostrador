@@ -144,6 +144,8 @@ Autenticación y sesión · catálogo con ETag/`?since` · alta/edición/baja y 
 
 ## 7. Dudas que requieren tu decisión
 
+*(Respondidas al cerrar los lotes: ver §9.)*
+
 1. **§4.1 (creativos 404):** ¿agrego las dos rutas al backend (`POST /creativos/:id/enviar`, `DELETE /creativos/:id`) siguiendo el patrón `*ForStaff` de `app/src/lib/server/creativos.ts`, o oculto los botones en Flutter hasta que exista el backend? La primera requiere tocar `app/` con el árbol sucio.
 
 2. **§4.2 (dólar):** ¿el widget debe mostrar la tasa **oficial** del backend, o se quiere conservar la **blue** como referencia de mercado a propósito? Si es "ambas", hay que rotularlas explícitamente.
@@ -170,4 +172,24 @@ Nada del Lote 1 o 2 exige migraciones SQL ni dependencias nuevas.
 
 ---
 
-*Fin. Salvo los dos archivos del Lote 1 en manos de subagentes, no se modificó código del proyecto.*
+## 9. Cierre de los tres huecos
+
+Los tres se resolvieron en `bf77daa`, con las respuestas que estaban abiertas en §7:
+
+- **§4.1 creativos (ALTA).** Opción backend, no ocultar botones. `enviarCreativoForStaff` y `borrarCreativoForStaff` viven en `app/src/lib/server/creativos.ts` y el router los expone como `POST /creativos/:id/enviar` y `DELETE /creativos/:id`, ambas sólo para `admin`. El enviar acepta `borrador` o `listo` y devuelve 409 `creativo_ya_enviado` si ya salió; el borrar es **lógico** (`estado = 'eliminado'`) porque las variantes cuelgan de `creativos_pedidos` sin cascade y los créditos gastados no vuelven al saldo. Un id que no es de la casa da 404, no 409, para no confirmar existencia ajena.
+- **§4.2 dólar (MEDIA).** Tasa oficial del backend. El widget lee `GET /api/v1/cotizacion` —la misma conversión con la que el ERP factura— en vez de scrapear dolarapi.com desde el cliente; el rótulo dice "oficial" y un Tooltip explica que es la tasa de facturación.
+- **§4.3 sucursal (MEDIA).** Switch en la fila de `usuarios_pane`, no en el diálogo; se esconde para el propio admin porque la ruta ya lo rechaza.
+
+Tres cosas más que estaban rotas y se arreglaron en el mismo camino:
+
+1. `reposicion_dias` la usaba `repoweb/src/lib/reposicion-fn.ts` pero nunca se migró desde `app/`: ahora existe `app/migrations/0036_premium_reposicion.sql`, byte a byte igual a la de repoweb. Como el registro de migraciones va por basename, en DEV se aplica una sola vez.
+2. `app/docs/openapi-v1.yaml` **no parseaba** desde `1f4eac9`: dos `description` sin comillas llevaban `: ` dentro del texto. Corregidos, y agregadas las dos operaciones de creativos que faltaban (`/creativos/{id}/enviar`, `DELETE /creativos/{id}`) — el archivo declara ser fuente de verdad del router y sólo se amplía.
+3. §3.bis queda desactualizado adentro de este mismo doc: las dos rutas que marca `❌ inexistente` ya existen. Se deja el texto original porque es la evidencia del bug, no el estado vigente.
+
+**Verificación (no lectura de código):** `npm run typecheck` y `npm test` en `app/`, `npm run typecheck` en `repoweb/`, `flutter analyze` y `flutter test` en las dos apps Flutter, y la suite `npm run test:e2e` contra Neon DEV: **38 de 39 verdes**. Adentro del test 27 están las aserciones nuevas de los dos endpoints (enviar, 409 de reenvío, 404 cross-tenant, 403 de vendedor y cajero, borrado lógico con la fila intacta y las dos acciones en `auditoria`); la siembra del pedido se hace por SQL para que la cobertura no dependa de las llaves del proveedor de IA.
+
+El test de `foto de producto` estaba rojo por un error del propio test, no del backend: creaba el producto mandando `id` en el body, y en `POST /api/v1/productos` un `id` es la señal de "editar uno que ya existe" (`saveProductoForStaff` hace `update` sobre una fila inexistente y responde 201 sin escribir nada). Ahora toma el id que devuelve el alta.
+
+**El único rojo que queda (test 20, ARCA) es de datos, no de código:** `POST /afip/config` sin PEMs en el cuerpo cae al `cert_pem` ya almacenado en la fila de `frutas-roman` en Neon DEV, y node-forge no lo parsea (`Invalid PEM formatted message`). Arreglarlo implica tocar material de certificado de un entorno compartido, así que queda a decisión del usuario.
+
+*Fin.*

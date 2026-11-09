@@ -3564,6 +3564,72 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
     expectError(restante, 429, /Demasiados pedidos/i);
     assert.equal(restante.data.error, "cupo_agotado");
     await sql("delete from seguridad_cupo where clave = $1", [`creativos:${TENANT}`]);
+
+    // Enviar y borrar no hablan con el proveedor, así que la fila se siembra
+    // directo: Marketing ya tenía los botones cableados a estas dos rutas.
+    const siembra = Date.now();
+    const listoId = `ctxp_e2e_listo_${siembra}`;
+    const borradoId = `ctxp_e2e_borrado_${siembra}`;
+    state.creativosPedidoIds.push(listoId, borradoId);
+    await sql(
+      `insert into creativos_pedidos (id, tenant_id, formato, cantidad, creditos, brief, estado)
+       values ($1, $2, 'banner', 4, 4, 'siembra e2e', 'listo'),
+              ($3, $2, 'banner', 4, 4, 'siembra e2e', 'borrador')`,
+      [listoId, TENANT, borradoId],
+    );
+
+    const enviado = await api("POST", `/creativos/${listoId}/enviar`, { token: state.tokens.admin });
+    assert.equal(enviado.status, 200, JSON.stringify(enviado.data));
+    assert.equal(enviado.data.data.estado, "enviado");
+    expectError(
+      await api("POST", `/creativos/${listoId}/enviar`, { token: state.tokens.admin }),
+      409,
+      /ya quedó enviado/i,
+    );
+    expectError(
+      await api("POST", "/creativos/ctxp_e2e_inexistente/enviar", { token: state.tokens.admin }),
+      404,
+      /no es de este puesto/i,
+    );
+    expectError(
+      await api("POST", `/creativos/${borradoId}/enviar`, { token: state.tokens.vendedor }),
+      403,
+      null,
+    );
+
+    const salio = await api("DELETE", `/creativos/${borradoId}`, { token: state.tokens.admin });
+    assert.equal(salio.status, 200, JSON.stringify(salio.data));
+    assert.equal(salio.data.data.eliminado, true);
+    expectError(
+      await api("DELETE", `/creativos/${borradoId}`, { token: state.tokens.admin }),
+      409,
+      /ya quedó borrado/i,
+    );
+    expectError(
+      await api("DELETE", `/creativos/${listoId}`, { token: state.tokens.cajero }),
+      403,
+      null,
+    );
+
+    // El borrado es lógico: la fila queda para la auditoría de la casa, pero
+    // el listado deja de mostrarla. Los créditos gastados no vuelven al saldo.
+    const trasBorrar = await api("GET", "/creativos", { token: state.tokens.admin });
+    assert.equal(trasBorrar.status, 200, JSON.stringify(trasBorrar.data));
+    const visibles = trasBorrar.data.data.pedidos.map((pedido) => pedido.id);
+    assert.ok(!visibles.includes(borradoId), "el eliminado no se lista");
+    assert.ok(visibles.includes(listoId), "el enviado sigue visible");
+    const queda = await sql("select count(*)::int as n from creativos_pedidos where id = $1", [borradoId]);
+    assert.equal(queda.rows[0].n, 1, "es borrado lógico, la fila no se borra");
+    const auditosCreativos = await sql(
+      `select accion from auditoria
+       where tenant_id = $1 and accion = any('{"enviar_creativos","borrar_creativos"}') and created_at >= $2::timestamptz`,
+      [TENANT, state.runStart],
+    );
+    assert.deepEqual(
+      auditosCreativos.rows.map((row) => row.accion).sort(),
+      ["borrar_creativos", "enviar_creativos"],
+      "las dos operaciones quedan auditadas",
+    );
   });
 
   it("28. portal: alta sin confirmar → 403, confirmar con token → 200, reenviar con cupo (F4)", async () => {
@@ -3948,12 +4014,11 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
 
   // ---- Foto de producto: upload y delete ----
   it("foto de producto: upload, consulta y delete", async () => {
-    // Crear un producto de prueba para la foto
-    const productoFotoId = `foto-${randomUUID().slice(0, 8)}`;
+    // Crear un producto de prueba para la foto. El id lo devuelve el servidor:
+    // mandar `id` en el body es la señal de "editar uno que ya existe".
     const alta = await api("POST", "/productos", {
       token: state.tokens.admin,
       body: {
-        id: productoFotoId,
         nombre: "Producto con foto",
         unidad: "kg",
         unidadLabel: "kg",
@@ -3962,7 +4027,8 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
         alias: [],
       },
     });
-    assert.equal(alta.status, 201);
+    assert.equal(alta.status, 201, JSON.stringify(alta.data));
+    const productoFotoId = alta.data.data.id;
 
     // Crear un archivo JPEG de test (1x1 pixel)
     // Minimal JPEG: SOI + APP0 + minimal data + EOI

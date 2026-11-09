@@ -6,6 +6,8 @@
 
 ## 0. Decisiones de alcance cerradas (con el usuario, 2026-10-09)
 
+> ⚠️ **Recontado el 2026-11-09.** Los conteos de endpoints de esta matriz quedan superados por `docs/auditoria-web-vs-flutter.md`, que compara contratos y no listas de archivos. La decisión 1 de esta lista **se revirtió** en `7dcade4`: la web de repoweb conservó su propio better-auth y no consume `/api/v1`; no hay que volver a ese plan.
+
 1. **Web = repoweb como frontend puro** sobre `/api/v1` + `/api/mercado/v1` de `app/`. Better Auth de repoweb se jubila para Mostrador/Mercado (auth unifica a la de `app/`).
 2. **Portal del cliente: queda web** + integración con Mercado. No se duplica en Flutter (los clientes no usan la app del puesto).
 3. **Extras aprobados:** Publicidad/Push, ARCA UI en Flutter, Torre escritorio Windows (mandato maestro Torre: stack repoweb, Electron + adaptador central — ver `torre-legal-integracion`).

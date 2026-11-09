@@ -47,6 +47,8 @@ repoweb/screenshots/
 repoweb/spa.traineddata
 app/artifacts/
 repoweb/.tanstack/
+# Fotos subidas en runtime; el .gitkeep de productos/ fija el directorio.
+app/public/uploads/productos/*/
 
 # --- Flutter / Dart ---
 **/.dart_tool/
