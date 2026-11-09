@@ -1,7 +1,9 @@
 import { createMiddleware, createServerFn } from "@tanstack/react-start";
 import { hashPassword } from "better-auth/crypto";
 import { auditar } from "@/lib/torre/audit";
+import { archivarClienteCore } from "@/lib/torre/cliente-archivo-core";
 import { transicionSuscripcion } from "@/lib/torre/comercial";
+import { limpiarDatosDemoCore, previewDatosDemoCore } from "@/lib/torre/demo-limpieza";
 import { aplicarPagoALinea } from "@/lib/torre/reglas";
 import { exigirAccion } from "@/lib/torre/roles";
 import { getSql, withTransaction } from "@/lib/db";
@@ -292,7 +294,8 @@ export async function listClientsCore(_email: string) {
       email: string | null;
       notes: string;
       status: string;
-    }>`select id, name, business_name, contact_name, phone, email, notes, status from torre.saas_clients order by lower(name)`;
+    }>`select id, name, business_name, contact_name, phone, email, notes, status from torre.saas_clients
+       order by (status = 'archived') asc, lower(name)`;
     return rows.map((r) => ({
       id: r.id,
       name: r.name,
@@ -460,6 +463,42 @@ export const saveClient = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     const email = await requireTorre(context.userId);
     return saveClientCore(email, data);
+  });
+
+export const archivarCliente = createServerFn({ method: "POST" })
+  .middleware([torreGuard])
+  .validator((input: { id: string; archivado: boolean }) => {
+    const id = input?.id?.trim();
+    if (!id) throw new Error("Falta el cliente.");
+    return { id, archivado: input.archivado === true };
+  })
+  .handler(async ({ context, data }) => {
+    const email = await requireTorre(context.userId);
+    return archivarClienteCore(email, data.id, data.archivado);
+  });
+
+export const vistaDatosDemo = createServerFn({ method: "POST" })
+  .middleware([torreGuard])
+  .validator((input: { tenantId: string }) => {
+    const tenantId = input?.tenantId?.trim();
+    if (!tenantId) throw new Error("Falta el puesto.");
+    return { tenantId };
+  })
+  .handler(async ({ context, data }) => {
+    const email = await requireTorre(context.userId);
+    return previewDatosDemoCore(email, data.tenantId);
+  });
+
+export const borrarDatosDemo = createServerFn({ method: "POST" })
+  .middleware([torreGuard])
+  .validator((input: { tenantId: string; confirmacion: string }) => {
+    const tenantId = input?.tenantId?.trim();
+    if (!tenantId) throw new Error("Falta el puesto.");
+    return { tenantId, confirmacion: String(input?.confirmacion ?? "") };
+  })
+  .handler(async ({ context, data }) => {
+    const email = await requireTorre(context.userId);
+    return limpiarDatosDemoCore(email, data.tenantId, data.confirmacion);
   });
 
 export async function listPlansCore(_email: string) {

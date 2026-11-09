@@ -5,7 +5,9 @@ import { toast } from "sonner";
 import { TorreShell } from "@/components/torre-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { addAccess, listAccess, removeAccess } from "@/lib/torre-fn";
+import { addAccess, borrarDatosDemo, listAccess, removeAccess, vistaDatosDemo } from "@/lib/torre-fn";
+import type { VistaDemoLimpieza } from "@/lib/torre/demo-limpieza";
+import { TENANT_ID } from "@/lib/catalog";
 import { listFx, saveFx, leerMedioPago, guardarMedioPago } from "@/lib/torre/control-fn";
 
 export const Route = createFileRoute("/torre/configuracion")({ component: Page });
@@ -29,6 +31,33 @@ function Page() {
   const [fuente, setFuente] = useState("dólar oficial vendedor Banco Nación");
   const [fecha, setFecha] = useState("2026-10-07");
   const [valor, setValor] = useState("");
+  const [vista, setVista] = useState<VistaDemoLimpieza | null>(null);
+  const [palabra, setPalabra] = useState("");
+  const [ocupado, setOcupado] = useState(false);
+  const verDemo = async () => {
+    setOcupado(true);
+    try {
+      setVista(await vistaDatosDemo({ data: { tenantId: TENANT_ID } }));
+    } catch (err) {
+      toast.error((err as Error).message);
+    } finally {
+      setOcupado(false);
+    }
+  };
+  const borrarDemo = async () => {
+    setOcupado(true);
+    try {
+      const r = await borrarDatosDemo({ data: { tenantId: TENANT_ID, confirmacion: palabra } });
+      toast.success(`Se llevaron ${r.borrado} filas. Stock restaurado en ${r.stockRestaurado} productos.`);
+      setPalabra("");
+      setVista(await vistaDatosDemo({ data: { tenantId: TENANT_ID } }));
+      await qc.invalidateQueries();
+    } catch (err) {
+      toast.error((err as Error).message);
+    } finally {
+      setOcupado(false);
+    }
+  };
   const vigente = cambios.data?.[0];
   return (
     <TorreShell title="Configuración">
@@ -80,6 +109,56 @@ function Page() {
           <Button type="submit">Guardar</Button>
         </form>
         <p className="mt-2 text-xs text-muted">La tarjeta queda para más adelante.</p>
+      </section>
+      <section className="mb-6 rounded-lg border border-terra p-4">
+        <h2 className="font-medium">Borrar datos de prueba del puesto demo</h2>
+        <p className="mt-1 text-sm text-muted">
+          Vacía las operaciones y los clientes de <span className="font-medium">{TENANT_ID}</span> y deja el
+          catálogo, los usuarios del puesto y la config intactos. No se puede deshacer.
+        </p>
+        <div className="mt-3 flex gap-2">
+          <Button variant="secondary" onClick={() => void verDemo()} disabled={ocupado}>
+            Ver qué se borraría
+          </Button>
+          {vista ? (
+            <Button
+              variant="secondary"
+              onClick={() => void borrarDemo()}
+              disabled={ocupado || vista.total === 0 || palabra.trim().toUpperCase() !== "BORRAR"}
+            >
+              Borrar {vista.total} filas
+            </Button>
+          ) : null}
+        </div>
+        {vista ? (
+          <div className="mt-3 text-sm">
+            <p className="text-muted">
+              Se borran {vista.total} filas. El catálogo ({vista.catalogo} productos) no se toca.
+            </p>
+            {vista.clientesConCuenta > 0 ? (
+              <p className="mt-1 text-terra">
+                {vista.clientesConCuenta} de esos clientes tienen cuenta del portal: se quedan sin ficha y el
+                login del portal queda cojo.
+              </p>
+            ) : null}
+            <ul className="mt-2 grid gap-x-6 gap-y-1 sm:grid-cols-2 lg:grid-cols-3">
+              {vista.detalle.map((f) => (
+                <li key={f.tabla} className="flex justify-between gap-3 border-b border-line">
+                  <span className="text-muted">{f.tabla}</span>
+                  <span className="tabular-nums">{f.filas}</span>
+                </li>
+              ))}
+            </ul>
+            <div className="mt-3 flex gap-2">
+              <Input
+                value={palabra}
+                onChange={(e) => setPalabra(e.target.value)}
+                placeholder="Escribí BORRAR"
+                className="max-w-40"
+              />
+            </div>
+          </div>
+        ) : null}
       </section>
       <p className="mb-3 text-sm text-muted">Solo estas cuentas pueden abrir la Torre. El puesto no entra.</p>
       <form

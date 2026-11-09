@@ -6,7 +6,7 @@ import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recha
 import { Field, SelectField, TorreShell } from "@/components/torre-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { estadisticasCliente, listClients, saveClient } from "@/lib/torre-fn";
+import { archivarCliente, estadisticasCliente, listClients, saveClient } from "@/lib/torre-fn";
 import { money } from "@/lib/money";
 import { ESTADO_LABEL, PAGO_LABEL, type FormaPago, type PedidoEstado } from "@/lib/types";
 
@@ -20,15 +20,48 @@ function Page() {
   const qc = useQueryClient();
   const lista = useQuery({ queryKey: ["torre-clientes"], queryFn: () => listClients() });
   const [sel, setSel] = useState<string | "nuevo" | null>(null);
-  const actual = sel && sel !== "nuevo" ? (lista.data ?? []).find((c) => c.id === sel) : null;
+  const [verArchivados, setVerArchivados] = useState(false);
+  const clientes = lista.data ?? [];
+  const archivados = clientes.filter((c) => c.status === "archived");
+  const visibles = verArchivados ? clientes : clientes.filter((c) => c.status !== "archived");
+  const actual = sel && sel !== "nuevo" ? clientes.find((c) => c.id === sel) : null;
+  const cambiarEstado = async (cliente: Cliente) => {
+    const archivando = cliente.status !== "archived";
+    const mensaje = archivando
+      ? `¿Archivar a ${cliente.name}? Deja de contar en los tableros, pero sus negocios, suscripciones y pagos quedan.`
+      : `¿Restaurar a ${cliente.name}?`;
+    if (!window.confirm(mensaje)) return;
+    try {
+      const r = await archivarCliente({ data: { id: cliente.id, archivado: archivando } });
+      toast.success(archivando ? "Cliente archivado" : "Cliente restaurado");
+      if (archivando && !r.yaEstaba && r.negocios + r.suscripciones + r.pagos > 0) {
+        toast.message(`Le queda historial: ${r.negocios} negocios, ${r.suscripciones} suscripciones, ${r.pagos} pagos.`);
+      }
+      await qc.invalidateQueries({ queryKey: ["torre-clientes"] });
+      await qc.invalidateQueries({ queryKey: ["torre-dash"] });
+    } catch (err) {
+      toast.error((err as Error).message);
+    }
+  };
   return (
     <TorreShell title="Clientes">
       <p className="mb-3 text-sm text-muted">Cada cliente puede tener varios negocios. La ficha queda abajo de las cifras.</p>
       <div className="mx-auto grid w-full max-w-6xl items-start gap-4 xl:grid-cols-[15rem_minmax(0,32rem)_17rem]">
         <div>
-          <Button size="sm" onClick={() => setSel("nuevo")}>Nuevo</Button>
+          <div className="flex items-center gap-2">
+            <Button size="sm" onClick={() => setSel("nuevo")}>Nuevo</Button>
+            {archivados.length > 0 ? (
+              <button
+                type="button"
+                className="text-xs text-muted underline underline-offset-2"
+                onClick={() => setVerArchivados((v) => !v)}
+              >
+                {verArchivados ? "Ocultar" : `Ver`} {archivados.length} archivado{archivados.length === 1 ? "" : "s"}
+              </button>
+            ) : null}
+          </div>
           <ul className="mt-3 divide-y divide-line overflow-hidden rounded-lg border border-line bg-surface text-sm">
-            {(lista.data ?? []).map((c) => (
+            {visibles.map((c) => (
               <li key={c.id}>
                 <button type="button" className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left" onClick={() => setSel(c.id)}>
                   <span className="min-w-0">
@@ -61,6 +94,7 @@ function Page() {
               toast.success("Cliente guardado");
               await qc.invalidateQueries({ queryKey: ["torre-clientes"] });
             }}
+            onArchivar={() => cambiarEstado(actual)}
           />
         ) : (
           <p className="text-sm text-muted">Elegí un cliente para ver cómo paga y cómo vende.</p>
@@ -70,7 +104,15 @@ function Page() {
   );
 }
 
-function Estadisticas({ cliente, onSave }: { cliente: Cliente; onSave: (data: typeof VACIO) => Promise<void> }) {
+function Estadisticas({
+  cliente,
+  onSave,
+  onArchivar,
+}: {
+  cliente: Cliente;
+  onSave: (data: typeof VACIO) => Promise<void>;
+  onArchivar: () => void;
+}) {
   const [dias, setDias] = useState<Rango>(30);
   const data = useQuery({
     queryKey: ["torre-cliente-stats", cliente.id, dias],
@@ -91,9 +133,13 @@ function Estadisticas({ cliente, onSave }: { cliente: Cliente; onSave: (data: ty
       <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h2 className="font-display text-xl font-semibold">{cliente.name}</h2>
+          <h2 className="flex items-center gap-2 font-display text-xl font-semibold">
+            {cliente.name}
+            {cliente.status === "archived" ? <Badge tone="muted">Archivado</Badge> : null}
+          </h2>
           <p className="text-sm text-muted">{cliente.businessName || "Sin razón social"}</p>
         </div>
+        <div className="flex items-center gap-2">
         <div className="flex rounded-md bg-paper-2 p-1">
           {(
             [
@@ -111,6 +157,10 @@ function Estadisticas({ cliente, onSave }: { cliente: Cliente; onSave: (data: ty
               {label}
             </button>
           ))}
+        </div>
+          <Button size="sm" variant="secondary" onClick={onArchivar}>
+            {cliente.status === "archived" ? "Restaurar" : "Archivar"}
+          </Button>
         </div>
       </div>
       {data.error ? <p className="text-sm text-terra">{(data.error as Error).message}</p> : null}

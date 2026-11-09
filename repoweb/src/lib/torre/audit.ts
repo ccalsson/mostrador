@@ -1,5 +1,5 @@
-import { getSql } from "@/lib/db";
-import { newId } from "@/lib/ids";
+import { newId } from "../ids.ts";
+import { getSql } from "../db.ts";
 
 export async function auditar(
   email: string,
