@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { before, after, test } from "node:test";
 import { readdir, readFile } from "node:fs/promises";
 import { PGlite } from "@electric-sql/pglite";
+import { hashPassword, verifyPassword } from "better-auth/crypto";
 import { guardarNegocio, sincronizarPlan } from "./alta-negocio.ts";
+import { semearCatalogo } from "./semilla-catalogo.ts";
+import { CATALOG } from "../catalog.ts";
 import {
   exigirAccesoPuesto,
   exigirCupoUsuario,
@@ -91,6 +94,64 @@ test("alta completa vincula dueño, matriz, cliente y abono sin crear otro negoc
   assert.equal(rows[0].emailVerified, true);
   assert.equal(rows[0].product_id, "prod_base");
   await exigirAccesoPuesto(sql, rows[0].operational_tenant_ref);
+});
+
+test("el dueño creado por el alta loguea con su clave real (hash de better-auth)", async () => {
+  const clave = "ClaveDelDueno2026";
+  const email = "qa-login@example.test";
+  const hash = await hashPassword(clave);
+  await pg.transaction((tx) =>
+    guardarNegocio(
+      sqlFor(tx),
+      { ...input("login"), ownerEmail: email, ownerPassword: clave },
+      "qa@example.test",
+      hash,
+    ),
+  );
+  const [cuenta] = await sql<{ password: string | null }>`
+    select a.password from account a
+    join "user" u on u.id = a."userId"
+    where u.email = ${email} and a."providerId" = 'credential'`;
+  assert.ok(cuenta, "no se encontró la cuenta credential del dueño");
+  assert.equal(cuenta.password, hash, "el alta debe guardar el hash real que recibió");
+  assert.equal(await verifyPassword({ hash: cuenta.password as string, password: clave }), true);
+  assert.equal(
+    await verifyPassword({ hash: cuenta.password as string, password: "otra-clave-mala" }),
+    false,
+  );
+});
+
+test("el puesto nuevo nace con el catálogo de verdulería cargado y en ARS", async () => {
+  const result = await create("catalogo");
+  const [{ operational_tenant_ref: puesto }] = await sql<{ operational_tenant_ref: string }>`
+    select operational_tenant_ref from torre.saas_tenants where id=${result.id}`;
+  const cuenta = await sql<{ n: number; ars: number; nombres: number }>`
+    select count(*)::int as n,
+           count(*) filter (where moneda = 'ARS')::int as ars,
+           count(distinct nombre)::int as nombres
+    from productos where tenant_id = ${puesto}`;
+  assert.ok(CATALOG.length >= 100, `la semilla debe tener ~100 productos, tiene ${CATALOG.length}`);
+  assert.equal(cuenta[0].n, CATALOG.length, "el alta debe sembrar el catálogo completo");
+  assert.equal(cuenta[0].ars, cuenta[0].n, "la semilla se guarda en ARS, no en USD");
+  assert.equal(cuenta[0].nombres, cuenta[0].n, "no debe duplicar nombres dentro del puesto");
+  const verdes = await sql<{ nombre: string }>`
+    select nombre from productos
+    where tenant_id = ${puesto}
+      and nombre = any(array['Cebolla de verdeo','Perejil','Apio','Achicoria','Lechuga criolla','Lechuga romana'])
+    order by nombre`;
+  assert.equal(verdes.length, 6, "faltan los verdes que pide la verdulería argentina");
+});
+
+test("resembrar el mismo puesto no duplica ni pisa el catálogo", async () => {
+  const result = await create("resemilla");
+  const [{ operational_tenant_ref: puesto }] = await sql<{ operational_tenant_ref: string }>`
+    select operational_tenant_ref from torre.saas_tenants where id=${result.id}`;
+  await sql`update productos set precio = 1 where tenant_id = ${puesto} and nombre = 'Acelga'`;
+  const insertados = await semearCatalogo(sql, puesto);
+  assert.equal(insertados, 0, "la segunda pasada no debe insertar nada");
+  const [{ precio }] = await sql<{ precio: string }>`
+    select precio from productos where tenant_id = ${puesto} and nombre = 'Acelga'`;
+  assert.equal(Number(precio), 1, "resembrar no debe pisar el precio que editó el dueño");
 });
 
 test("fallo tardío revierte cliente, negocio, cuenta y dueño", async () => {

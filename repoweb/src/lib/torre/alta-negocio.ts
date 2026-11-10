@@ -1,6 +1,7 @@
 import type { Sql } from "../db.ts";
 import { newId } from "../ids.ts";
 import { precioSnapshot } from "./reglas.ts";
+import { semearCatalogo } from "./semilla-catalogo.ts";
 
 export type AltaNegocio = {
   id?: string;
@@ -364,6 +365,7 @@ export async function guardarNegocio(
   await sql`insert into torre.saas_branches(id,tenant_id,name,slug,address,status,included,opened_on) values(${branchId},${id},'Casa matriz','matriz',${direccion},'active',true,${today}::date)`;
   await sql`insert into sucursales(id,tenant_id,libros_tenant_id,nombre,referencia,es_matriz,activa,torre_branch_id) values(${matrixId},${puestoId},${puestoId},'Casa matriz',${direccion},true,true,${branchId})`;
   await sql`insert into staff(id,tenant_id,user_id,nombre,email,rol,activo,sucursal_actual_id) values(${newId("stf")},${puestoId},${userId},${name},${email},'admin',true,${matrixId})`;
+  await semearCatalogo(sql, puestoId);
   await sincronizarPlan(sql, id, planId, data.appId, clientId, actor);
   await sql`insert into torre.saas_audit(id,actor_email,action,entity,entity_id,metadata) values(${newId("aud")},${actor},'crear_tenant','tenant',${id},${JSON.stringify({ planId, clientId, operationalTenantRef: puestoId })}::jsonb)`;
   return { id, clientId };
