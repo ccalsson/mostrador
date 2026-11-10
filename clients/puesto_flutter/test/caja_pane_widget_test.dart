@@ -462,10 +462,17 @@ void main() {
     await _drenarSnackBar(tester);
   });
 
-  testWidgets('teléfono: la ficha ocupa toda la pantalla y el cobro se puede tocar',
+  testWidgets(
+      'teléfono: la ficha ocupa toda la pantalla y el cobro se puede tocar',
       (tester) async {
+    // Un pedido de verdulería real trae muchos ítems: con la barra de acciones
+    // dentro del ListView, "Cobrar" empujaba su botón bajo el borde inferior.
     final fake = _PedidosFake([
-      _pedido('ped_1', total: 1500, items: [_item('p1', precio: 1500)]),
+      _pedido(
+        'ped_1',
+        total: 1500 * 12,
+        items: [for (var i = 0; i < 12; i++) _item('p$i', precio: 1500)],
+      ),
     ]);
     await _montar(tester, fake);
 
@@ -494,6 +501,11 @@ void main() {
     expect(rect.right, lessThanOrEqualTo(360));
     expect(rect.bottom, lessThanOrEqualTo(780),
         reason: 'el botón de cobro queda dentro de la pantalla del teléfono');
+    expect(
+      tester.getRect(find.byKey(const Key('caja_detalle_total'))).bottom,
+      lessThanOrEqualTo(780),
+      reason: 'el total se lee sin scrollear la ficha',
+    );
     expect(tester.takeException(), isNull,
         reason: 'el layout angosto no desborda');
 
@@ -505,6 +517,48 @@ void main() {
 
     await tester.tap(find.byKey(const Key('caja_detalle_volver')));
     await _esperar(tester, find.byKey(const Key('caja_lista')));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+      'teclado a pantalla: la ficha achicada no desborda y deja llegar al cobro',
+      (tester) async {
+    final fake = _PedidosFake([
+      _pedido(
+        'ped_1',
+        total: 1500 * 12,
+        items: [for (var i = 0; i < 12; i++) _item('p$i', precio: 1500)],
+      ),
+    ]);
+    await _montar(tester, fake);
+
+    // Con el teclado del teléfono abierto quedan unos 260dp sobre la app: la
+    // barra de acciones ya no entra como footer fijo y el botón de cobro
+    // desaparecía con un desborde de RenderFlex.
+    tester.view.physicalSize = const Size(360, 260);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    await tester.pump();
+
+    await _abrirDetalle(tester, 'ped_1');
+    expect(tester.takeException(), isNull,
+        reason: 'la ficha entra en la ventana achicada sin desbordar');
+
+    final cobrar = find.byKey(const Key('caja_cobrar'));
+    expect(find.byKey(const Key('caja_detalle_ajustada')), findsOneWidget,
+        reason: 'en ventana chica la ficha pasa a un único scroll');
+    await tester.scrollUntilVisible(
+      cobrar,
+      80,
+      scrollable: find
+          .descendant(
+            of: find.byKey(const Key('caja_detalle_ajustada')),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
+    expect(tester.getRect(cobrar).bottom, lessThanOrEqualTo(260),
+        reason: 'deslizando, el botón de cobro queda a la vista');
     expect(tester.takeException(), isNull);
   });
 

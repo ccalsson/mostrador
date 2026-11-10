@@ -214,8 +214,8 @@ class CompradoresAppService {
       '/api/v1/compradores-app/$userId',
       body: {
         'nombre': nombre,
-        if (telefono != null) 'telefono': telefono,
-        if (direccion != null) 'direccion': direccion,
+        'telefono': ?telefono,
+        'direccion': ?direccion,
       },
     );
   }

@@ -20,8 +20,9 @@ class CobroDialog extends ConsumerStatefulWidget {
 
 class _CobroDialogState extends ConsumerState<CobroDialog> {
   FormaPago _forma = FormaPago.efectivo;
-  late final TextEditingController _recibido =
-      TextEditingController(text: widget.pedido.total.toStringAsFixed(2));
+  late final TextEditingController _recibido = TextEditingController(
+    text: widget.pedido.total.toStringAsFixed(2),
+  );
   bool _cerrado = false;
 
   @override
@@ -51,7 +52,10 @@ class _CobroDialogState extends ConsumerState<CobroDialog> {
   Widget build(BuildContext context) {
     final tema = Theme.of(context);
     final cobro = ref.watch(cobroControllerProvider(widget.pedido.id));
-    ref.listen(cobroControllerProvider(widget.pedido.id), (anterior, siguiente) {
+    ref.listen(cobroControllerProvider(widget.pedido.id), (
+      anterior,
+      siguiente,
+    ) {
       if (siguiente.exito && !_cerrado) {
         _cerrado = true;
         Navigator.pop(context);
@@ -62,71 +66,77 @@ class _CobroDialogState extends ConsumerState<CobroDialog> {
       title: const Text('Cobrar pedido'),
       content: SizedBox(
         width: 380,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Total: ${moneda(_total)}',
-              key: const Key('cobro_total'),
-              style: tema.textTheme.titleLarge,
-            ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 4,
-              children: [
-                for (final forma in FormaPago.values)
-                  ChoiceChip(
-                    key: Key('cobro_forma_${forma.apiValue}'),
-                    label: Text(forma.label),
-                    selected: _forma == forma,
-                    onSelected: cobro.enviando
-                        ? null
-                        : (_) => setState(() => _forma = forma),
-                  ),
-              ],
-            ),
-            if (_forma.admiteRecibido) ...[
-              const SizedBox(height: 12),
-              TextField(
-                key: const Key('cobro_recibido'),
-                controller: _recibido,
-                enabled: !cobro.enviando,
-                keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
-                onChanged: (_) => setState(() {}),
-                decoration: InputDecoration(
-                  labelText: 'Importe recibido',
-                  prefixText: '\$ ',
-                  errorText: _monto == null ? 'Importe inválido' : null,
-                ),
+        // En el teléfono el teclado deja pocos píxeles de diálogo: sin scroll el
+        // campo y el botón de confirmar quedan fuera de la pantalla.
+        child: SingleChildScrollView(
+          key: const Key('cobro_scroll'),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Total: ${moneda(_total)}',
+                key: const Key('cobro_total'),
+                style: tema.textTheme.titleLarge,
               ),
-            ],
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: Text('Vuelto', style: tema.textTheme.titleMedium),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  for (final forma in FormaPago.values)
+                    ChoiceChip(
+                      key: Key('cobro_forma_${forma.apiValue}'),
+                      label: Text(forma.label),
+                      selected: _forma == forma,
+                      onSelected: cobro.enviando
+                          ? null
+                          : (_) => setState(() => _forma = forma),
+                    ),
+                ],
+              ),
+              if (_forma.admiteRecibido) ...[
+                const SizedBox(height: 12),
+                TextField(
+                  key: const Key('cobro_recibido'),
+                  controller: _recibido,
+                  enabled: !cobro.enviando,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  onChanged: (_) => setState(() {}),
+                  decoration: InputDecoration(
+                    labelText: 'Importe recibido',
+                    prefixText: '\$ ',
+                    errorText: _monto == null ? 'Importe inválido' : null,
+                  ),
                 ),
-                Text(
-                  _forma.admiteRecibido
-                      ? (_monto == null
-                          ? '—'
-                          : _vueltoEstimado == null
+              ],
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text('Vuelto', style: tema.textTheme.titleMedium),
+                  ),
+                  Text(
+                    _forma.admiteRecibido
+                        ? (_monto == null
+                              ? '—'
+                              : _vueltoEstimado == null
                               ? 'Insuficiente'
                               : moneda(_vueltoEstimado!))
-                      : moneda(0),
-                  key: const Key('cobro_vuelto'),
-                  style: tema.textTheme.titleMedium,
-                ),
+                        : moneda(0),
+                    key: const Key('cobro_vuelto'),
+                    style: tema.textTheme.titleMedium,
+                  ),
+                ],
+              ),
+              if (cobro.fase == CobroFase.error) ...[
+                const SizedBox(height: 12),
+                _ErrorCobro(mensaje: cobro.errorMensaje),
               ],
-            ),
-            if (cobro.fase == CobroFase.error) ...[
-              const SizedBox(height: 12),
-              _ErrorCobro(mensaje: cobro.errorMensaje),
             ],
-          ],
+          ),
         ),
       ),
       actions: [
@@ -153,7 +163,10 @@ class _CobroDialogState extends ConsumerState<CobroDialog> {
   void _confirmar() {
     ref
         .read(cobroControllerProvider(widget.pedido.id).notifier)
-        .cobrar(formaPago: _forma, montoRecibido: _forma.admiteRecibido ? _monto : null);
+        .cobrar(
+          formaPago: _forma,
+          montoRecibido: _forma.admiteRecibido ? _monto : null,
+        );
   }
 }
 

@@ -61,18 +61,24 @@ class _EditarItemsDialogState extends ConsumerState<EditarItemsDialog> {
     super.dispose();
   }
 
-  double get _totalEstimado =>
-      redondear2(_lineas.fold(0, (acc, linea) => acc + linea.cantidad * linea.precio));
+  double get _totalEstimado => redondear2(
+    _lineas.fold(0, (acc, linea) => acc + linea.cantidad * linea.precio),
+  );
 
   bool get _valido =>
       _lineas.isNotEmpty &&
-      _lineas.every((linea) => parseDecimal(linea.ctrl.text) != null && linea.cantidad > 0);
+      _lineas.every(
+        (linea) => parseDecimal(linea.ctrl.text) != null && linea.cantidad > 0,
+      );
 
   @override
   Widget build(BuildContext context) {
     final tema = Theme.of(context);
     final edicion = ref.watch(edicionItemsControllerProvider(widget.pedido.id));
-    ref.listen(edicionItemsControllerProvider(widget.pedido.id), (anterior, siguiente) {
+    ref.listen(edicionItemsControllerProvider(widget.pedido.id), (
+      anterior,
+      siguiente,
+    ) {
       if (siguiente.exito && !_cerrado) {
         _cerrado = true;
         Navigator.pop(context);
@@ -83,96 +89,113 @@ class _EditarItemsDialogState extends ConsumerState<EditarItemsDialog> {
       title: Text('Editar ítems · Nº ${widget.pedido.id}'),
       content: SizedBox(
         width: 420,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text('Ítems del pedido', style: tema.textTheme.titleSmall),
-                ),
-                TextButton.icon(
-                  key: const Key('items_agregar'),
-                  onPressed: edicion.guardando ? null : _agregarProducto,
-                  icon: const Icon(Icons.add),
-                  label: const Text('Agregar'),
-                ),
-              ],
-            ),
-            for (final linea in _lineas)
-              Padding(
-                key: Key('items_fila_${linea.productoId}'),
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        '${linea.nombre} · ${moneda(linea.precio)}/${linea.unidadLabel}',
-                        overflow: TextOverflow.ellipsis,
-                      ),
+        // Mismo problema que el cobro: con el teclado abierto el diálogo queda
+        // más bajo que sus filas y "Guardar cambios" desaparece.
+        child: SingleChildScrollView(
+          key: const Key('items_scroll'),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Ítems del pedido',
+                      style: tema.textTheme.titleSmall,
                     ),
-                    SizedBox(
-                      width: 92,
-                      child: TextField(
-                        key: Key('items_cantidad_${linea.productoId}'),
-                        controller: linea.ctrl,
-                        enabled: !edicion.guardando,
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                        textAlign: TextAlign.right,
-                        onChanged: (_) => setState(() {}),
-                        decoration: InputDecoration(
-                          isDense: true,
-                          labelText: 'Cant.',
-                          errorText:
-                              parseDecimal(linea.ctrl.text) == null ? 'Inválida' : null,
+                  ),
+                  TextButton.icon(
+                    key: const Key('items_agregar'),
+                    onPressed: edicion.guardando ? null : _agregarProducto,
+                    icon: const Icon(Icons.add),
+                    label: const Text('Agregar'),
+                  ),
+                ],
+              ),
+              for (final linea in _lineas)
+                Padding(
+                  key: Key('items_fila_${linea.productoId}'),
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '${linea.nombre} · ${moneda(linea.precio)}/${linea.unidadLabel}',
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                    ),
-                    IconButton(
-                      key: Key('items_quitar_${linea.productoId}'),
-                      tooltip: 'Quitar',
-                      onPressed: edicion.guardando
-                          ? null
-                          : () => setState(() {
+                      SizedBox(
+                        width: 92,
+                        child: TextField(
+                          key: Key('items_cantidad_${linea.productoId}'),
+                          controller: linea.ctrl,
+                          enabled: !edicion.guardando,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          textAlign: TextAlign.right,
+                          onChanged: (_) => setState(() {}),
+                          decoration: InputDecoration(
+                            isDense: true,
+                            labelText: 'Cant.',
+                            errorText: parseDecimal(linea.ctrl.text) == null
+                                ? 'Inválida'
+                                : null,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        key: Key('items_quitar_${linea.productoId}'),
+                        tooltip: 'Quitar',
+                        onPressed: edicion.guardando
+                            ? null
+                            : () => setState(() {
                                 _lineas.remove(linea);
                                 linea.dispose();
                               }),
-                      icon: const Icon(Icons.close),
-                    ),
-                  ],
-                ),
-              ),
-            if (_lineas.isEmpty)
-              Text(
-                'Agregá al menos un producto.',
-                style: tema.textTheme.bodySmall,
-              ),
-            const Divider(),
-            Text(
-              'Total estimado: ${moneda(_totalEstimado)}',
-              key: const Key('items_total_estimado'),
-              style: tema.textTheme.titleMedium,
-            ),
-            Text(
-              'El backend recalcula el total al guardar.',
-              style: tema.textTheme.bodySmall,
-            ),
-            if (edicion.fase == EdicionFase.error) ...[
-              const SizedBox(height: 12),
-              Material(
-                key: const Key('items_error'),
-                color: tema.colorScheme.errorContainer,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  child: Text(
-                    edicion.errorMensaje ?? 'No se pudieron actualizar los ítems.',
-                    style: TextStyle(color: tema.colorScheme.onErrorContainer),
+                        icon: const Icon(Icons.close),
+                      ),
+                    ],
                   ),
                 ),
+              if (_lineas.isEmpty)
+                Text(
+                  'Agregá al menos un producto.',
+                  style: tema.textTheme.bodySmall,
+                ),
+              const Divider(),
+              Text(
+                'Total estimado: ${moneda(_totalEstimado)}',
+                key: const Key('items_total_estimado'),
+                style: tema.textTheme.titleMedium,
               ),
+              Text(
+                'El backend recalcula el total al guardar.',
+                style: tema.textTheme.bodySmall,
+              ),
+              if (edicion.fase == EdicionFase.error) ...[
+                const SizedBox(height: 12),
+                Material(
+                  key: const Key('items_error'),
+                  color: tema.colorScheme.errorContainer,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    child: Text(
+                      edicion.errorMensaje ??
+                          'No se pudieron actualizar los ítems.',
+                      style: TextStyle(
+                        color: tema.colorScheme.onErrorContainer,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
       actions: [
@@ -202,10 +225,12 @@ class _EditarItemsDialogState extends ConsumerState<EditarItemsDialog> {
       builder: (dialogContext) => const _DialogoConfirmarItems(),
     );
     if (aceptado != true) return;
-    await ref.read(edicionItemsControllerProvider(widget.pedido.id).notifier).guardar([
-      for (final linea in _lineas)
-        (productoId: linea.productoId, cantidad: linea.cantidad),
-    ]);
+    await ref
+        .read(edicionItemsControllerProvider(widget.pedido.id).notifier)
+        .guardar([
+          for (final linea in _lineas)
+            (productoId: linea.productoId, cantidad: linea.cantidad),
+        ]);
   }
 
   Future<void> _agregarProducto() async {
@@ -217,13 +242,15 @@ class _EditarItemsDialogState extends ConsumerState<EditarItemsDialog> {
     );
     if (producto == null || !mounted) return;
     setState(() {
-      _lineas.add(_LineaEditable(
-        productoId: producto.id,
-        nombre: producto.nombre,
-        precio: producto.precio,
-        unidadLabel: producto.unidadLabel,
-        cantidad: '1',
-      ));
+      _lineas.add(
+        _LineaEditable(
+          productoId: producto.id,
+          nombre: producto.nombre,
+          precio: producto.precio,
+          unidadLabel: producto.unidadLabel,
+          cantidad: '1',
+        ),
+      );
     });
   }
 }
@@ -324,17 +351,22 @@ class _PickerProductoState extends ConsumerState<_PickerProducto> {
     final productos = catalogo.value?.productos;
     if (productos == null) {
       return const Center(
-        child: Text('No se pudo cargar el catálogo.', textAlign: TextAlign.center),
+        child: Text(
+          'No se pudo cargar el catálogo.',
+          textAlign: TextAlign.center,
+        ),
       );
     }
     final aguja = _busqueda.trim().toLowerCase();
     final filtrados = productos
-        .where((p) =>
-            p.activo &&
-            !widget.excluidos.contains(p.id) &&
-            (aguja.isEmpty ||
-                p.nombre.toLowerCase().contains(aguja) ||
-                p.alias.any((a) => a.toLowerCase().contains(aguja))))
+        .where(
+          (p) =>
+              p.activo &&
+              !widget.excluidos.contains(p.id) &&
+              (aguja.isEmpty ||
+                  p.nombre.toLowerCase().contains(aguja) ||
+                  p.alias.any((a) => a.toLowerCase().contains(aguja))),
+        )
         .toList();
     if (filtrados.isEmpty) {
       return const Center(child: Text('Sin resultados.'));
@@ -346,7 +378,9 @@ class _PickerProductoState extends ConsumerState<_PickerProducto> {
         return ListTile(
           key: Key('items_picker_tile_${producto.id}'),
           title: Text(producto.nombre),
-          subtitle: Text('${moneda(producto.precio)} / ${producto.unidadLabel}'),
+          subtitle: Text(
+            '${moneda(producto.precio)} / ${producto.unidadLabel}',
+          ),
           onTap: () => Navigator.pop(context, producto),
         );
       },

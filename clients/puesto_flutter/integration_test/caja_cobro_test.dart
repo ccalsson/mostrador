@@ -142,6 +142,18 @@ Future<void> _esperarSin(
   fail('Siguió en pantalla: $finder');
 }
 
+/// Texto visible de [finder]: el widget puede ser el propio `Text` o un envase
+/// como `MontoOculto`, que recién debajo tiene el `Text` que se lee.
+String? _texto(WidgetTester tester, Finder finder) {
+  final coincidencias = finder.evaluate();
+  if (coincidencias.isEmpty) return null;
+  final widget = coincidencias.first.widget;
+  if (widget is Text) return widget.data;
+  final hijo =
+      find.descendant(of: finder, matching: find.byType(Text)).evaluate();
+  return hijo.isEmpty ? null : (hijo.first.widget as Text).data;
+}
+
 /// Espera a que el `Text` de [finder] muestre exactamente [esperado].
 Future<void> _esperarTexto(
   WidgetTester tester,
@@ -152,14 +164,9 @@ Future<void> _esperarTexto(
   final fin = DateTime.now().add(timeout);
   while (DateTime.now().isBefore(fin)) {
     await tester.pump(const Duration(milliseconds: 250));
-    if (finder.evaluate().isNotEmpty &&
-        tester.widget<Text>(finder).data == esperado) {
-      return;
-    }
+    if (_texto(tester, finder) == esperado) return;
   }
-  final visto =
-      finder.evaluate().isEmpty ? '(ausente)' : tester.widget<Text>(finder).data;
-  fail('Nunca mostró "$esperado"; quedó en "$visto"');
+  fail('Nunca mostró "$esperado"; quedó en "${_texto(tester, finder) ?? '(ausente)'}"');
 }
 
 Future<void> _drenarSnackBar(WidgetTester tester) async {
@@ -205,8 +212,14 @@ Future<void> _abrirDetalleCaja(WidgetTester tester, String pedidoId) async {
 
 /// Abre el diálogo de cobro y, opcionalmente, carga el importe recibido.
 Future<void> _abrirCobroEnUi(WidgetTester tester, {double? recibido}) async {
-  await _esperar(tester, find.byKey(const Key('caja_cobrar')));
-  await tester.tap(find.byKey(const Key('caja_cobrar')));
+  final cobrar = find.byKey(const Key('caja_cobrar'));
+  await _esperar(tester, cobrar);
+  // "Cobrar" tiene que estar alcanzable: en el teléfono la ficha se achicaba
+  // contra el borde inferior y el botón desaparecía de la pantalla.
+  final alto = MediaQuery.of(tester.element(cobrar)).size.height;
+  expect(tester.getRect(cobrar).bottom, lessThanOrEqualTo(alto),
+      reason: 'el botón de cobro queda a la vista sin scrollear la ficha');
+  await tester.tap(cobrar);
   await tester.pump();
   await _esperar(tester, find.byKey(const Key('cobro_dialogo')));
   if (recibido != null) {
@@ -255,7 +268,7 @@ void main() {
     await _esperarTexto(
       tester,
       find.byKey(const Key('caja_detalle_total')),
-      'Total: ${moneda(total)}',
+      moneda(total),
     );
     expect(find.byKey(const Key('caja_cobrar')), findsOneWidget);
     expect(find.byKey(const Key('caja_editar_items')), findsOneWidget);
@@ -291,11 +304,11 @@ void main() {
     await _esperar(tester, find.byKey(const Key('caja_cobro_exito')));
     await _esperarSin(tester, find.byKey(const Key('cobro_dialogo')));
 
-    expect(
-      find.text('Total: ${moneda(total)} · Vuelto: $vuelto'),
-      findsOneWidget,
-      reason: 'el vuelto mostrado es el que calculó el backend',
-    );
+    expect(_texto(tester, find.byKey(const Key('cobro_exito_total'))),
+        moneda(total),
+        reason: 'el total confirmado es el que calculó el backend');
+    expect(_texto(tester, find.byKey(const Key('cobro_exito_vuelto'))), vuelto,
+        reason: 'el vuelto mostrado es el que calculó el backend');
     expect(find.textContaining('Comprobante: cob_'), findsOneWidget,
         reason: 'la UI muestra el ID del cobro');
     await _esperarTexto(
@@ -395,9 +408,15 @@ void main() {
     await tester.pump();
     await _loginYIrACaja(tester);
 
-    // El tablero muestra todas las secciones a la vez: el cobrado aparece en
-    // "Para entregar" sin cambiar ningún filtro.
-    await _bajarHastaCaja(tester, find.text('PARA ENTREGAR'));
+    // El filtro "Por cobrar" deja afuera lo ya cobrado: hay que pedir los
+    // cobrados, igual que hace el cajero para entregar.
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const Key('caja_filtro')),
+        matching: find.text('Cobrados'),
+      ),
+    );
+    await tester.pump();
     await _abrirDetalleCaja(tester, id);
     await _esperarTexto(
       tester,
@@ -503,7 +522,7 @@ void main() {
     await _esperarTexto(
       tester,
       find.byKey(const Key('caja_detalle_total')),
-      'Total: ${moneda(esperado)}',
+      moneda(esperado),
     );
 
     final despues = await _detalleRemoto(tokenVenta, id);

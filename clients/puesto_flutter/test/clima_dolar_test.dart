@@ -18,7 +18,7 @@ import 'package:puesto_flutter/services/clima_dolar_service.dart';
 /// Payload real de `GET /api/v1/cotizacion`: un solo valor, sin envoltorio
 /// `data`. Es el dólar oficial con el que el ERP convierte precios USD → ARS.
 Map<String, dynamic> _payloadCotizacion({double? usdArs}) => {
-      if (usdArs != null) 'usd_ars': usdArs,
+      'usd_ars': ?usdArs,
     };
 
 /// Payload real de open-meteo.com para el clima del Mercado Central.
