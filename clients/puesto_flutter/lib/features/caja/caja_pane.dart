@@ -154,7 +154,11 @@ class _CajaPaneState extends ConsumerState<CajaPane>
           ),
         );
 
-  Widget _detalle(bool mostrarMontos, {bool enScroll = false}) {
+  Widget _detalle(
+    bool mostrarMontos, {
+    bool enScroll = false,
+    VoidCallback? onVolver,
+  }) {
     final seleccionado = _seleccionado;
     if (seleccionado == null) return const _SinSeleccion();
     return _CajaDetalle(
@@ -162,6 +166,7 @@ class _CajaPaneState extends ConsumerState<CajaPane>
       mostrarMontos: mostrarMontos,
       onPausa: _pausar,
       enScroll: enScroll,
+      onVolver: onVolver,
     );
   }
 
@@ -277,6 +282,10 @@ class _CajaPaneState extends ConsumerState<CajaPane>
       ),
     );
 
+    // En el teléfono la ficha ocupa toda la pantalla: la barra de filtros no
+    // pinta nada ahí y le robaba 64dp al cobro.
+    final barraFiltros = ancho >= _kCajaDosPaneles || _seleccionado == null;
+
     final List<Widget> progreso = pedidos.isRefreshing
         ? const [LinearProgressIndicator(key: Key('caja_refrescando'))]
         : const [];
@@ -303,26 +312,10 @@ class _CajaPaneState extends ConsumerState<CajaPane>
           )
         : _seleccionado == null
         ? _lista(context, ref, pedidos, mostrarMontos, enScroll: enScroll)
-        : Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(8, 0, 8, 0),
-                  child: TextButton.icon(
-                    key: const Key('caja_detalle_volver'),
-                    onPressed: () => setState(() => _seleccionado = null),
-                    icon: const Icon(Icons.arrow_back),
-                    label: const Text('Pedidos'),
-                  ),
-                ),
-              ),
-              if (enScroll)
-                _detalle(mostrarMontos, enScroll: true)
-              else
-                Expanded(child: _detalle(mostrarMontos, enScroll: false)),
-            ],
+        : _detalle(
+            mostrarMontos,
+            enScroll: enScroll,
+            onVolver: () => setState(() => _seleccionado = null),
           );
 
     return LayoutBuilder(
@@ -333,14 +326,14 @@ class _CajaPaneState extends ConsumerState<CajaPane>
             key: const Key('caja_vista_baja'),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [barra, ...progreso, cuerpo(true)],
+              children: [if (barraFiltros) barra, ...progreso, cuerpo(true)],
             ),
           );
         }
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            barra,
+            if (barraFiltros) barra,
             ...progreso,
             Expanded(child: cuerpo(false)),
           ],
@@ -475,6 +468,7 @@ class _CajaDetalle extends ConsumerWidget {
     required this.mostrarMontos,
     required this.onPausa,
     this.enScroll = false,
+    this.onVolver,
   });
 
   final String pedidoId;
@@ -486,6 +480,10 @@ class _CajaDetalle extends ConsumerWidget {
   /// La ficha vive dentro del scroll de la vista (ventana achicada): no puede
   /// usar `Expanded` y se comprime a su alto real.
   final bool enScroll;
+
+  /// En el teléfono la ficha ocupa la pantalla entera, así que el regreso a la
+  /// lista vive en su propia barra fija en vez de una fila aparte.
+  final VoidCallback? onVolver;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -604,13 +602,26 @@ class _CajaDetalle extends ConsumerWidget {
             children: [
               Row(
                 children: [
+                  if (onVolver != null)
+                    IconButton(
+                      key: const Key('caja_detalle_volver'),
+                      tooltip: 'Volver a pedidos',
+                      onPressed: onVolver,
+                      icon: const Icon(Icons.arrow_back),
+                    ),
                   Text('Total: ', style: tema.textTheme.titleLarge),
-                  Flexible(
-                    child: MontoOculto(
-                      key: const Key('caja_detalle_total'),
-                      monto: pedido.total,
-                      visible: mostrarMontos,
-                      style: tema.textTheme.titleLarge,
+                  Expanded(
+                    // El monto en grande y el regreso no siempre caben lado a
+                    // lado: sin escala el texto se sale de la pantalla.
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: MontoOculto(
+                        key: const Key('caja_detalle_total'),
+                        monto: pedido.total,
+                        visible: mostrarMontos,
+                        style: tema.textTheme.titleLarge,
+                      ),
                     ),
                   ),
                 ],
@@ -626,15 +637,15 @@ class _CajaDetalle extends ConsumerWidget {
     );
     return LayoutBuilder(
       builder: (context, constraints) {
-        final progreso = detalle.isRefreshing
-            ? const LinearProgressIndicator(
-                key: Key('caja_detalle_refrescando'),
-              )
-            : null;
+        final List<Widget> progreso = detalle.isRefreshing
+            ? const [
+                LinearProgressIndicator(key: Key('caja_detalle_refrescando')),
+              ]
+            : const [];
         if (!enScroll && constraints.maxHeight >= _kCajaFichaFija) {
           return Column(
             children: [
-              if (progreso != null) progreso,
+              ...progreso,
               Expanded(
                 child: ListView(
                   key: const Key('caja_detalle'),
@@ -648,7 +659,7 @@ class _CajaDetalle extends ConsumerWidget {
         final compacta = Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (progreso != null) progreso,
+            ...progreso,
             ListView(
               key: const Key('caja_detalle'),
               shrinkWrap: true,
