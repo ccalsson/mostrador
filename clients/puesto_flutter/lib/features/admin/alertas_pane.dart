@@ -34,9 +34,7 @@ class _AlertasPaneState extends ConsumerState<AlertasPane>
   Duration? get intervalo => widget.intervalo;
 
   @override
-  void refrescar() {
-    ref.invalidate(alertasProvider);
-  }
+  Future<void> refrescar() => releer(() => ref.refresh(alertasProvider.future));
 
   void _seleccionar(Alerta alerta, {required bool enRail}) {
     setState(() => _seleccionada = alerta);

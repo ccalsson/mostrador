@@ -27,9 +27,8 @@ class _MensajesTabState extends ConsumerState<MensajesTab>
   Duration? get intervalo => widget.intervalo;
 
   @override
-  void refrescar() {
-    ref.invalidate(conversacionesProvider);
-  }
+  Future<void> refrescar() =>
+      releer(() => ref.refresh(conversacionesProvider.future));
 
   @override
   Widget build(BuildContext context) {

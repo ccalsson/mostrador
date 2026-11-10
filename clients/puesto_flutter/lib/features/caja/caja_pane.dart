@@ -8,7 +8,6 @@ import '../../core/refresco.dart';
 import '../../models/cobro.dart';
 import '../../models/pedido.dart';
 import '../../services/pedidos_service.dart';
-import '../pedidos/cola_pedidos.dart' show kSondeoCola;
 import 'caja_estado_pane.dart';
 import 'caja_providers.dart';
 import 'cobro_controller.dart';
@@ -30,6 +29,12 @@ enum CajaFiltro {
   final String? estados;
   final String label;
 }
+
+/// Ancho a partir del cual la caja muestra lista y ficha lado a lado. Por
+/// debajo —el teléfono— la ficha ocupa toda la pantalla y se vuelve a la lista
+/// con "Pedidos"; repartir 360px entre dos paneles dejaba el botón de cobro
+/// fuera de la vista.
+const double _kCajaDosPaneles = 700;
 
 /// Vistas del área Caja: pedidos (cobro), estado del turno y egresos.
 enum CajaVista {
@@ -71,10 +76,12 @@ class MontoOculto extends StatelessWidget {
 /// la derecha), vista del estado del turno y vista de egresos. Incluye toggle
 /// de montos y notificación de pedidos nuevos.
 ///
-/// La lista y el pedido abierto se releen solos, como en el tablero del
-/// puesto. Pasar `intervalo: null` congela el sondeo (widget tests).
+/// La lista y el pedido abierto se releen solos, en el teléfono con una ficha
+/// a pantalla completa. El sondeo es el lento ([kSondeoMuyLento]) y se suspende
+/// mientras hay un cobro o una edición en curso; el botón de actualizar queda
+/// para el pedido explícito. Pasar `intervalo: null` lo congela (widget tests).
 class CajaPane extends ConsumerStatefulWidget {
-  const CajaPane({super.key, this.intervalo = kSondeoCola});
+  const CajaPane({super.key, this.intervalo = kSondeoMuyLento});
 
   final Duration? intervalo;
 
@@ -88,6 +95,9 @@ class _CajaPaneState extends ConsumerState<CajaPane>
   CajaFiltro _filtro = CajaFiltro.porCobrar;
   String? _seleccionado;
 
+  /// Cobro o edición abiertos: el sondeo espera a que se cierren.
+  bool _pausado = false;
+
   /// IDs de pedidos ya vistos. Se inicializa con la primera carga; a partir de
   /// ahí, cualquier ID nuevo dispara la notificación.
   Set<String> _seenIds = {};
@@ -97,17 +107,51 @@ class _CajaPaneState extends ConsumerState<CajaPane>
   Duration? get intervalo => widget.intervalo;
 
   @override
-  void refrescar() {
-    ref.invalidate(pedidosCajaProvider(_filtro.estados));
+  bool get pausarSondeo => _pausado;
+
+  @override
+  Future<void> refrescar() async {
+    await releer(() => ref.refresh(pedidosCajaProvider(_filtro.estados).future));
     final seleccionado = _seleccionado;
     if (seleccionado != null) {
-      ref.invalidate(pedidoDetalleProvider(seleccionado));
+      await releer(
+        () => ref.refresh(pedidoDetalleProvider(seleccionado).future),
+      );
     }
+  }
+
+  /// Apaga el sondeo mientras dura el diálogo y, al cerrarlo, recupera el tick
+  /// que cayó en la pausa.
+  void _pausar(bool pausa) {
+    _pausado = pausa;
+    if (!pausa) reanudarSondeo();
+  }
+
+  /// En un teléfono los `SegmentedButton` no entran junto al botón de recargar:
+  /// se deslizan en horizontal antes que desbordar y cortar el botón.
+  Widget _segmentos(Widget botones, double ancho) => ancho >= _kCajaDosPaneles
+      ? Expanded(child: botones)
+      : Flexible(
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: botones,
+          ),
+        );
+
+  Widget _detalle(bool mostrarMontos) {
+    final seleccionado = _seleccionado;
+    if (seleccionado == null) return const _SinSeleccion();
+    return _CajaDetalle(
+      pedidoId: seleccionado,
+      mostrarMontos: mostrarMontos,
+      onPausa: _pausar,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final mostrarMontos = ref.watch(mostrarMontosProvider);
+    final ancho = MediaQuery.sizeOf(context).width;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -115,8 +159,8 @@ class _CajaPaneState extends ConsumerState<CajaPane>
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
           child: Row(
             children: [
-              Expanded(
-                child: SegmentedButton<CajaVista>(
+              _segmentos(
+                SegmentedButton<CajaVista>(
                   key: const Key('caja_vista'),
                   segments: [
                     for (final vista in CajaVista.values)
@@ -126,6 +170,7 @@ class _CajaPaneState extends ConsumerState<CajaPane>
                   onSelectionChanged: (seleccion) =>
                       setState(() => _vista = seleccion.first),
                 ),
+                ancho,
               ),
               const SizedBox(width: 8),
               IconButton(
@@ -155,6 +200,7 @@ class _CajaPaneState extends ConsumerState<CajaPane>
   }
 
   Widget _vistaPedidos(BuildContext context, WidgetRef ref, bool mostrarMontos) {
+    final ancho = MediaQuery.sizeOf(context).width;
     final pedidos = ref.watch(pedidosCajaProvider(_filtro.estados));
 
     // Notificación de pedidos nuevos: comparar IDs con la carga anterior.
@@ -184,8 +230,8 @@ class _CajaPaneState extends ConsumerState<CajaPane>
           padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
           child: Row(
             children: [
-              Expanded(
-                child: SegmentedButton<CajaFiltro>(
+              _segmentos(
+                SegmentedButton<CajaFiltro>(
                   key: const Key('caja_filtro'),
                   segments: [
                     for (final filtro in CajaFiltro.values)
@@ -200,14 +246,13 @@ class _CajaPaneState extends ConsumerState<CajaPane>
                     });
                   },
                 ),
+                ancho,
               ),
               const SizedBox(width: 8),
               IconButton(
                 key: const Key('caja_refrescar'),
                 tooltip: 'Actualizar pedidos',
-                onPressed: pedidos.isRefreshing
-                    ? null
-                    : () => ref.invalidate(pedidosCajaProvider(_filtro.estados)),
+                onPressed: pedidos.isRefreshing ? null : sondeoAhora,
                 icon: const Icon(Icons.refresh),
               ),
             ],
@@ -216,21 +261,39 @@ class _CajaPaneState extends ConsumerState<CajaPane>
         if (pedidos.isRefreshing)
           const LinearProgressIndicator(key: Key('caja_refrescando')),
         Expanded(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              SizedBox(width: 380, child: _lista(context, ref, pedidos, mostrarMontos)),
-              const VerticalDivider(width: 1),
-              Expanded(
-                child: _seleccionado == null
-                    ? const _SinSeleccion()
-                    : _CajaDetalle(
-                        pedidoId: _seleccionado!,
-                        mostrarMontos: mostrarMontos,
+          child: ancho >= _kCajaDosPaneles
+              ? Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    SizedBox(
+                      width: 380,
+                      child: _lista(context, ref, pedidos, mostrarMontos),
+                    ),
+                    const VerticalDivider(width: 1),
+                    Expanded(child: _detalle(mostrarMontos)),
+                  ],
+                )
+              : _seleccionado == null
+              ? _lista(context, ref, pedidos, mostrarMontos)
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(8, 0, 8, 0),
+                        child: TextButton.icon(
+                          key: const Key('caja_detalle_volver'),
+                          onPressed: () =>
+                              setState(() => _seleccionado = null),
+                          icon: const Icon(Icons.arrow_back),
+                          label: const Text('Pedidos'),
+                        ),
                       ),
-              ),
-            ],
-          ),
+                    ),
+                    Expanded(child: _detalle(mostrarMontos)),
+                  ],
+                ),
         ),
       ],
     );
@@ -266,7 +329,7 @@ class _CajaPaneState extends ConsumerState<CajaPane>
         mensaje: error is ApiException
             ? error.message
             : 'No se pudieron cargar los pedidos.',
-        onReintentar: () => ref.invalidate(pedidosCajaProvider(_filtro.estados)),
+        onReintentar: sondeoAhora,
       );
     }
     if (lista.isEmpty) {
@@ -345,10 +408,17 @@ class _SinPedidosCaja extends StatelessWidget {
 }
 
 class _CajaDetalle extends ConsumerWidget {
-  const _CajaDetalle({required this.pedidoId, required this.mostrarMontos});
+  const _CajaDetalle({
+    required this.pedidoId,
+    required this.mostrarMontos,
+    required this.onPausa,
+  });
 
   final String pedidoId;
   final bool mostrarMontos;
+
+  /// Suspende el sondeo mientras un diálogo está abierto.
+  final ValueChanged<bool> onPausa;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -501,19 +571,23 @@ class _CajaDetalle extends ConsumerWidget {
   /// `clientUuid`) antes de abrir el diálogo.
   Future<void> _abrirCobro(BuildContext context, WidgetRef ref, Pedido pedido) async {
     ref.invalidate(cobroControllerProvider(pedidoId));
+    onPausa(true);
     await showDialog<void>(
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) => CobroDialog(pedido: pedido),
     );
+    onPausa(false);
   }
 
   Future<void> _abrirEdicion(BuildContext context, WidgetRef ref, Pedido pedido) async {
     ref.invalidate(edicionItemsControllerProvider(pedidoId));
+    onPausa(true);
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => EditarItemsDialog(pedido: pedido),
     );
+    onPausa(false);
   }
 }
 

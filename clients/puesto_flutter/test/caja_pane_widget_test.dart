@@ -16,6 +16,9 @@ class _PedidosFake implements PedidosService {
 
   List<Pedido> pedidos;
   ApiException? cobrarError;
+
+  /// Retardo artificial para simular un backend lento durante el sondeo.
+  Duration retraso = Duration.zero;
   final List<String?> estadosConsultados = [];
   final List<String> cobroUuids = [];
   final List<FormaPago> formas = [];
@@ -33,6 +36,7 @@ class _PedidosFake implements PedidosService {
   @override
   Future<List<Pedido>> listar({bool mine = false, String? estados}) async {
     estadosConsultados.add(estados);
+    if (retraso > Duration.zero) await Future<void>.delayed(retraso);
     final filtro = estados?.split(',');
     return [
       for (final p in pedidos)
@@ -43,6 +47,7 @@ class _PedidosFake implements PedidosService {
   @override
   Future<Pedido> detalle(String id) async {
     detalleLlamadas++;
+    if (retraso > Duration.zero) await Future<void>.delayed(retraso);
     return _buscar(id);
   }
 
@@ -232,11 +237,15 @@ Future<void> _esperarSin(
   fail('No desapareció de pantalla: $finder');
 }
 
-Future<void> _montar(WidgetTester tester, _PedidosFake fake) async {
+Future<void> _montar(
+  WidgetTester tester,
+  _PedidosFake fake, {
+  Duration? intervalo,
+}) async {
   await tester.pumpWidget(ProviderScope(
     overrides: [pedidosServiceProvider.overrideWithValue(fake)],
-    child: const MaterialApp(
-      home: Scaffold(body: CajaPane()),
+    child: MaterialApp(
+      home: Scaffold(body: CajaPane(intervalo: intervalo)),
     ),
   ));
   await _esperar(tester, find.byKey(const Key('caja_lista')));
@@ -451,5 +460,75 @@ void main() {
       reason: 'el total definitivo lo recalcula el backend',
     );
     await _drenarSnackBar(tester);
+  });
+
+  testWidgets('teléfono: la ficha ocupa toda la pantalla y el cobro se puede tocar',
+      (tester) async {
+    final fake = _PedidosFake([
+      _pedido('ped_1', total: 1500, items: [_item('p1', precio: 1500)]),
+    ]);
+    await _montar(tester, fake);
+
+    // El tamaño real de la ventana: sólo así el MediaQuery del pane le sigue.
+    tester.view.physicalSize = const Size(360, 780);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    await tester.pump();
+    expect(
+      tester.getSize(find.byKey(const Key('caja_lista'))).width,
+      360,
+      reason: 'la prueba simula un teléfono de 360dp',
+    );
+
+    expect(find.byKey(const Key('caja_detalle_volver')), findsNothing,
+        reason: 'sin selección sólo se ve la lista');
+
+    await _abrirDetalle(tester, 'ped_1');
+
+    expect(find.byKey(const Key('caja_lista')), findsNothing,
+        reason: 'en ancho chico la lista cede la pantalla a la ficha');
+    final cobrar = find.byKey(const Key('caja_cobrar'));
+    expect(cobrar, findsOneWidget);
+    final rect = tester.getRect(cobrar);
+    expect(rect.left, greaterThanOrEqualTo(0));
+    expect(rect.right, lessThanOrEqualTo(360));
+    expect(rect.bottom, lessThanOrEqualTo(780),
+        reason: 'el botón de cobro queda dentro de la pantalla del teléfono');
+    expect(tester.takeException(), isNull,
+        reason: 'el layout angosto no desborda');
+
+    await tester.tap(cobrar);
+    await _esperar(tester, find.byKey(const Key('cobro_dialogo')));
+    await tester.tap(find.byKey(const Key('cobro_cancelar')));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byKey(const Key('cobro_dialogo')), findsNothing);
+
+    await tester.tap(find.byKey(const Key('caja_detalle_volver')));
+    await _esperar(tester, find.byKey(const Key('caja_lista')));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('el sondeo relee sin esconder la lista ni la ficha', (tester) async {
+    final fake = _PedidosFake([
+      _pedido('ped_1', total: 1500, items: [_item('p1', precio: 1500)]),
+    ])..retraso = const Duration(milliseconds: 120);
+    await _montar(tester, fake, intervalo: const Duration(seconds: 30));
+    await _abrirDetalle(tester, 'ped_1');
+    expect(fake.estadosConsultados.length, 1,
+        reason: 'la primera carga la hace el provider');
+
+    await tester.pump(const Duration(seconds: 30));
+
+    expect(find.byKey(const Key('caja_cargando')), findsNothing,
+        reason: 'releer conserva lo que ya estaba en pantalla');
+    expect(find.byKey(const Key('caja_tile_ped_1')), findsOneWidget);
+    expect(find.byKey(const Key('caja_detalle')), findsOneWidget);
+
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(fake.estadosConsultados.length, 2,
+        reason: 'el tick volvió a leer, una sola vez');
+    expect(find.byKey(const Key('caja_detalle')), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 }

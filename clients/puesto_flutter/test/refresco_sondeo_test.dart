@@ -47,7 +47,7 @@ class _PantallaState extends State<_Pantalla>
   Duration? get intervalo => widget.intervalo;
 
   @override
-  void refrescar() => widget.sobreRefrescar();
+  Future<void> refrescar() async => widget.sobreRefrescar();
 
   @override
   Widget build(BuildContext context) => const Scaffold();

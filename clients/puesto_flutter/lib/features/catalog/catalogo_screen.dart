@@ -31,18 +31,9 @@ class _CatalogoScreenState extends ConsumerState<CatalogoScreen>
   Duration? get intervalo => widget.intervalo;
 
   @override
-  void refrescar() {
-    ref.invalidate(catalogoProvider);
-  }
+  Future<void> refrescar() => releer(() => ref.refresh(catalogoProvider.future));
 
-  Future<void> _recargar() async {
-    refrescar();
-    try {
-      await ref.read(catalogoProvider.future);
-    } on ApiException {
-      // El rebuild de `catalogo` ya muestra el estado de error.
-    }
-  }
+  Future<void> _recargar() => refrescar();
 
   @override
   Widget build(BuildContext context) {

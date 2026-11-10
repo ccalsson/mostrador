@@ -67,7 +67,7 @@ class _EscritorioPaneState extends ConsumerState<EscritorioPane>
   Duration? get intervalo => widget.intervalo;
 
   @override
-  void refrescar() => _recargar();
+  Future<void> refrescar() => _recargar();
 
   Future<void> _recargar() async {
     ref.invalidate(escritorioProvider);
