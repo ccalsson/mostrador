@@ -106,6 +106,7 @@ class _PantallaServiciosState extends State<PantallaServicios> {
     return VistaDatos<_ServiciosDatos>(
       key: ValueKey(_version),
       cargar: _cargar,
+      autoRefrescar: false,
       builder: (context, datos) => _ServiciosVista(
         datos: datos,
         api: widget.api,

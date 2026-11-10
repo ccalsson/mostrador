@@ -256,6 +256,7 @@ class _PantallaReglasState extends State<PantallaReglas> {
           VistaDatos<List<dynamic>>(
             key: ValueKey('reglas-$_version'),
             cargar: () => widget.api.fnLista('listarReglas'),
+            autoRefrescar: false,
             builder: _lista,
           )
         else if (_tab == 1)

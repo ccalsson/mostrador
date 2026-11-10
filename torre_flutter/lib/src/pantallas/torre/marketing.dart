@@ -288,6 +288,7 @@ class _PantallaMarketingState extends State<PantallaMarketing> {
         VistaDatos<List<dynamic>>(
           key: ValueKey('marketing-$_tab-$_version'),
           cargar: _cargarLista,
+          autoRefrescar: false,
           builder: _lista,
         ),
       ],

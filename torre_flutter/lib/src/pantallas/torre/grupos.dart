@@ -210,6 +210,7 @@ class _DetalleGrupoState extends State<_DetalleGrupo> {
               child: VistaDatos<_DatosGrupo>(
                 key: ValueKey('grupo-$_version'),
                 cargar: _cargar,
+                autoRefrescar: false,
                 builder: _cuerpo,
               ),
             ),
