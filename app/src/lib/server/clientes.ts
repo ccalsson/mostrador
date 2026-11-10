@@ -84,7 +84,11 @@ export async function createClienteForStaff(
   staff: Staff,
   input: { nombre: string; telefono?: string; cuentaCorriente?: boolean },
 ) {
-  assertRole(staff, ["admin"]);
+  // El alta rápida la pide el vendedor en el mostrador, con el cliente telefónico
+  // recién atendido delante: cerrarla a `admin` rompió el "Nuevo cliente" de la
+  // web y del Android. Lo que sí sigue siendo del dueño es abrir una cuenta
+  // corriente, porque habilita comprar a crédito.
+  assertRole(staff, input.cuentaCorriente ? ["admin"] : ["admin", "vendedor", "cajero"]);
   if (input.cuentaCorriente) await exigirCuentaCorriente(staff);
   const sql = await getSql();
   const id = newId("cli");

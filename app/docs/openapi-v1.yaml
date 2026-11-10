@@ -370,7 +370,7 @@ paths:
     post:
       tags: [Clientes]
       summary: Alta rápida de cliente
-      description: Cualquier staff.
+      description: Cualquier staff. `cuentaCorriente: true` sólo el dueño.
       requestBody:
         required: true
         content:

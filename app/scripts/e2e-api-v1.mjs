@@ -58,6 +58,7 @@ const state = {
   morronStock0: null,
   e2eProductoId: null,
   e2eClienteId: null,
+  altaRapidaIds: [],
   e2eProveedorId: null,
   foreignTenantId: null,
   msgClienteId: null,
@@ -270,6 +271,9 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
         if (state.e2eClienteId) {
           await pool.query("delete from cuenta_movimientos where cliente_id = $1", [state.e2eClienteId]);
           await pool.query("delete from clientes where id = $1 and tenant_id = $2", [state.e2eClienteId, t]);
+        }
+        for (const id of state.altaRapidaIds) {
+          await pool.query("delete from clientes where id = $1 and tenant_id = $2", [id, t]);
         }
 
         // (h) proveedor de prueba (los remitos de la corrida ya se borraron en (c)).
@@ -511,6 +515,28 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
 
     const cuenta = await api("GET", "/clientes/cli-nope/cuenta", { token: state.tokens.cajero });
     expectError(cuenta, 403, /permiso/i);
+
+    // Alta rápida desde el carrito: la hace el vendedor con el cliente recién
+    // atendido delante; abrirle una cuenta corriente sigue siendo del dueño.
+    const altaRapida = await api("POST", "/clientes", {
+      token: vendedor,
+      body: { nombre: "Cliente E2E Alta Rápida", telefono: "1144445555" },
+    });
+    assert.equal(altaRapida.status, 201, JSON.stringify(altaRapida.data));
+    state.altaRapidaIds.push(altaRapida.data.data.id);
+
+    const listadoClientes = await api("GET", "/clientes", { token: vendedor });
+    assert.equal(listadoClientes.status, 200);
+    assert.ok(
+      listadoClientes.data.data.some((c) => c.id === altaRapida.data.data.id),
+      "el cliente que dio de alta el vendedor aparece en su propio listado",
+    );
+
+    const creditoNegado = await api("POST", "/clientes", {
+      token: vendedor,
+      body: { nombre: "Cliente E2E con Crédito", cuentaCorriente: true },
+    });
+    expectError(creditoNegado, 403, /permiso/i);
 
     const usuarios = await api("GET", "/usuarios", { token: state.tokens.admin });
     assert.equal(usuarios.status, 200);
