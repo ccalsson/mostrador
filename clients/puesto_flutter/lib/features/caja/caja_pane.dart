@@ -112,6 +112,10 @@ class _CajaPaneState extends ConsumerState<CajaPane>
   /// Cobro o edición abiertos: el sondeo espera a que se cierren.
   bool _pausado = false;
 
+  /// El sondeo de 30 s relee y pinta en silencio; sólo el botón de actualizar
+  /// (y el de la ficha) merecen la barra de progreso, que interrumpía la lectura.
+  bool _refrescoManual = false;
+
   /// IDs de pedidos ya vistos. Se inicializa con la primera carga; a partir de
   /// ahí, cualquier ID nuevo dispara la notificación.
   Set<String> _seenIds = {};
@@ -143,6 +147,20 @@ class _CajaPaneState extends ConsumerState<CajaPane>
     if (!pausa) reanudarSondeo();
   }
 
+  void _marcarRefrescoManual(bool manual) {
+    if (!mounted) return;
+    setState(() => _refrescoManual = manual);
+  }
+
+  Future<void> _refrescarManual() async {
+    _marcarRefrescoManual(true);
+    try {
+      await sondeoAhora();
+    } finally {
+      _marcarRefrescoManual(false);
+    }
+  }
+
   /// En un teléfono los `SegmentedButton` no entran junto al botón de recargar:
   /// se deslizan en horizontal antes que desbordar y cortar el botón.
   Widget _segmentos(Widget botones, double ancho) => ancho >= _kCajaDosPaneles
@@ -167,6 +185,8 @@ class _CajaPaneState extends ConsumerState<CajaPane>
       onPausa: _pausar,
       enScroll: enScroll,
       onVolver: onVolver,
+      progresoManual: _refrescoManual,
+      onRefrescoManual: _marcarRefrescoManual,
     );
   }
 
@@ -275,7 +295,7 @@ class _CajaPaneState extends ConsumerState<CajaPane>
           IconButton(
             key: const Key('caja_refrescar'),
             tooltip: 'Actualizar pedidos',
-            onPressed: pedidos.isRefreshing ? null : sondeoAhora,
+            onPressed: pedidos.isRefreshing ? null : _refrescarManual,
             icon: const Icon(Icons.refresh),
           ),
         ],
@@ -286,7 +306,9 @@ class _CajaPaneState extends ConsumerState<CajaPane>
     // pinta nada ahí y le robaba 64dp al cobro.
     final barraFiltros = ancho >= _kCajaDosPaneles || _seleccionado == null;
 
-    final List<Widget> progreso = pedidos.isRefreshing
+    // El sondeo pasa desapercibido: la barra de progreso sólo aparece cuando el
+    // operador aprieta el botón, que es el único refresco que pide aviso.
+    final List<Widget> progreso = _refrescoManual && pedidos.isRefreshing
         ? const [LinearProgressIndicator(key: Key('caja_refrescando'))]
         : const [];
 
@@ -467,8 +489,10 @@ class _CajaDetalle extends ConsumerWidget {
     required this.pedidoId,
     required this.mostrarMontos,
     required this.onPausa,
+    required this.onRefrescoManual,
     this.enScroll = false,
     this.onVolver,
+    this.progresoManual = false,
   });
 
   final String pedidoId;
@@ -484,6 +508,11 @@ class _CajaDetalle extends ConsumerWidget {
   /// En el teléfono la ficha ocupa la pantalla entera, así que el regreso a la
   /// lista vive en su propia barra fija en vez de una fila aparte.
   final VoidCallback? onVolver;
+
+  /// Si el refresco que se está viendo lo pidió el operador (botón) o el sondeo
+  /// automático; sólo el primero merece barra de progreso.
+  final bool progresoManual;
+  final ValueChanged<bool> onRefrescoManual;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -553,9 +582,7 @@ class _CajaDetalle extends ConsumerWidget {
             IconButton(
               key: const Key('caja_detalle_refrescar'),
               tooltip: 'Actualizar pedido',
-              onPressed: detalle.isRefreshing
-                  ? null
-                  : () => ref.invalidate(pedidoDetalleProvider(pedidoId)),
+              onPressed: detalle.isRefreshing ? null : () => _releer(ref),
               icon: const Icon(Icons.refresh),
             ),
           ],
@@ -637,7 +664,7 @@ class _CajaDetalle extends ConsumerWidget {
     );
     return LayoutBuilder(
       builder: (context, constraints) {
-        final List<Widget> progreso = detalle.isRefreshing
+        final List<Widget> progreso = progresoManual && detalle.isRefreshing
             ? const [
                 LinearProgressIndicator(key: Key('caja_detalle_refrescando')),
               ]
@@ -678,6 +705,14 @@ class _CajaDetalle extends ConsumerWidget {
         );
       },
     );
+  }
+
+  /// Lectura pedida con el botón: avisa al padre para que la barra se muestre
+  /// sólo durante ésta, porque el sondeo de 30 s pasa desapercibido.
+  Future<void> _releer(WidgetRef ref) async {
+    onRefrescoManual(true);
+    await releer(() => ref.refresh(pedidoDetalleProvider(pedidoId).future));
+    onRefrescoManual(false);
   }
 
   /// Nuevo intento lógico de cobro: se descarta el estado anterior (y su

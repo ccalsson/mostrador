@@ -690,6 +690,11 @@ void main() {
     );
     expect(find.byKey(const Key('caja_tile_ped_1')), findsOneWidget);
     expect(find.byKey(const Key('caja_detalle')), findsOneWidget);
+    expect(
+      find.byKey(const Key('caja_refrescando')),
+      findsNothing,
+      reason: 'el sondeo de 30 s releer sin cortar la lectura del mostrador',
+    );
 
     await tester.pump(const Duration(milliseconds: 400));
 
@@ -699,6 +704,35 @@ void main() {
       reason: 'el tick volvió a leer, una sola vez',
     );
     expect(find.byKey(const Key('caja_detalle')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    // El único refresco que se avisa es el que pide el operador.
+    await tester.tap(find.byKey(const Key('caja_refrescar')));
+    await tester.pump();
+    expect(
+      find.byKey(const Key('caja_refrescando')),
+      findsOneWidget,
+      reason: 'el botón de actualizar muestra su barra',
+    );
+    expect(
+      find.byKey(const Key('caja_detalle_refrescando')),
+      findsNothing,
+      reason: 'la ficha no se pone en alerta con el botón de la lista',
+    );
+
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byKey(const Key('caja_refrescando')), findsNothing);
+
+    await tester.tap(find.byKey(const Key('caja_detalle_refrescar')));
+    await tester.pump();
+    expect(
+      find.byKey(const Key('caja_detalle_refrescando')),
+      findsOneWidget,
+      reason: 'el botón de la ficha sí avisa',
+    );
+
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byKey(const Key('caja_detalle_refrescando')), findsNothing);
     expect(tester.takeException(), isNull);
   });
 }
