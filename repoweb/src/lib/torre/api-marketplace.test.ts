@@ -1,12 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { createHash } from "node:crypto";
-import {
-  validarApiKey,
-  validarWebhook,
-  generarKeyPrefix,
-  generarApiKey,
-} from "./api-marketplace-core.ts";
+import { validarApiKey, validarWebhook } from "./api-marketplace-core.ts";
+import { generarApiKey, generarKeyPrefix } from "./api-marketplace-keys.ts";
 
 describe("validarApiKey", () => {
   it("rechaza nombre vacio", () => {

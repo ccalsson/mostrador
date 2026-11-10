@@ -2,8 +2,6 @@
  * Logica pura de API Marketplace.
  * Sin dependencias externas para facilitar tests unitarios.
  */
-import { createHash, randomBytes } from "node:crypto";
-
 export type ApiKey = {
   id: string;
   clientId: string;
@@ -101,26 +99,4 @@ export function validarWebhook(data: {
       return `Evento invalido: ${e}`;
   }
   return null;
-}
-
-/**
- * Genera un prefijo de 8 caracteres para mostrar la key.
- * Formato: "mk_live_" + 4 bytes hex (8 chars).
- */
-export function generarKeyPrefix(): string {
-  return "mk_live_" + randomBytes(4).toString("hex");
-}
-
-/**
- * Genera una API key completa con su hash SHA-256 y prefijo.
- */
-export function generarApiKey(): {
-  keyPlano: string;
-  keyHash: string;
-  keyPrefix: string;
-} {
-  const keyPlano = "mk_" + randomBytes(32).toString("base64url");
-  const keyHash = createHash("sha256").update(keyPlano).digest("hex");
-  const keyPrefix = keyPlano.slice(0, 12) + "...";
-  return { keyPlano, keyHash, keyPrefix };
 }

@@ -10,7 +10,7 @@ import {
   saveDocumentCore,
   saveProcessorCore,
   savePromotionCore,
-} from "@/lib/torre/legal-fn";
+} from "@/lib/torre/legal-server";
 import { usoMaterialesYaCore } from "@/lib/torre/materiales-ya-fn";
 import { analiticaOperacionCore } from "@/lib/torre/operacion-fn";
 import { numerosDeNegociosCore } from "@/lib/torre/numeros-fn";

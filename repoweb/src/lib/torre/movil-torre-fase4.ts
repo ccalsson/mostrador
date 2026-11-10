@@ -7,7 +7,7 @@ import {
   listarWebhookLogCore,
   listarWebhooksCore,
   revocarApiKeyCore,
-} from "@/lib/torre/api-marketplace-fn";
+} from "@/lib/torre/api-marketplace-server";
 import {
   actualizarGrupoCore,
   asignarClienteAGrupoCore,

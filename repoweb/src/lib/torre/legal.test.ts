@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { audienciasDe, beneficioVigente, hashDocumento, pendienteDeAceptacion, precioAplicable, versionEsInmutable } from "./legal.ts";
+import { audienciasDe, beneficioVigente, pendienteDeAceptacion, precioAplicable, versionEsInmutable } from "./legal.ts";
+import { hashDocumento } from "./legal-hash.ts";
 import { rolPermite } from "./roles.ts";
 
 test("el hash lo define el texto canónico y no cambia por saltos de línea", () => {

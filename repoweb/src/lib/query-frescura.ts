@@ -42,10 +42,16 @@ export function useFrescura() {
   const qc = useQueryClient();
   const [ahora, setAhora] = useState(0);
   useEffect(() => {
-    const marcar = () => setAhora(Date.now());
+    let montado = true;
+    const marcar = () => {
+      queueMicrotask(() => {
+        if (montado) setAhora(Date.now());
+      });
+    };
     const dejarDeEscuchar = qc.getQueryCache().subscribe(marcar);
     const reloj = setInterval(marcar, 1000);
     return () => {
+      montado = false;
       dejarDeEscuchar();
       clearInterval(reloj);
     };

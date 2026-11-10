@@ -11,13 +11,15 @@ import {
   crearWebhook,
   eliminarWebhook,
   listarWebhookLog,
+} from "@/lib/torre/api-marketplace-fn";
+import {
   SCOPES,
   EVENTOS,
   type ApiKey,
   type ApiKeyCreada,
   type Webhook,
   type WebhookLogEntry,
-} from "@/lib/torre/api-marketplace-fn";
+} from "@/lib/torre/api-marketplace-core";
 import { listClients } from "@/lib/torre-fn";
 
 type Tab = "keys" | "webhooks" | "docs";

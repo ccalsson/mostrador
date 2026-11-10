@@ -1,15 +1,8 @@
-import { createHash } from "node:crypto";
-
 export const AUDIENCIAS = ["saas_b2b", "mercado_comprador", "mercado_cargador", "privacy", "other"] as const;
 export type Audiencia = (typeof AUDIENCIAS)[number];
 
 export function canonico(body: string) {
   return body.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-}
-
-/** SHA-256 del texto canónico. Lo calcula el backend. La app no es fuente de verdad. */
-export function hashDocumento(body: string) {
-  return createHash("sha256").update(canonico(body), "utf8").digest("hex");
 }
 
 export function versionEsInmutable(status: string) {
