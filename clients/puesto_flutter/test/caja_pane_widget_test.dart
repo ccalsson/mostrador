@@ -766,4 +766,27 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets(
+    'caja vacía: el cobro directo sigue alcanzable sin pedidos en cola',
+    (tester) async {
+      // Sin pedidos la Caja era un cartel muerto: VentaDirectaDialog existía
+      // pero ningún widget lo instanciaba, así que no había forma de cobrar.
+      final fake = _PedidosFake(const []);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [pedidosServiceProvider.overrideWithValue(fake)],
+          child: const MaterialApp(
+            home: Scaffold(body: CajaPane(intervalo: null)),
+          ),
+        ),
+      );
+      await _esperar(tester, find.byKey(const Key('caja_vacio')));
+
+      expect(find.text('No hay pedidos con este filtro'), findsOneWidget);
+      expect(find.byKey(const Key('caja_vacio_nueva_venta')), findsOneWidget);
+      expect(find.byKey(const Key('caja_nueva_venta')), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

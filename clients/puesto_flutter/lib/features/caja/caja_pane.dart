@@ -17,6 +17,7 @@ import 'editar_items_dialog.dart';
 import 'egresos_pane.dart';
 import 'error_caja.dart';
 import 'ticket_dialog.dart';
+import 'venta_directa_dialog.dart';
 
 /// Filtro de la lista de caja; cada opción mapea al `?estados=` del contrato.
 enum CajaFiltro {
@@ -161,6 +162,27 @@ class _CajaPaneState extends ConsumerState<CajaPane>
     }
   }
 
+  /// Venta de globa: sin pedidos en la cola no había forma de cobrar, porque
+  /// el cobro sólo vivía en la ficha de un pedido ya existente.
+  Future<void> _nuevaVenta() async {
+    _pausar(true);
+    final resultado = await showDialog<CobroResultado>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => const VentaDirectaDialog(),
+    );
+    if (!mounted) return;
+    _pausar(false);
+    if (resultado == null) return;
+    ref.invalidate(pedidosCajaProvider(_filtro.estados));
+    if (resultado.ticketId != null) {
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => TicketDialog(cobroId: resultado.cobroId),
+      );
+    }
+  }
+
   /// En un teléfono las tres etiquetas no entran junto al botón de recargar.
   /// Se escala la barra entera antes que deslizarla: deslizándola la etiqueta
   /// de la derecha quedaba cortada a media palabra ("Egr", "To") sin ninguna
@@ -296,6 +318,13 @@ class _CajaPaneState extends ConsumerState<CajaPane>
           ),
           const SizedBox(width: 8),
           IconButton(
+            key: const Key('caja_nueva_venta'),
+            tooltip: 'Nueva venta (cobro directo)',
+            onPressed: _nuevaVenta,
+            icon: const Icon(Icons.point_of_sale_outlined),
+          ),
+          const SizedBox(width: 4),
+          IconButton(
             key: const Key('caja_refrescar'),
             tooltip: 'Actualizar pedidos',
             onPressed: pedidos.isRefreshing ? null : _refrescarManual,
@@ -402,7 +431,7 @@ class _CajaPaneState extends ConsumerState<CajaPane>
       );
     }
     if (lista.isEmpty) {
-      return const _SinPedidosCaja();
+      return _SinPedidosCaja(onNuevaVenta: _nuevaVenta);
     }
     return ListView.separated(
       key: const Key('caja_lista'),
@@ -461,7 +490,11 @@ class _SinSeleccion extends StatelessWidget {
 }
 
 class _SinPedidosCaja extends StatelessWidget {
-  const _SinPedidosCaja();
+  const _SinPedidosCaja({required this.onNuevaVenta});
+
+  /// La lista vacía era un callejón sin salida: el operador no podía cobrar
+  /// nada hasta que alguien creara un pedido desde otro lado.
+  final Future<void> Function() onNuevaVenta;
 
   @override
   Widget build(BuildContext context) {
@@ -480,6 +513,13 @@ class _SinPedidosCaja extends StatelessWidget {
           const Text(
             'No hay pedidos con este filtro',
             textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 16),
+          FilledButton.icon(
+            key: const Key('caja_vacio_nueva_venta'),
+            onPressed: onNuevaVenta,
+            icon: const Icon(Icons.point_of_sale_outlined),
+            label: const Text('Nueva venta'),
           ),
         ],
       ),

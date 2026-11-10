@@ -32,6 +32,10 @@ class _VentaDirectaDialogState extends ConsumerState<VentaDirectaDialog> {
   bool _cobrando = false;
   String? _error;
 
+  /// Fijo por diálogo: reintentar después de un timeout tiene que reintentar
+  /// el mismo pedido del servidor, no abrir una venta nueva.
+  final String _clientUuid = generarUuidV4();
+
   @override
   void dispose() {
     _busqueda.dispose();
@@ -108,9 +112,8 @@ class _VentaDirectaDialogState extends ConsumerState<VentaDirectaDialog> {
     });
     try {
       final pedidosService = ref.read(pedidosServiceProvider);
-      final uuid = generarUuidV4();
       final pedido = await pedidosService.crear(
-        clientUuid: uuid,
+        clientUuid: _clientUuid,
         clienteNombre: _clienteNombre,
         items: [
           for (final linea in _lineas)
