@@ -735,4 +735,35 @@ void main() {
     expect(find.byKey(const Key('caja_detalle_refrescando')), findsNothing);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'teléfono: las dos barras de filtro caben completas',
+    (tester) async {
+      // En 360dp la barra se deslizaba en horizontal y la última etiqueta
+      // quedaba cortada a media palabra ("Egr", "To"): sin ninguna señal de
+      // que hubiera más opciones afuera de la pantalla.
+      await _montar(tester, _PedidosFake([_pedido('ped_1', total: 1500)]));
+      tester.view.physicalSize = const Size(360, 780);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      await tester.pump();
+
+      for (final etiqueta in const [
+        'Estado de caja',
+        'Egresos',
+        'Por cobrar',
+        'Cobrados',
+        'Todos',
+      ]) {
+        final rect = tester.getRect(find.text(etiqueta));
+        expect(
+          rect.right,
+          lessThanOrEqualTo(360),
+          reason: '"$etiqueta" termina dentro de la pantalla',
+        );
+        expect(rect.left, greaterThanOrEqualTo(0), reason: '"$etiqueta" empieza en pantalla');
+      }
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

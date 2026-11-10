@@ -161,13 +161,16 @@ class _CajaPaneState extends ConsumerState<CajaPane>
     }
   }
 
-  /// En un teléfono los `SegmentedButton` no entran junto al botón de recargar:
-  /// se deslizan en horizontal antes que desbordar y cortar el botón.
+  /// En un teléfono las tres etiquetas no entran junto al botón de recargar.
+  /// Se escala la barra entera antes que deslizarla: deslizándola la etiqueta
+  /// de la derecha quedaba cortada a media palabra ("Egr", "To") sin ninguna
+  /// señal de que había más opciones fuera de pantalla.
   Widget _segmentos(Widget botones, double ancho) => ancho >= _kCajaDosPaneles
       ? Expanded(child: botones)
       : Flexible(
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
             child: botones,
           ),
         );

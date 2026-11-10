@@ -28,15 +28,8 @@ class DashboardPane extends ConsumerWidget {
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
           child: Row(
+            mainAxisAlignment: MainAxisAlignment.end,
             children: [
-              const Expanded(
-                child: Text(
-                  'Dashboard',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-                ),
-              ),
               SegmentedButton<int>(
                 key: const Key('dashboard_periodo'),
                 segments: const [
