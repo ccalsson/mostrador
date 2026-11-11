@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/errors/api_exceptions.dart';
 import '../../core/format.dart';
+import '../../core/ids.dart';
 import '../../core/tema.dart';
 import '../../core/widgets/tabla_web.dart';
 import '../../models/egreso.dart';
@@ -193,7 +194,7 @@ class _EgresosPaneState extends ConsumerState<EgresosPane> {
                   const SizedBox(width: 12),
                   FilledButton.icon(
                     key: const Key('egreso_nuevo'),
-                    onPressed: () => mostrarDialogoNuevoEgreso(context, ref),
+                    onPressed: () => mostrarDialogoNuevoEgreso(context),
                     icon: const Icon(Icons.remove_circle_outline, size: 18),
                     label: const Text('Nuevo egreso'),
                   ),
@@ -599,17 +600,88 @@ class _FichaDetalle extends StatelessWidget {
 // Diálogo nuevo egreso
 // ---------------------------------------------------------------------------
 
-Future<void> mostrarDialogoNuevoEgreso(
-    BuildContext context, WidgetRef ref) async {
-  final conceptoCtrl = TextEditingController();
-  final montoCtrl = TextEditingController();
-  var categoria = 'alquiler';
-  var medio = 'efectivo';
-
-  final resultado = await showDialog<Map<String, String>>(
+/// El alta se dispara desde el propio diálogo: si la respuesta no llega, el
+/// error queda a la vista y el reintento reenvía el mismo `clientUuid`, así el
+/// backend descarta el duplicado en vez de volver a sacar plata de la caja.
+Future<void> mostrarDialogoNuevoEgreso(BuildContext context) {
+  return showDialog<void>(
     context: context,
-    builder: (ctx) => StatefulBuilder(
-      builder: (ctx, setDialogState) => AlertDialog(
+    builder: (_) => const _NuevoEgresoDialog(),
+  );
+}
+
+class _NuevoEgresoDialog extends ConsumerStatefulWidget {
+  const _NuevoEgresoDialog();
+
+  @override
+  ConsumerState<_NuevoEgresoDialog> createState() => _NuevoEgresoDialogState();
+}
+
+class _NuevoEgresoDialogState extends ConsumerState<_NuevoEgresoDialog> {
+  final _conceptoCtrl = TextEditingController();
+  final _montoCtrl = TextEditingController();
+  String _categoria = 'alquiler';
+  String _medio = 'efectivo';
+  late final String _clientUuid = generarUuidV4();
+  var _enviando = false;
+  var _error = '';
+
+  @override
+  void dispose() {
+    _conceptoCtrl.dispose();
+    _montoCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _registrar() async {
+    final concepto = _conceptoCtrl.text.trim();
+    if (concepto.isEmpty) {
+      setState(() => _error = 'Ingresá el concepto.');
+      return;
+    }
+    final monto = double.tryParse(_montoCtrl.text.trim());
+    if (monto == null || monto <= 0) {
+      setState(() => _error = 'Monto inválido.');
+      return;
+    }
+    setState(() {
+      _enviando = true;
+      _error = '';
+    });
+    // El SnackBar vive en el Scaffold raíz: se muestra después de cerrar, así
+    // su rebuild no toca el diálogo que todavía está saliendo.
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await ref.read(egresosServiceProvider).crear(
+            monto: monto,
+            concepto: concepto,
+            categoria: _categoria,
+            medio: _medio,
+            clientUuid: _clientUuid,
+          );
+      if (!mounted) return;
+      ref.invalidate(egresosProvider);
+      Navigator.of(context).pop();
+      messenger
+        ..removeCurrentSnackBar()
+        ..showSnackBar(const SnackBar(content: Text('Egreso registrado.')));
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _enviando = false;
+        _error = e.message;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _enviando = false;
+        _error = 'No se pudo registrar el egreso.';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
         title: const Text('Nuevo egreso'),
         content: SizedBox(
           width: 360,
@@ -618,7 +690,7 @@ Future<void> mostrarDialogoNuevoEgreso(
             children: [
               TextField(
                 key: const Key('egreso_concepto'),
-                controller: conceptoCtrl,
+                controller: _conceptoCtrl,
                 decoration: const InputDecoration(
                   labelText: 'Concepto',
                   hintText: 'Ej: Pago a proveedor',
@@ -629,7 +701,7 @@ Future<void> mostrarDialogoNuevoEgreso(
               ),
               TextField(
                 key: const Key('egreso_monto'),
-                controller: montoCtrl,
+                controller: _montoCtrl,
                 decoration: const InputDecoration(
                   labelText: 'Monto',
                   prefixText: '\$ ',
@@ -641,7 +713,7 @@ Future<void> mostrarDialogoNuevoEgreso(
               ),
               const SizedBox(height: 8),
               DropdownButtonFormField<String>(
-                initialValue: categoria,
+                initialValue: _categoria,
                 isExpanded: true,
                 decoration: const InputDecoration(
                   labelText: 'Categoría',
@@ -660,12 +732,11 @@ Future<void> mostrarDialogoNuevoEgreso(
                   DropdownMenuItem(value: 'sueldos', child: Text('Sueldos')),
                   DropdownMenuItem(value: 'otros', child: Text('Otros')),
                 ],
-                onChanged: (v) =>
-                    setDialogState(() => categoria = v ?? 'alquiler'),
+                onChanged: (v) => setState(() => _categoria = v ?? 'alquiler'),
               ),
               const SizedBox(height: 8),
               DropdownButtonFormField<String>(
-                initialValue: medio,
+                initialValue: _medio,
                 isExpanded: true,
                 decoration: const InputDecoration(
                   labelText: 'Medio',
@@ -679,31 +750,26 @@ Future<void> mostrarDialogoNuevoEgreso(
                       value: 'transferencia', child: Text('Transferencia')),
                   DropdownMenuItem(value: 'otro', child: Text('Otro')),
                 ],
-                onChanged: (v) =>
-                    setDialogState(() => medio = v ?? 'efectivo'),
+                onChanged: (v) => setState(() => _medio = v ?? 'efectivo'),
               ),
+              if (_error.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(
+                  _error,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ],
             ],
           ),
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx),
+            onPressed: _enviando ? null : () => Navigator.of(context).pop(),
             child: const Text('Cancelar'),
           ),
           FilledButton(
             key: const Key('egreso_guardar'),
-            onPressed: () {
-              if (conceptoCtrl.text.trim().isEmpty ||
-                  montoCtrl.text.trim().isEmpty) {
-                return;
-              }
-              Navigator.pop(ctx, {
-                'concepto': conceptoCtrl.text.trim(),
-                'monto': montoCtrl.text.trim(),
-                'categoria': categoria,
-                'medio': medio,
-              });
-            },
+            onPressed: _enviando ? null : _registrar,
             style: ButtonStyle(
               minimumSize:
                   WidgetStateProperty.all(const Size.fromHeight(38)),
@@ -711,46 +777,5 @@ Future<void> mostrarDialogoNuevoEgreso(
             child: const Text('Registrar'),
           ),
         ],
-      ),
-    ),
-  );
-
-  conceptoCtrl.dispose();
-  montoCtrl.dispose();
-
-  if (resultado == null || !context.mounted) return;
-
-  final montoNum = double.tryParse(resultado['monto']!);
-  if (montoNum == null || montoNum <= 0) {
-    if (!context.mounted) return;
-    ScaffoldMessenger.of(context)
-      ..removeCurrentSnackBar()
-      ..showSnackBar(const SnackBar(content: Text('Monto inválido.')));
-    return;
-  }
-
-  try {
-    await ref.read(egresosServiceProvider).crear(
-          monto: montoNum,
-          concepto: resultado['concepto']!,
-          categoria: resultado['categoria'],
-          medio: resultado['medio'],
-        );
-    ref.invalidate(egresosProvider);
-    if (!context.mounted) return;
-    ScaffoldMessenger.of(context)
-      ..removeCurrentSnackBar()
-      ..showSnackBar(const SnackBar(content: Text('Egreso registrado.')));
-  } on ApiException catch (e) {
-    if (!context.mounted) return;
-    ScaffoldMessenger.of(context)
-      ..removeCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(e.message)));
-  } catch (_) {
-    if (!context.mounted) return;
-    ScaffoldMessenger.of(context)
-      ..removeCurrentSnackBar()
-      ..showSnackBar(const SnackBar(
-          content: Text('No se pudo registrar el egreso.')));
-  }
+      );
 }

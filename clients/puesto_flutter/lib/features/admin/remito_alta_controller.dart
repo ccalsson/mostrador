@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/errors/api_exceptions.dart';
+import '../../core/ids.dart';
 import '../../models/proveedor.dart';
 import '../../models/remito_ocr.dart';
 import '../../services/remitos_service.dart';
@@ -28,7 +29,12 @@ class RemitoAltaController extends Notifier<RemitoAltaEstado> {
   @override
   RemitoAltaEstado build() => const RemitoAltaEstado();
 
-  void reiniciar() => state = const RemitoAltaEstado();
+  String? _clientUuid;
+
+  void reiniciar() {
+    _clientUuid = null;
+    state = const RemitoAltaEstado();
+  }
 
   /// Empareja el nombre leído con el directorio. Si no hay match, el usuario elige.
   String? proveedorDeLectura(
@@ -73,6 +79,9 @@ class RemitoAltaController extends Notifier<RemitoAltaEstado> {
     }
   }
 
+  /// Crea el remito. El backend es idempotente por `(tenant, clientUuid)`:
+  /// el UUID nace con este intento lógico, así que un reintento tras un
+  /// timeout devuelve el remito ya cargado en vez de duplicarlo.
   Future<String?> cargar({
     required String proveedorId,
     required String fuente,
@@ -94,6 +103,7 @@ class RemitoAltaController extends Notifier<RemitoAltaEstado> {
       );
       return null;
     }
+    final clientUuid = _clientUuid ??= generarUuidV4();
     state = const RemitoAltaEstado(fase: RemitoAltaFase.enviando);
     try {
       final id = await ref.read(remitosServiceProvider).crear(
@@ -101,6 +111,7 @@ class RemitoAltaController extends Notifier<RemitoAltaEstado> {
             fuente: fuente,
             archivoNombre: archivoNombre,
             lineas: lineas,
+            clientUuid: clientUuid,
           );
       if (!ref.mounted) return null;
       ref.invalidate(remitosProvider);

@@ -14,6 +14,12 @@ class MockRemitosService implements RemitosService {
   final String? crearResult;
   final Exception? exception;
 
+  final List<String?> clientUuidsVistos = [];
+
+  /// Falla sólo el primer `crear`: sirve para probar el reintento del mismo
+  /// intento lógico.
+  Exception? exceptionSoloAlPrimerIntento;
+
   @override
   Future<List<Remito>> listar() async => [];
 
@@ -26,7 +32,14 @@ class MockRemitosService implements RemitosService {
     required String fuente,
     String? archivoNombre,
     required List<RemitoLineaAlta> lineas,
+    String? clientUuid,
   }) async {
+    clientUuidsVistos.add(clientUuid);
+    final primera = exceptionSoloAlPrimerIntento;
+    if (primera != null) {
+      exceptionSoloAlPrimerIntento = null;
+      throw primera;
+    }
     if (exception != null) throw exception!;
     return crearResult ?? 'id-remito';
   }
@@ -129,5 +142,47 @@ void main() {
     controller.reiniciar();
     await controller.cargar(proveedorId: 'p1', fuente: 'manual', lineas: []);
     expect(container.read(remitoAltaProvider).errorMensaje, 'El remito debe incluir al menos una línea.');
+  });
+
+  test('reintento del mismo diálogo reutiliza el clientUuid', () async {
+    final remitos = MockRemitosService()
+      ..exceptionSoloAlPrimerIntento =
+          const ApiException('sin respuesta', statusCode: 503);
+    final controller =
+        crearContainer(remitosService: remitos).read(remitoAltaProvider.notifier);
+    const lineas = [RemitoLineaAlta(descripcion: '1', cantidad: 10)];
+
+    expect(
+      await controller.cargar(proveedorId: 'p1', fuente: 'manual', lineas: lineas),
+      isNull,
+    );
+    expect(
+      await controller.cargar(proveedorId: 'p1', fuente: 'manual', lineas: lineas),
+      'id-remito',
+    );
+
+    expect(remitos.clientUuidsVistos.first, isNotNull);
+    expect(
+      remitos.clientUuidsVistos.last,
+      remitos.clientUuidsVistos.first,
+      reason: 'el backend devuelve el remito ya creado en vez de duplicarlo',
+    );
+  });
+
+  test('reiniciar estrena clientUuid para el remito siguiente', () async {
+    final remitos = MockRemitosService();
+    final controller =
+        crearContainer(remitosService: remitos).read(remitoAltaProvider.notifier);
+    const lineas = [RemitoLineaAlta(descripcion: '1', cantidad: 10)];
+
+    await controller.cargar(proveedorId: 'p1', fuente: 'manual', lineas: lineas);
+    controller.reiniciar();
+    await controller.cargar(proveedorId: 'p1', fuente: 'manual', lineas: lineas);
+
+    expect(remitos.clientUuidsVistos, hasLength(2));
+    expect(
+      remitos.clientUuidsVistos.first,
+      isNot(remitos.clientUuidsVistos.last),
+    );
   });
 }

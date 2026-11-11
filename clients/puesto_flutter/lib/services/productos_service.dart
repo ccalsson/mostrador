@@ -72,12 +72,14 @@ class ProductosAdminService {
   }
 
   /// `POST /api/v1/stock/ajuste` — `tipo` es `ajuste` (con signo) o `merma`
-  /// (el backend la descuenta siempre en absoluto).
+  /// (el backend la descuenta siempre en absoluto). `clientUuid` hace al
+  /// intento idempotente: un reintento no vuelve a mover el stock.
   Future<void> ajustarStock({
     required String productoId,
     required double cantidad,
     required String tipo,
     required String motivo,
+    String? clientUuid,
   }) async {
     await _client.post(
       '/api/v1/stock/ajuste',
@@ -86,6 +88,7 @@ class ProductosAdminService {
         'cantidad': cantidad,
         'tipo': tipo,
         'motivo': motivo,
+        'clientUuid': ?clientUuid,
       },
     );
   }

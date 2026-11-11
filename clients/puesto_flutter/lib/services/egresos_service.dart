@@ -15,17 +15,21 @@ class EgresosService {
         .toList();
   }
 
+  /// `clientUuid` hace al intento idempotente: un reintento con el mismo UUID
+  /// no vuelve a sacar plata de la caja.
   Future<void> crear({
     required double monto,
     required String concepto,
     String? categoria,
     String? medio,
+    String? clientUuid,
   }) async {
     await _client.post('/api/v1/egresos', body: {
       'monto': monto,
       'concepto': concepto,
       'categoria': categoria ?? 'alquiler',
       'medio': medio ?? 'efectivo',
+      'clientUuid': ?clientUuid,
     });
   }
 

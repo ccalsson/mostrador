@@ -17,8 +17,14 @@ class _ProductosFake implements ProductosAdminService {
   var ajustes = 0;
   final List<ProductoInput> inputs = [];
   final List<String> idsBaja = [];
-  final List<({String productoId, double cantidad, String tipo, String motivo})>
-  ajustesVistos = [];
+  final List<
+      ({
+        String productoId,
+        double cantidad,
+        String tipo,
+        String motivo,
+        String? clientUuid,
+      })> ajustesVistos = [];
 
   Object? errorGuardar;
   Object? errorBajar;
@@ -47,6 +53,7 @@ class _ProductosFake implements ProductosAdminService {
     required double cantidad,
     required String tipo,
     required String motivo,
+    String? clientUuid,
   }) async {
     ajustes++;
     ajustesVistos.add((
@@ -54,6 +61,7 @@ class _ProductosFake implements ProductosAdminService {
       cantidad: cantidad,
       tipo: tipo,
       motivo: motivo,
+      clientUuid: clientUuid,
     ));
     final error = errorAjustar;
     if (error != null) throw error;
@@ -426,6 +434,32 @@ void main() {
       final estado = container.read(ajusteStockProvider);
       expect(estado.fase, AjusteFase.inactiva);
       expect(estado.errorMensaje, isNull);
+    });
+
+    test('reintento del mismo diálogo reutiliza el clientUuid', () async {
+      productos.errorAjustar = Exception('el cliente no recibió respuesta');
+      expect(await ajustar(AjusteModo.sumar, 1), isFalse);
+      productos.errorAjustar = null;
+      expect(await ajustar(AjusteModo.sumar, 1), isTrue);
+
+      final vistos = productos.ajustesVistos;
+      expect(vistos.first.clientUuid, isNotNull);
+      expect(
+        vistos.last.clientUuid,
+        vistos.first.clientUuid,
+        reason: 'el backend descarta el duplicado por (tenant, clientUuid)',
+      );
+    });
+
+    test('reiniciar estrena clientUuid para el ajuste siguiente', () async {
+      final notifier = container.read(ajusteStockProvider.notifier);
+      await ajustar(AjusteModo.sumar, 1);
+      notifier.reiniciar();
+      await ajustar(AjusteModo.sumar, 1);
+
+      final vistos = productos.ajustesVistos;
+      expect(vistos, hasLength(2));
+      expect(vistos.first.clientUuid, isNot(vistos.last.clientUuid));
     });
   });
 }

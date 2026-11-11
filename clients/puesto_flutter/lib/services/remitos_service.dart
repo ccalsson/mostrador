@@ -11,11 +11,14 @@ class RemitosService {
 
   final ApiClient _client;
 
+  /// `clientUuid` hace al intento idempotente: un reintento con el mismo UUID
+  /// devuelve el remito ya creado en lugar de duplicarlo.
   Future<String> crear({
     required String proveedorId,
     required String fuente,
     String? archivoNombre,
     required List<RemitoLineaAlta> lineas,
+    String? clientUuid,
   }) async {
     final data = await _client.post(
       '/api/v1/remitos',
@@ -23,6 +26,7 @@ class RemitosService {
         'proveedorId': proveedorId,
         'fuente': fuente,
         'archivoNombre': ?archivoNombre,
+        'clientUuid': ?clientUuid,
         'lineas': [for (final linea in lineas) linea.toJson()],
       },
     ) as Map<String, dynamic>;
