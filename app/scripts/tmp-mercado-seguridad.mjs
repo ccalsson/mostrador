@@ -86,12 +86,15 @@ async function main() {
   if (!publicados[0]) throw new Error("No hay un producto publicado con stock.");
   const producto = publicados[0];
 
+  // Antes se miraban sólo los 3 primeros por nombre y el test moría si el catálogo
+  // del tenant estaba casi todo publicado; la precondición real es "existe alguno".
   const ocultos = await sqlRows(
     `select id, publicado_online from productos
-     where tenant_id = $1 and activo = true order by lower(nombre) limit 3`,
-    [tenant.id],
+     where tenant_id = $1 and activo = true and publicado_online = false and id <> $2
+     order by lower(nombre) limit 1`,
+    [tenant.id, producto.id],
   );
-  const noPublicado = ocultos.find((p) => !p.publicado_online && p.id !== producto.id);
+  const noPublicado = ocultos[0];
   if (!noPublicado) throw new Error("No hay un producto activo sin publicar para el test T3.");
 
   async function entrarOCrear(path, payload, perfil) {
@@ -330,6 +333,24 @@ async function main() {
     "barrera de pago: recorrido con pedido listo y sin cobro -> 400",
     recSinPago.status === 400 && recSinPago.json?.error === "orders_not_ready",
     JSON.stringify(recSinPago.json).slice(0, 200),
+  );
+
+  // El estado no es una forma de pago: escribir "cobrado" a mano sería regalar
+  // la mercadería, porque /retirar lee ese estado como la confirmación.
+  const cobradoAMano = await fetch(`${BASE}/api/v1/pedidos/${pedidoA}/estado`, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${staffToken}` },
+    body: JSON.stringify({ estado: "cobrado" }),
+  });
+  step("barrera de pago: marcar cobrado a mano -> 400", cobradoAMano.status === 400, JSON.stringify(await cobradoAMano.json().catch(() => ({}))));
+
+  const trasIntento = (
+    await sqlRows(`select estado, coalesce(pago_estado, 'pendiente') as pago_estado from pedidos where id = $1`, [pedidoA])
+  )[0];
+  step(
+    "barrera de pago: el rechazo no mueve el estado ni habilita el pago",
+    trasIntento.estado === "listo" && trasIntento.pago_estado !== "habilitado",
+    JSON.stringify(trasIntento),
   );
 
   const cobrar = await fetch(`${BASE}/api/v1/pedidos/${pedidoA}/cobrar`, {

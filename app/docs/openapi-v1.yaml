@@ -166,8 +166,9 @@ paths:
       summary: Cambiar estado de la cola de armado
       description: admin o cajero. La preparación sigue enviado→en_preparacion→listo
         (repetir el mismo estado es idempotente); en_preparacion fija preparation_started_at
-        y listo fija prepared_at. Los pedidos de Mercado además exigen la secuencia completa
-        hacia cobrado.
+        y listo fija prepared_at. Los pedidos de Mercado sólo admiten esos dos saltos:
+        `cobrado` responde 400 porque lo escribe únicamente el cobro
+        (`POST /pedidos/{id}/cobrar`), y `/retirar` del cargador exige ese estado.
       parameters:
         - $ref: '#/components/parameters/IdPedido'
       requestBody:

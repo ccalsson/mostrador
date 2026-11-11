@@ -74,10 +74,17 @@ export async function updatePedidoEstadoForStaff(
   const current = rows[0];
   if (!current) return null;
   if (current.origen === "mercado_al_toque") {
+    // `cobrado` es la llave del retiro (/retirar lo exige), así que sólo puede
+    // escribirlo el cobro que registra el puesto; a mano sería una
+    // transferencia "confirmada" sin plata en la caja.
+    if (input.estado === "cobrado") {
+      const error = new Error("El pedido de Mercado se cobra desde Caja, no cambiando el estado.");
+      Object.assign(error, { status: 400 });
+      throw error;
+    }
     const valid =
       (current.estado === "enviado" && input.estado === "en_preparacion") ||
-      (current.estado === "en_preparacion" && input.estado === "listo") ||
-      (current.estado === "listo" && input.estado === "cobrado");
+      (current.estado === "en_preparacion" && input.estado === "listo");
     if (!valid && current.estado !== input.estado) {
       const error = new Error("El pedido de Mercado debe pasar por preparación antes de marcarse listo.");
       Object.assign(error, { status: 400 });

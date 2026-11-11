@@ -79,12 +79,12 @@ El cargador es un rol de Mercado al Toque; su asignación, retiro y tarifas sigu
 |---|---|---|---|
 | `catalog.read` / `write_limited` | **reutilizar** | `productos.ts`, `products_pane.dart` | el límite de edición se hace con `allow()`, no ocultando campos |
 | `pricing.write` inline | **adaptar** | hoy el precio se edita en diálogo (`producto_form_dialog.dart:329`) | nada en el contrato lo impide |
-| `stock.adjust_limited` | **reutilizar** | `ajuste_stock_dialog.dart:16` + `stock.ts` | `POST /stock/ajuste` (`$.ts:734`) **no es idempotente**: falta `clientUuid` |
+| `stock.adjust_limited` | **reutilizar** | `ajuste_stock_dialog.dart:16` + `stock.ts` | resuelto en F0.5-3: `POST /stock/ajuste` (`$.ts:734`) acepta `clientUuid` y es idempotente (`2c299cb` + cliente `e4d76f3`) |
 | `market.publish` por producto | **crear** | `productos.publicado_online` existe (`0009_mercado.sql:2`) | no hay "pausado" ni "agotado"; el cliente lo infiere hoy |
 | `orders.read` con canal | **adaptar** | `ColaPedidos`, `pedidos_pane.dart:19` | `/pedidos` no devuelve `canal` ni `pagoEstado`; hay que ampliar el select |
 | `sales.quick_checkout` | **adaptar** | `VentaDirectaDialog` (570 líneas) | **estaba muerto**: sin instancia en todo `lib/`; conectado en esta sesión (§7) |
 | `cash.basic` | **adaptar** | `caja_pane.dart`, `CajaEstadoPane`, `EgresosPane` | `caja.ts:42-45,117` suma todos los medios → arqueo inflado |
-| `payments.transfer` verificado | **crear** | `mercado.ts:666,715` escribe `informado` | `pago_estado` no tiene CHECK (`0009_mercado.sql:7`) y **nadie lo lee como autorización** |
+| `payments.transfer` verificado | **crear** | `mercado.ts:666,715` escribe `informado` | `pago_estado` no tiene CHECK (`0009_mercado.sql:7`); desde `392e10c` la barrera de `app/` mira `pedidos.estado = 'cobrado'` y no `pago_estado`, así que el campo quedó sin leer como autorización en la API canónica mientras repoweb sí lo usa (`mercado/reglas.ts:94`) |
 | `courier.pickup` | **reutilizar** | `mercado.ts:973,1114,1151` | la tarifa del cargador no está modelada (`presencia.ts:64` es comisión del puesto) |
 | `identity.manage` | **adaptar** | `marca.ts:26-45` son 5 campos | CBU/prioridad/horarios no existen por puesto; el CBU es global de Torre (`repoweb/migrations/0017:4`) |
 | `qr.view` | **reutilizar** | `qr_pane.dart:11` | — |
@@ -99,14 +99,16 @@ El cargador es un rol de Mercado al Toque; su asignación, retiro y tarifas sigu
 
 Estas son las que cambian el plan. Tres las encontraron los agentes y las cuatro las verifiqué leyendo el código.
 
-**5.1 La barrera de pago no existe (§1 y §5C piden "preservarla").**
-`mercado.ts:1011` y `:1180` habilitan el retiro con `estado in ('listo','cobrado')`. `pedidos.ts:88-96` pone `pago_estado = 'habilitado'` en cuanto el staff marca `en_preparacion` o `listo`, sin ningún cobro. Camino real hoy: puesto marca listo → cargador retira → la transferencia nunca se acreditó. Es **más grave** de lo que la spec supone, y toca al mayorista actual, no sólo al PL.
+**5.1 La barrera de pago no existía (§1 y §5C piden "preservarla").**
+`mercado.ts:1011` y `:1180` habilitaban el retiro con `estado in ('listo','cobrado')`. `pedidos.ts:88-96` ponía `pago_estado = 'habilitado'` en cuanto el staff marcaba `en_preparacion` o `listo`, sin ningún cobro. Camino real entonces: puesto marca listo → cargador retira → la transferencia nunca se acreditó. Es **más grave** de lo que la spec supone, y toca al mayorista actual, no sólo al PL. **Cerrado en F0.5-1 sobre `/api/v1`** (`392e10c`): `pedidos.ts` ya no toca `pago_estado`, `/retirar` exige `pedido_estado === 'cobrado'` (`mercado.ts:1184`) y responde `400 payment_not_confirmed`.
+
+**Queda abierto del lado repoweb, y no es cosmético.** Los dos backends comparten la misma Neon DEV con reglas distintas: `repoweb/src/lib/fn.ts:763-770` sigue poniendo `pago_estado = 'habilitado'` al marcar `en_preparacion`/`listo`, su `updatePedidoEstado` no tiene whitelist de transiciones así que un cajero desde la web puede escribir `estado = 'cobrado'` **sin registrar ningún cobro**, y el retiro del cargador web (`repoweb/src/lib/mercado/servicio.ts:1160`, ruteado en `mercado/http.ts:205`) sigue aceptando `listo` **o** `cobrado`. Como la barrera de `app/` lee `pedidos.estado`, ese `cobrado` puesto a mano desde la web libera el retiro en el Flutter: la barrera vale para quien opera la API canónica, no para el puesto que usa la web. Alinearlo es cambio de regla en otro frente sobre archivos que el dueño tiene sucios (§8) — **requiere su decisión, no se ejecuta solo**.
 
 **5.2 Las unidades no faltan (§4/§7 las creen inexistentes).**
 `docena`, `atado`, `cajón`, `bolsa`, `"10 kg"` y `"maple 30"` ya se muestran vía `unidad_label` en la semilla de catálogo. El trabajo es 1 CHECK + 3 contadores + 2 enums + aflojar la cantidad entera en Flutter. No hay "auditar modelos" que valga un rediseño.
 
 **5.3 La cola offline no es incompleta: es inexistente en caja (§6 la cree parcial).**
-`offline_queue_service.dart:14` sólo encola pedidos del vendedor; caja no encola nada. Y hasta hoy el reintento generaba `clientUuid` nuevo en cada intento (`venta_directa_dialog.dart:111`), o sea **duplicaba la venta ante un timeout**. Corregido en esta sesión.
+`offline_queue_service.dart:14` sólo encola pedidos del vendedor; caja no encola nada. Y hasta hoy el reintento generaba `clientUuid` nuevo en cada intento (`venta_directa_dialog.dart:111`), o sea **duplicaba la venta ante un timeout**. Corregido (`39d2931` el diálogo, `e4d76f3` el resto de las altas).
 
 **5.4 El 92/96 de `docs/auditoria-web-vs-flutter.md:25` no es reproducible ni actual.**
 No hay script que haga el diff de contratos (lo confirmé: `e2e-api-v1.mjs` prueba comportamiento, no cobertura). En HEAD hay 113 entradas `path:`, menos 15 de `/portal/*` → **98 relevantes**, no 96; las dos extra son `POST /creativos/:id/enviar` y `DELETE /creativos/:id`, entradas en `bf77daa` después del informe. La cifra sigue siendo cualitativamente correcta (`lib/services/` cubre los 29 grupos no-portal), pero no se cite como métrica viva.
@@ -116,10 +118,10 @@ No hay script que haga el diff de contratos (lo confirmé: `e2e-api-v1.mjs` prue
 ## 6. Plan por fases (con criterios de salida)
 
 **Fase 0.5 — cuatro fixes previos, ajenos al PL** *(nuevo; no estaba en la spec)*
-1. Retiro gated por pago real: `mercado.ts:1011,1180` deben exigir `pago_estado = 'habilitado'` **y** que el habilitado lo haya puesto un cobro, no un cambio de estado; quitar el `→'habilitado'` automático de `pedidos.ts:88-96`.
-2. Arqueo por medio: `caja.ts:42-45` y `:117` separan `efectivo` del resto; `esperadoEnCaja` es sólo efectivo y el cierre prellena `real` con esa cifra.
-3. Idempotencia de `POST /stock/ajuste`, egresos y remitos (`clientUuid`).
-4. Gate de plan en los ~35 endpoints listados en §4, con tests 403 por capacidad.
+1. ✅ Retiro gated por pago real: `mercado.ts:1011,1180` deben exigir `pago_estado = 'habilitado'` **y** que el habilitado lo haya puesto un cobro, no un cambio de estado; quitar el `→'habilitado'` automático de `pedidos.ts:88-96`. *(`392e10c`)*
+2. ✅ Arqueo por medio: `caja.ts:42-45` y `:117` separan `efectivo` del resto; `esperadoEnCaja` es sólo efectivo y el cierre prellena `real` con esa cifra. *(`8598948`, reglas puras en `caja-reglas.ts`)*
+3. ✅ Idempotencia de `POST /stock/ajuste`, egresos y remitos (`clientUuid`). *(servidor `2c299cb` + migración `0038`; clientes `e4d76f3`)*
+4. ⛔ Gate de plan en los ~35 endpoints listados en §4, con tests 403 por capacidad. **Sin empezar:** el mecanismo (`entitlements.ts` + `allow()`) se define en Fase 1, y gatear ahora por líneas de suscripción de Torre dejaría en 403 a los tenants de DEV/e2e, que no tienen líneas. Hay que decidir primero el modelo de `features` del plan.
 **Salida:** matriz §9 de la spec en verde para los casos de pago, arqueo y escalamiento — con puestos mayoristas ya existentes, sin tocar el PL.
 
 **Fase 1 — licenciamiento.** Migración aditiva del plan + `features`; `entitlements.ts` + `allow()`; `businessProfile`/`capabilities` en `/session`; contrato en `docs/api-v1.md` y `openapi-v1.yaml`. **Salida:** tests de plan vencido, `past_due`, add-on con `ends_on` vencido, suscripción cross-tenant y escalamiento por JSON de sesión.
@@ -139,7 +141,7 @@ Responden a la queja «en el celu no se puede hacer nada ni cobrar», verificada
 - `clients/puesto_flutter/lib/features/caja/caja_pane.dart` — se conecta `VentaDirectaDialog` (570 líneas que ningún widget instanciaba): botón `caja_nueva_venta` en la barra de pedidos y `caja_vacio_nueva_venta` en el estado vacío, con el ticket detrás del cobro.
 - `clients/puesto_flutter/lib/features/caja/venta_directa_dialog.dart` — `clientUuid` fijo por diálogo (`_clientUuid`) en lugar de generarlo en cada intento.
 
-Ambos cambios están **sin commitear** y sin rebuild del APK del Escritorio hasta pasar `flutter analyze` + `flutter test`.
+Ambos se commitearon en `39d2931` con `flutter analyze` en 0 issues y `flutter test` en verde, y entraron en el APK/instalador del Escritorio reconstruido desde `main`.
 
 ---
 
