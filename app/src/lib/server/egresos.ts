@@ -79,7 +79,7 @@ export async function listEgresosForStaff(
 
 export async function createEgresoForStaff(
   staff: Staff,
-  input: { monto: number; concepto: string; categoria?: string; medio?: string },
+  input: { monto: number; concepto: string; categoria?: string; medio?: string; clientUuid?: string },
 ) {
   assertRole(staff, ["admin", "cajero"]);
   if (input.monto <= 0) throw new Error("El monto debe ser mayor a cero.");
@@ -113,17 +113,28 @@ export async function createEgresoForStaff(
   if (!open[0]) throw new Error("No hay una caja abierta.");
 
   const id = newId("egr");
-  await sql`
-    insert into egresos_caja (id, tenant_id, cierre_id, monto, concepto, categoria, medio, usuario_id)
-    values (${id}, ${staff.tenantId}, ${open[0].id}, ${input.monto}, ${concepto}, ${categoria}, ${medio}, ${staff.id})
+  const inserted = await sql<{ id: string }>`
+    insert into egresos_caja (id, tenant_id, cierre_id, monto, concepto, categoria, medio, usuario_id, client_uuid)
+    values (${id}, ${staff.tenantId}, ${open[0].id}, ${input.monto}, ${concepto}, ${categoria}, ${medio}, ${staff.id}, ${input.clientUuid ?? null})
+    on conflict (tenant_id, client_uuid) do nothing
+    returning id
   `;
+  if (!inserted[0]) {
+    const previo = await sql<{ id: string }>`
+      select id from egresos_caja
+      where tenant_id = ${staff.tenantId} and client_uuid = ${input.clientUuid}
+      limit 1
+    `;
+    if (!previo[0]) throw new Error("No se pudo resolver la idempotencia del egreso.");
+    return { id: previo[0].id, ok: true as const, duplicado: true as const };
+  }
   await audit(staff.tenantId, staff, "alta_egreso", "caja", {
     id,
     monto: input.monto,
     concepto,
     medio,
   });
-  return { id, ok: true as const };
+  return { id, ok: true as const, duplicado: false as const };
 }
 
 export async function anularEgresoForStaff(

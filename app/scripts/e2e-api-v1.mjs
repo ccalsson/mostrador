@@ -963,6 +963,85 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
     approx(await stockOf(state.banana.id), antes + 5, "confirmar dos veces no debe duplicar stock");
   });
 
+  it("11b. idempotencia de ajuste, egreso y remito: el retry no vuelve a aplicar", async () => {
+    // Las tres escrituras son las que no tenían clientUuid: un timeout de red
+    // repetía el movimiento de stock, el retiro de dinero o el remito completo.
+    const claveAjuste = `e2e-ajuste-${randomUUID()}`;
+    const cuerpoAjuste = {
+      productoId: state.banana.id,
+      cantidad: 4,
+      tipo: "ajuste",
+      motivo: "Ajuste idempotente",
+      clientUuid: claveAjuste,
+    };
+    const antesAjuste = await stockOf(state.banana.id);
+    const ajuste = await api("POST", "/stock/ajuste", { token: state.tokens.cajero, body: cuerpoAjuste });
+    assert.equal(ajuste.status, 200, JSON.stringify(ajuste.data));
+    assert.equal(ajuste.data.data.duplicado, false);
+    approx(await stockOf(state.banana.id), antesAjuste + 4);
+
+    const ajusteReintentado = await api("POST", "/stock/ajuste", { token: state.tokens.cajero, body: cuerpoAjuste });
+    assert.equal(ajusteReintentado.status, 200);
+    assert.equal(ajusteReintentado.data.data.duplicado, true, "el retry debe reconocerse como duplicado");
+    approx(await stockOf(state.banana.id), antesAjuste + 4, "el retry no vuelve a mover el stock");
+
+    // Sin clientUuid sigue siendo una operación nueva: es lo que hace la web hoy.
+    const sinClave = await api("POST", "/stock/ajuste", {
+      token: state.tokens.cajero,
+      body: { productoId: state.banana.id, cantidad: 1, tipo: "ajuste", motivo: "Sin clientUuid" },
+    });
+    assert.equal(sinClave.status, 200);
+    assert.equal(sinClave.data.data.duplicado, false);
+    approx(await stockOf(state.banana.id), antesAjuste + 5, "sin clientUuid no hay idempotencia que aplicar");
+
+    const caja = await api("GET", "/caja", { token: state.tokens.cajero });
+    assert.equal(caja.status, 200, "el egreso necesita una caja abierta");
+
+    const cuerpoEgreso = {
+      monto: 250,
+      concepto: "Egreso idempotente",
+      categoria: "servicios",
+      medio: "efectivo",
+      clientUuid: `e2e-egreso-${randomUUID()}`,
+    };
+    const egreso = await api("POST", "/egresos", { token: state.tokens.cajero, body: cuerpoEgreso });
+    assert.equal(egreso.status, 200, JSON.stringify(egreso.data));
+    assert.equal(egreso.data.data.duplicado, false);
+    const egresoReintentado = await api("POST", "/egresos", { token: state.tokens.cajero, body: cuerpoEgreso });
+    assert.equal(egresoReintentado.status, 200);
+    assert.equal(egresoReintentado.data.data.duplicado, true);
+    assert.equal(
+      egresoReintentado.data.data.id,
+      egreso.data.data.id,
+      "el retry devuelve el egreso original, no uno nuevo",
+    );
+    const egresos = await state.pool.query(
+      `select count(*)::int as n from egresos_caja where tenant_id = $1 and client_uuid = $2`,
+      [TENANT, cuerpoEgreso.clientUuid],
+    );
+    assert.equal(egresos.rows[0].n, 1, "el retry creó un segundo egreso en la caja");
+
+    const cuerpoRemito = {
+      proveedor: "Proveedor Idempotente",
+      fuente: "manual",
+      clientUuid: `e2e-remito-${randomUUID()}`,
+      lineas: [{ descripcion: state.banana.nombre, cantidad: 3 }],
+    };
+    const remito = await api("POST", "/remitos", { token: state.tokens.admin, body: cuerpoRemito });
+    assert.equal(remito.status, 201, JSON.stringify(remito.data));
+    assert.equal(remito.data.data.duplicado, false);
+    const remitoReintentado = await api("POST", "/remitos", { token: state.tokens.admin, body: cuerpoRemito });
+    assert.equal(remitoReintentado.data.data.duplicado, true);
+    assert.equal(remitoReintentado.data.data.id, remito.data.data.id);
+    const lineas = await state.pool.query(
+      `select count(*)::int as n from remito_items ri
+        join remitos r on r.id = ri.remito_id
+       where r.tenant_id = $1 and r.client_uuid = $2`,
+      [TENANT, cuerpoRemito.clientUuid],
+    );
+    assert.equal(lineas.rows[0].n, 1, "el retry duplicó las líneas del remito");
+  });
+
   it("6b. editar ítems conserva el precio snapshot y sólo el producto nuevo toma el precio vigente", async () => {
     const prodA = `prod-${randomUUID()}`;
     const prodB = `prod-${randomUUID()}`;

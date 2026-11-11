@@ -5,6 +5,11 @@ import { num } from "@/lib/money";
 import { assertRole, audit } from "@/lib/server/context";
 import type { MovimientoTipo, Staff } from "@/lib/types";
 
+/**
+ * Aplica un movimiento de stock. Con `clientUuid` la inserción es idempotente
+ * sobre `unique (tenant_id, client_uuid)`: un retry de red devuelve `false` y
+ * no vuelve a tocar `productos.stock`, que es lo que duplicaba el ajuste.
+ */
 export async function applyStock(opts: {
   tenantId: string;
   productoId: string;
@@ -12,15 +17,19 @@ export async function applyStock(opts: {
   cantidad: number;
   referencia: string;
   staff: Staff | null;
-}, transaction?: Sql) {
+  clientUuid?: string;
+}, transaction?: Sql): Promise<boolean> {
   const sql = transaction ?? await getSql();
-  await sql`
-    insert into stock_movimientos (id, tenant_id, producto_id, tipo, cantidad, referencia, usuario_id)
+  const inserted = await sql<{ id: string }>`
+    insert into stock_movimientos (id, tenant_id, producto_id, tipo, cantidad, referencia, usuario_id, client_uuid)
     values (
       ${newId("mov")}, ${opts.tenantId}, ${opts.productoId}, ${opts.tipo},
-      ${opts.cantidad}, ${opts.referencia}, ${opts.staff?.id ?? null}
+      ${opts.cantidad}, ${opts.referencia}, ${opts.staff?.id ?? null}, ${opts.clientUuid ?? null}
     )
+    on conflict (tenant_id, client_uuid) do nothing
+    returning id
   `;
+  if (!inserted[0]) return false;
   const updated = await sql<{ stock: unknown; stock_minimo: unknown; nombre: string; unidad_label: string }>`
     update productos
     set stock = stock + ${opts.cantidad}, updated_at = now()
@@ -28,7 +37,7 @@ export async function applyStock(opts: {
     returning stock, stock_minimo, nombre, unidad_label
   `;
   const row = updated[0];
-  if (!row) return;
+  if (!row) return true;
   const stock = num(row.stock);
   const min = num(row.stock_minimo);
   if (stock <= min) {
@@ -53,6 +62,7 @@ export async function applyStock(opts: {
       `;
     }
   }
+  return true;
 }
 
 export async function hayReserva(tenantId: string, pedidoId: string) {
@@ -128,18 +138,19 @@ export async function reservarLineas(
 
 export async function ajustarStockForStaff(
   staff: Staff,
-  input: { productoId: string; cantidad: number; tipo: "ajuste" | "merma"; motivo: string },
+  input: { productoId: string; cantidad: number; tipo: "ajuste" | "merma"; motivo: string; clientUuid?: string },
 ) {
   assertRole(staff, ["admin", "cajero"]);
   const signed = input.tipo === "merma" ? -Math.abs(input.cantidad) : input.cantidad;
-  await applyStock({
+  const aplicado = await applyStock({
     tenantId: staff.tenantId,
     productoId: input.productoId,
     tipo: input.tipo,
     cantidad: signed,
     referencia: input.motivo,
     staff,
+    clientUuid: input.clientUuid,
   });
-  await audit(staff.tenantId, staff, input.tipo, "stock", input);
-  return { ok: true as const };
+  if (aplicado) await audit(staff.tenantId, staff, input.tipo, "stock", input);
+  return { ok: true as const, duplicado: !aplicado };
 }

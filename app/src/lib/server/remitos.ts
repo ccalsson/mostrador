@@ -11,6 +11,7 @@ export type CrearRemitoInput = {
   proveedorId?: string;
   fuente: "csv" | "foto" | "manual" | "pdf";
   archivoNombre?: string;
+  clientUuid?: string;
   lineas: { descripcion: string; cantidad: number; precio?: number }[];
 };
 
@@ -117,10 +118,21 @@ export async function crearRemitoForStaff(staff: Staff, input: CrearRemitoInput)
     proveedor = prov[0].nombre;
     proveedorId = input.proveedorId;
   }
-  await sql`
-    insert into remitos (id, tenant_id, proveedor, proveedor_id, fuente, estado, archivo_nombre)
-    values (${id}, ${staff.tenantId}, ${proveedor}, ${proveedorId}, ${input.fuente}, ${"procesado"}, ${input.archivoNombre ?? null})
+  const inserted = await sql<{ id: string }>`
+    insert into remitos (id, tenant_id, proveedor, proveedor_id, fuente, estado, archivo_nombre, client_uuid)
+    values (${id}, ${staff.tenantId}, ${proveedor}, ${proveedorId}, ${input.fuente}, ${"procesado"}, ${input.archivoNombre ?? null}, ${input.clientUuid ?? null})
+    on conflict (tenant_id, client_uuid) do nothing
+    returning id
   `;
+  if (!inserted[0]) {
+    const previo = await sql<{ id: string }>`
+      select id from remitos
+      where tenant_id = ${staff.tenantId} and client_uuid = ${input.clientUuid}
+      limit 1
+    `;
+    if (!previo[0]) throw new Error("No se pudo resolver la idempotencia del remito.");
+    return { id: previo[0].id, duplicado: true as const };
+  }
   const productosRows = await sql<{
     id: string;
     nombre: string;
@@ -146,7 +158,7 @@ export async function crearRemitoForStaff(staff: Staff, input: CrearRemitoInput)
       )
     `;
   }
-  return { id };
+  return { id, duplicado: false as const };
 }
 
 export async function getRemitoForStaff(staff: Staff, id: string) {

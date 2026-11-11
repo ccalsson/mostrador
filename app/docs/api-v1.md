@@ -164,11 +164,16 @@ respondió mal y tampoco descontaron. El saldo se recarga con los paquetes
 
 ## Idempotencia
 
-`POST /pedidos` y `POST /pedidos/:id/cobrar` reciben `clientUuid`. La outbox
-debe generarlo y persistirlo antes del primer envío: un reintento con el mismo
+`POST /pedidos`, `POST /pedidos/:id/cobrar`, `POST /stock/ajuste`,
+`POST /egresos` y `POST /remitos` reciben `clientUuid`. La outbox debe
+generarlo y persistirlo antes del primer envío: un reintento con el mismo
 valor devuelve el recurso original sin duplicar pedido, cobro, ticket ni
-movimientos de stock. Está respaldado por la restricción PostgreSQL
-`(tenant_id, client_uuid)` en `pedidos` y `cobros`.
+movimientos de stock. En ajuste, egreso y remito la respuesta además marca
+`duplicado: true` para que el cliente sepa que el efecto ya estaba aplicado.
+Está respaldado por la restricción PostgreSQL `(tenant_id, client_uuid)` en
+`pedidos`, `cobros`, `stock_movimientos`, `egresos_caja` y `remitos`. Sin
+`clientUuid` la escritura es libre: cada llamada es una operación nueva, que
+es lo que hacen hoy los clientes que todavía no lo mandan.
 
 ## Pruebas
 

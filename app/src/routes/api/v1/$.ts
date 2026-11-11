@@ -303,6 +303,7 @@ function parseRemito(value: unknown): CrearRemitoInput {
     proveedorId: asOptionalString(body.proveedorId, 80),
     fuente: oneOf(body.fuente, FUENTES, "fuente"),
     archivoNombre: asOptionalString(body.archivoNombre, 200),
+    clientUuid: asOptionalString(body.clientUuid, 120),
     lineas: lineas.map((linea) => {
       const row = asRecord(linea);
       return {
@@ -739,6 +740,7 @@ const ROUTES: Entry[] = [
         cantidad: asNumber(body.cantidad, "cantidad"),
         tipo: oneOf(body.tipo, ["ajuste", "merma"] as const, "tipo"),
         motivo: asString(body.motivo, "motivo", 200),
+        clientUuid: asOptionalString(body.clientUuid, 120),
       });
       return json({ data: ajuste });
     },
@@ -1076,6 +1078,7 @@ const ROUTES: Entry[] = [
           concepto: asString(body.concepto, "concepto", 200),
           categoria: asOptionalString(body.categoria, 30),
           medio: asOptionalString(body.medio, 20),
+          clientUuid: asOptionalString(body.clientUuid, 120),
         }),
       });
     },

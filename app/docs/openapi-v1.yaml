@@ -506,6 +506,10 @@ paths:
                 cantidad: { type: number }
                 tipo: { type: string, enum: [ajuste, merma] }
                 motivo: { type: string, maxLength: 200 }
+                clientUuid:
+                  type: string
+                  maxLength: 120
+                  description: Reintento con el mismo valor no vuelve a mover el stock (`duplicado: true`).
       responses:
         "200":
           description: Aplicado.
@@ -552,6 +556,10 @@ paths:
                 proveedorId: { type: string, maxLength: 80 }
                 fuente: { type: string, enum: [csv, foto, manual, pdf] }
                 archivoNombre: { type: string, maxLength: 200 }
+                clientUuid:
+                  type: string
+                  maxLength: 120
+                  description: Reintento con el mismo valor no duplica el remito ni sus líneas.
                 lineas:
                   type: array
                   minItems: 1
