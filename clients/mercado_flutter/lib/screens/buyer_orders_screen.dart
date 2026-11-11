@@ -195,7 +195,11 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen> {
       }
       final orders = snapshot.data!;
       final ready = orders
-          .where((order) => order.estado == EstadoPedidoComprador.preparado)
+          .where(
+            (order) =>
+                order.estado == EstadoPedidoComprador.preparado &&
+                order.pagoEstado == 'habilitado',
+          )
           .toList();
       return RefreshIndicator(
         onRefresh: _refrescador.ejecutar,
@@ -205,7 +209,7 @@ class _BuyerOrdersScreenState extends State<BuyerOrdersScreen> {
             if (ready.isNotEmpty) ...[
               const Padding(
                 padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
-                child: Text('Preparados para retiro'),
+                child: Text('Listos y con pago confirmado'),
               ),
               for (final order in ready)
                 CheckboxListTile(

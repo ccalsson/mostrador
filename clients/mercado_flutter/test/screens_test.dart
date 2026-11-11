@@ -134,31 +134,34 @@ const banana = Producto(
   unidadLabel: 'kg',
 );
 
-Map<String, dynamic> pedidoMap({String id = 'ped_1', String estado = 'preparado'}) =>
+Map<String, dynamic> pedidoMap({
+  String id = 'ped_1',
+  String estado = 'preparado',
+  String pagoEstado = 'pendiente',
+}) => {
+  'id': id,
+  'tenantId': 'tnt_1',
+  'puesto': 'Frutas Roman',
+  'estado': estado,
+  'nota': '',
+  'medioPago': 'efectivo',
+  'pagoEstado': pagoEstado,
+  'items': [
     {
-      'id': id,
-      'tenantId': 'tnt_1',
-      'puesto': 'Frutas Roman',
-      'estado': estado,
-      'nota': '',
-      'medioPago': 'efectivo',
-      'pagoEstado': 'pendiente',
-      'items': [
-        {
-          'productoId': 'prd_1',
-          'nombre': 'Banana',
-          'cantidad': 2,
-          'precioUnitario': 1500.5,
-          'unidad': 'kg',
-          'unidadLabel': 'kg',
-          'subtotal': 3001,
-        },
-      ],
-      'total': 3001,
-      'bultos': 1,
-      'tiempos': {'preparacion': 5, 'espera': 10, 'entrega': 3, 'total': 18},
-      'createdAt': '2026-10-07T10:00:00.000Z',
-    };
+      'productoId': 'prd_1',
+      'nombre': 'Banana',
+      'cantidad': 2,
+      'precioUnitario': 1500.5,
+      'unidad': 'kg',
+      'unidadLabel': 'kg',
+      'subtotal': 3001,
+    },
+  ],
+  'total': 3001,
+  'bultos': 1,
+  'tiempos': {'preparacion': 5, 'espera': 10, 'entrega': 3, 'total': 18},
+  'createdAt': '2026-10-07T10:00:00.000Z',
+};
 
 Map<String, dynamic> recorridoMap({
   String id = 'rec_1',
@@ -346,7 +349,9 @@ void main() {
     tester,
   ) async {
     pedidosFijos = [
-      PedidoComprador.fromJson(pedidoMap(id: 'ped_1', estado: 'preparado')),
+      PedidoComprador.fromJson(
+        pedidoMap(id: 'ped_1', estado: 'preparado', pagoEstado: 'habilitado'),
+      ),
       PedidoComprador.fromJson(pedidoMap(id: 'ped_2', estado: 'confirmado')),
     ];
     await tester.pumpWidget(
@@ -354,7 +359,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Preparados para retiro'), findsOneWidget);
+    expect(find.text('Listos y con pago confirmado'), findsOneWidget);
     final boton = tester.widget<FilledButton>(
       find.widgetWithText(FilledButton, 'Armar recorrido con estos pedidos'),
     );
@@ -366,6 +371,24 @@ void main() {
       find.widgetWithText(FilledButton, 'Armar recorrido con estos pedidos'),
     );
     expect(botonActivo.onPressed, isNotNull);
+  });
+
+  testWidgets('BuyerOrdersScreen no ofrece un pedido listo sin pago confirmado', (
+    tester,
+  ) async {
+    pedidosFijos = [
+      PedidoComprador.fromJson(
+        pedidoMap(id: 'ped_1', estado: 'preparado', pagoEstado: 'informado'),
+      ),
+    ];
+    await tester.pumpWidget(
+      anclado(BuyerOrdersScreen(api: ApiFalsa(), actor: cargadorActor())),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Listos y con pago confirmado'), findsNothing);
+    expect(find.byType(CheckboxListTile), findsNothing);
+    expect(find.text('Frutas Roman'), findsOneWidget);
   });
 
   testWidgets('OrderDetailScreen muestra estado, items e hitos', (tester) async {

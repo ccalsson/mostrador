@@ -1008,14 +1008,14 @@ export async function createRoute(
       where p.id = any(${pedidoIds}::text[])
         and p.origen = 'mercado_al_toque'
         and p.comprador_mercado_id = ${actor.id}
-        and p.estado in ('listo', 'cobrado')
+        and p.estado = 'cobrado'
       for update
     `;
     if (lockedOrders.length !== pedidoIds.length) {
       fail(
         400,
         "orders_not_ready",
-        "Todos los pedidos deben ser tuyos y estar preparados para el retiro.",
+        "Todos los pedidos deben ser tuyos y tener el pago confirmado antes del retiro.",
       );
     }
     const alreadyAssigned = await tx<{ pedido_id: string }>`
@@ -1177,8 +1177,12 @@ export async function updateStop(
     if (action === "retirar") {
       if (stop.estado !== "aceptado")
         fail(400, "invalid_transition", "La parada ya fue retirada o no está aceptada.");
-      if (stop.pedido_estado !== "listo" && stop.pedido_estado !== "cobrado") {
-        fail(400, "order_not_ready", "El puesto todavía no marcó el pedido como listo.");
+      if (stop.pedido_estado !== "cobrado") {
+        fail(
+          400,
+          "payment_not_confirmed",
+          "El pago del pedido todavía no está confirmado en el puesto.",
+        );
       }
       await tx`
         update mercado_recorrido_pedidos

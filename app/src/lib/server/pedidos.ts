@@ -86,14 +86,6 @@ export async function updatePedidoEstadoForStaff(
     await sql`
       update pedidos
       set estado = ${input.estado},
-          pago_estado = case
-            when origen = 'mercado_al_toque'
-              and forma_pago in ('transferencia', 'efectivo')
-              and coalesce(pago_estado, 'pendiente') in ('pendiente', 'informado')
-              and ${input.estado} in ('en_preparacion', 'listo')
-            then 'habilitado'
-            else pago_estado
-          end,
           preparation_started_at = case
             when ${input.estado} = 'en_preparacion' then coalesce(preparation_started_at, now())
             else preparation_started_at

@@ -37,6 +37,10 @@ try {
 }
 
 const BASE = process.env.E2E_BASE_URL ?? "http://127.0.0.1:8080";
+// Better Auth valida `Origin` contra trustedOrigins (BETTER_AUTH_URL), no contra
+// el puerto donde escuchamos: con la suite en un puerto alternativo hay que
+// mandar el origin registrado, si no todo sign-in responde 403 INVALID_ORIGIN.
+const ORIGIN = process.env.E2E_ORIGIN ?? process.env.BETTER_AUTH_URL ?? BASE;
 const TENANT = "frutas-roman";
 const DEMO_PASSWORD = process.env.E2E_DEMO_PASSWORD ?? "roman2026";
 
@@ -130,11 +134,11 @@ async function request(method, path, { token, body, headers } = {}) {
 const api = (method, path, opts) => request(method, `/api/v1${path}`, opts);
 
 async function signIn(email, password = DEMO_PASSWORD) {
-  // Better Auth exige `Origin` en POST con credenciales (CSRF); la propia
-  // base del servidor siempre está en trustedOrigins.
+  // Better Auth exige `Origin` en POST con credenciales (CSRF) y lo compara con
+  // trustedOrigins, no con el puerto donde levantamos el servidor.
   const res = await request("POST", "/api/auth/sign-in/email", {
     body: { email, password },
-    headers: { origin: BASE },
+    headers: { origin: ORIGIN },
   });
   assert.equal(res.status, 200, `sign-in ${email} devolvió ${res.status}: ${JSON.stringify(res.data)}`);
   assert.ok(res.data?.token, `sign-in ${email} no devolvió token`);
@@ -477,7 +481,7 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
     const out = await request("POST", "/api/auth/sign-out", {
       token,
       body: {},
-      headers: { origin: BASE },
+      headers: { origin: ORIGIN },
     });
     assert.ok([200, 204].includes(out.status), `sign-out devolvió ${out.status}`);
 
@@ -1106,16 +1110,16 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
     }
   });
 
-  it("6c. preparar y cobrar un pedido de Mercado habilita el pago (paridad con la web)", async () => {
+  it("6c. sólo el cobro confirmado habilita el pago de un pedido de Mercado", async () => {
     const prod = `prod-${randomUUID()}`;
     await state.pool.query(
       `insert into productos (id, tenant_id, nombre, unidad, unidad_label, precio, moneda, stock, stock_minimo, activo)
        values ($1, $2, 'Palta E2E 6c', 'bulto', 'bulto', 1000, 'ARS', 100, 0, true)`,
       [prod, TENANT],
     );
-    // A: Mercado en efectivo, pendiente → preparar debe habilitar el pago.
+    // A: Mercado en efectivo, pendiente → preparar NO confirma el pago; la barrera es el cobro.
     const pedidoA = `ped-${randomUUID()}`;
-    // B: Mercado en efectivo, pendiente → el COBRO (no la preparación) debe habilitar el pago.
+    // B: Mercado en efectivo, pendiente → el COBRO debe habilitar el pago.
     const pedidoB = `ped-${randomUUID()}`;
     // C: pedido normal del puesto → el cobro NO debe tocar pago_estado (el guard por origen).
     const pedidoC = `ped-${randomUUID()}`;
@@ -1142,7 +1146,11 @@ describe("e2e /api/v1 — caracterización Fase 0/1", () => {
         body: { estado: "en_preparacion" },
       });
       assert.equal(prep.status, 200, JSON.stringify(prep.data));
-      assert.equal((await leerPago(pedidoA)).pago_estado, "habilitado", "preparar un pedido de Mercado habilita el pago");
+      assert.equal(
+        (await leerPago(pedidoA)).pago_estado,
+        "pendiente",
+        "preparar un pedido de Mercado no confirma el pago",
+      );
 
       await insertarPedido(pedidoB, "mercado_al_toque", "efectivo", "pendiente", "listo");
       await insertarItem(pedidoB);

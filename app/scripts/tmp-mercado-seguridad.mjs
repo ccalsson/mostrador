@@ -20,6 +20,8 @@ try {
 }
 
 const BASE = process.env.E2E_BASE ?? "http://localhost:8080";
+// better-auth sólo acepta el origin de BETTER_AUTH_URL; con puerto alternativo hay que mandarlo explícito.
+const ORIGIN = process.env.E2E_ORIGIN ?? process.env.BETTER_AUTH_URL ?? BASE;
 const CLAVE = "seguridad2026";
 const COMPRADOR_A = "seg-comprador-a@frutasroman.com";
 const COMPRADOR_B = "seg-comprador-b@frutasroman.com";
@@ -63,9 +65,14 @@ async function main() {
 
   // ---------- SEED ----------
   const tenants = await sqlRows(
-    `select id, nombre from tenants where config->>'mercadoAlToque' = 'true' order by id`,
+    `select t.id, t.nombre from tenants t join staff s on s.tenant_id = t.id
+     where s.email = $1 and t.config->>'mercadoAlToque' = 'true'
+     order by t.id limit 1`,
+    [STAFF.email],
   );
-  if (tenants.length !== 1) throw new Error(`Se esperaba 1 tenant con canal, hay ${tenants.length}.`);
+  if (!tenants[0]) {
+    throw new Error(`No hay tenant con canal para el staff ${STAFF.email}.`);
+  }
   const tenant = tenants[0];
   const TENANT_FALSO = "tenant-inexistente-seg";
   console.log(`[seed] tenant ${tenant.id} (${tenant.nombre})`);
@@ -282,7 +289,7 @@ async function main() {
   // ---------- PREPARACIÓN (staff) ----------
   const signIn = await fetch(`${BASE}/api/auth/sign-in/email`, {
     method: "POST",
-    headers: { "content-type": "application/json", origin: BASE },
+    headers: { "content-type": "application/json", origin: ORIGIN },
     body: JSON.stringify(STAFF),
   });
   const staffJson = await signIn.json();
@@ -312,6 +319,26 @@ async function main() {
   step("T5 pedido de A sin paradas escritas por B", paradasPedidoA.n === 0, String(paradasPedidoA.n));
 
   // ---------- RECORRIDO REAL (A) ----------
+  // Antes del cobro no hay pago confirmado: el recorrido de A debe ser rechazado.
+  const recSinPago = await mercadoApi("/recorridos", {
+    method: "POST",
+    token: tokenA,
+    key: `${keyBase}-sinpago`,
+    body: { cargadorId: courierA.usuario.id, pedidoIds: [pedidoA] },
+  });
+  step(
+    "barrera de pago: recorrido con pedido listo y sin cobro -> 400",
+    recSinPago.status === 400 && recSinPago.json?.error === "orders_not_ready",
+    JSON.stringify(recSinPago.json).slice(0, 200),
+  );
+
+  const cobrar = await fetch(`${BASE}/api/v1/pedidos/${pedidoA}/cobrar`, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${staffToken}` },
+    body: JSON.stringify({ clientUuid: `${keyBase}-cobro`, formaPago: "efectivo" }),
+  });
+  step("seed staff cobro del pedido A", cobrar.ok, String(cobrar.status));
+
   const recorrido = await mercadoApi("/recorridos", {
     method: "POST",
     token: tokenA,

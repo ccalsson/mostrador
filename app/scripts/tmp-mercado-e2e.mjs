@@ -2,7 +2,7 @@
 /**
  * E2E del canal Mercado al Toque contra DEV (solo lectura de secretos, nunca los imprime).
  * Flujo: puestos -> productos -> checkout efectivo -> reserva stock -> Mostrador
- * (preparación -> listo) -> recorrido del cargador -> retiro.
+ * (preparación -> listo -> cobro que confirma el pago) -> recorrido del cargador -> retiro.
  * Idempotente: re-ejecutar reutiliza credenciales (409 email_in_use -> auth/ingreso)
  * y genera una Idempotency-Key nueva por corrida.
  */
@@ -17,6 +17,9 @@ try {
 }
 
 const BASE = process.env.E2E_BASE ?? "http://localhost:8080";
+// better-auth rechaza el origen si no es el de BETTER_AUTH_URL; al correr contra
+// un puerto alternativo hay mandar el origin válido, no el de la pestaña.
+const ORIGIN = process.env.E2E_ORIGIN ?? process.env.BETTER_AUTH_URL ?? BASE;
 const BUYER = "mercado-e2e-comprador@frutasroman.com";
 const COURIER = "mercado-e2e-cargador@frutasroman.com";
 const PASSWORD = "mercado2026";
@@ -74,11 +77,18 @@ async function main() {
   if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL no está definido.");
 
   // ---------- SEED ----------
+  // DEV ya no es un tenant único: la corrida usa el tenant del staff de caja,
+  // que es el mismo con el que se inicia sesión en el paso F.
   const tenants = await sqlRows(
-    `select id, nombre, config->>'mercadoAlToque' as flag from tenants order by id`,
+    `select t.id, t.nombre, t.config->>'mercadoAlToque' as flag
+     from tenants t join staff s on s.tenant_id = t.id
+     where s.email = $1
+     order by t.id limit 1`,
+    [STAFF.email],
   );
-  if (tenants.length !== 1) throw new Error(`Se esperaba 1 tenant DEV, hay ${tenants.length}.`);
+  if (!tenants[0]) throw new Error(`No hay staff ${STAFF.email} en ningún tenant de DEV.`);
   const tenant = tenants[0];
+  console.log(`[seed] tenant ${tenant.id} (${tenant.nombre})`);
   if (tenant.flag !== "true") {
     await sqlRows(
       `update tenants set config = config || '{"mercadoAlToque":"true"}'::jsonb where id = $1`,
@@ -303,7 +313,7 @@ async function main() {
 
   const signIn = await fetch(`${BASE}/api/auth/sign-in/email`, {
     method: "POST",
-    headers: { "content-type": "application/json", origin: BASE },
+    headers: { "content-type": "application/json", origin: ORIGIN },
     body: JSON.stringify(STAFF),
   });
   const staffJson = await signIn.json();
@@ -355,6 +365,53 @@ async function main() {
     vistaListo.json?.pedido?.estado === "preparado",
     "F. comprador ve preparado",
     JSON.stringify(vistaListo.json).slice(0, 200),
+  );
+
+  // Barrera de pago: "listo" no libera la mercadería. Sin cobro registrado en caja,
+  // el comprador no puede armar recorrido y el pago sigue sin habilitar.
+  const barrera = await mercadoApi("/recorridos", {
+    method: "POST",
+    token: buyerToken,
+    key: `e2e-barrera-${Date.now()}`,
+    body: { cargadorId: courierAuth.usuario.id, pedidoIds: [pedido.id] },
+  });
+  assert(
+    barrera.status === 400 && barrera.json?.error === "orders_not_ready",
+    "F. recorrido rechazado hasta confirmar el pago",
+    JSON.stringify(barrera.json).slice(0, 200),
+  );
+  const antesDelCobro = (
+    await sqlRows(`select pago_estado from pedidos where id = $1`, [pedido.id])
+  )[0];
+  assert(
+    antesDelCobro?.pago_estado !== "habilitado",
+    "F. marcar listo no habilita el pago",
+    String(antesDelCobro?.pago_estado),
+  );
+
+  const cobro = await v1Api(`/pedidos/${pedido.id}/cobrar`, {
+    method: "POST",
+    token: staffToken,
+    body: {
+      clientUuid: `e2e-cobro-${Date.now()}`,
+      formaPago: "efectivo",
+      montoRecibido: pedido.total,
+    },
+  });
+  assert(cobro.status === 200, "F. cobro registrado en caja", JSON.stringify(cobro.json).slice(0, 200));
+  const despuesDelCobro = (
+    await sqlRows(`select estado, pago_estado from pedidos where id = $1`, [pedido.id])
+  )[0];
+  assert(
+    despuesDelCobro?.estado === "cobrado" && despuesDelCobro?.pago_estado === "habilitado",
+    "F. el cobro habilita el retiro",
+    JSON.stringify(despuesDelCobro),
+  );
+  const vistaCobrado = await mercadoApi(`/pedidos/${pedido.id}`, { token: buyerToken });
+  assert(
+    vistaCobrado.json?.pedido?.pagoEstado === "habilitado",
+    "F. el comprador ve el pago confirmado",
+    JSON.stringify(vistaCobrado.json?.pedido ?? vistaCobrado.json).slice(0, 200),
   );
 
   // ---------- G. CARGADOR (recorrido + retiro) ----------
@@ -532,6 +589,12 @@ async function main() {
       body: { estado: "listo" },
     });
     assert(listoJ.status === 200, "J. staff listo", JSON.stringify(listoJ.json).slice(0, 200));
+    const cobroJ = await v1Api(`/pedidos/${pedidoJ.id}/cobrar`, {
+      method: "POST",
+      token: staffToken,
+      body: { clientUuid: `e2e-cobroj-${Date.now()}`, formaPago: "efectivo" },
+    });
+    assert(cobroJ.status === 200, "J. cobro del segundo pedido", JSON.stringify(cobroJ.json).slice(0, 200));
     const puntosPreRechazo = (
       await sqlRows(`select puntos::int as p from mercado_cargadores where id = $1`, [
         courierAuth.usuario.id,

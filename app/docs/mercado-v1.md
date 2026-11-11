@@ -137,11 +137,13 @@ be assigned for pickup.
   `{ "disponibilidad": "disponible" | "no_disponible" }`.
 - `GET /recorridos`: the current user's routes.
 - `POST /recorridos` (buyer): `{ "cargadorId", "pedidoIds" }` and an
-  `Idempotency-Key`; all listed orders must belong to the buyer and be ready.
+  `Idempotency-Key`; every listed order must belong to the buyer and be paid
+  (`estado = 'cobrado'`), otherwise `400 orders_not_ready`.
 - `POST /recorridos/{id}/aceptar` or `/rechazar` (Cargador): requires an
   `Idempotency-Key`.
 - `POST /recorridos/{id}/retirar` or `/entregar` (Cargador): body
-  `{ "pedidoId" }` and an `Idempotency-Key` for the action.
+  `{ "pedidoId" }` and an `Idempotency-Key` for the action. Picking up an order
+  whose payment is not confirmed returns `400 payment_not_confirmed`.
 - `POST /recorridos/{id}/calificar` (buyer): `{ "estrellas": 1..5,
   "comentario": "..." }`.
 - `GET /recorridos` includes each stop's `preparado` flag so clients can
@@ -150,6 +152,11 @@ be assigned for pickup.
 Only the assigned Cargador can accept, reject, pick up, or deliver a route.
 Each stop must be picked up before it is delivered. A rejected route releases
 its orders for reassignment.
+
+An informed transfer is not a confirmed transfer. Preparing an order never
+touches `pago_estado`; only the cobro the puesto registers
+(`POST /api/v1/pedidos/{id}/cobrar`) flips it to `habilitado`, and that is what
+releases the merchandise to the Cargador.
 
 Repeating a completed rating returns `409 already_rated`; a database-level
 uniqueness conflict returns `409 conflict`.
