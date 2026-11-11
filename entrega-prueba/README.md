@@ -1,6 +1,28 @@
 # Mostrador — builds de prueba contra la nube (NO producción)
 
-Fecha de entrega: 2026-10-11 (re-empaquetado) · Versión app: **0.2.0+2** · Commit: **2a30a1d**
+Fecha de entrega: 2026-11-10 (rebuild desde `main`) · Versions: **Mostrador 0.2.1+3** y **Mercado 1.0.1+2** · Commit de los binarios: **e4d76f3** · API desplegada: **cdf040d**
+
+## Entrega del 10/11 (la que está en el Escritorio)
+
+Cuatro archivos en `C:\Users\claud\Desktop`, reconstruidos sobre el código
+commiteado — no sobre el árbol de trabajo:
+
+| Archivo | Bytes | SHA-256 |
+|---|---|---|
+| `Mostrador-v0.2.1-c3-release.apk` | 64.173.063 | `df8f0646a0e00129a3923cd61ec8060801b3465fc4564f1bc5c7741c1951e993` |
+| `Mercado-v1.0.1-c2-release.apk` | 53.550.550 | `7e8ee4ec9636c062470ab25c70b92f84b4a2e4e7391b5c4cc3dc662e44643d44` |
+| `Mostrador-Windows-0.2.1.exe` | 16.631.296 | `e01a4cc695bb33973d6ce0014c2a02ee74eb9ae4d3d04be4053209ac4cfa785f` |
+| `Mostrador-Windows-0.2.1.zip` | 16.625.879 | `f73e16f2340ddc728217887e0192ed783d06bed9bfd37853e4487ee56462aed1` |
+
+Incluyen, respecto de la tanda anterior del mismo día: en Caja el cobro queda
+alcanzable aunque el teclado ocupe la pantalla y el sondeo de 30 s pasa
+desapercibido; y el reintento no vuelve a registrar ajuste, egreso ni remito
+(`clientUuid`). En el servidor, además, el pedido de Mercado ya no se puede
+marcar `cobrado` a mano — lo escribe sólo el cobro de Caja, que es lo que
+habilita el retiro del cargador; eso se ve desde estos builds pero no está
+adentro de ellos.
+La firma Android es la misma keystore de upload de `play-store/herramientas`.
+Los anteriores quedaron en `Desktop\entrega-previa-1ff9336\`.
 
 ## Qué es esto
 
