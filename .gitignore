@@ -41,6 +41,13 @@ app/.node_modules.lock
 *.log
 npm-debug.log*
 
+# --- Copias de la web bajadas del sandbox de Grok ---------------------------
+# La fuente canónica es repoweb/ (la que compila el proyecto Vercel `mostrador`
+# y sirve mostrador-xi.vercel.app). Un workspace descargado es insumo, no línea.
+/*-grok-workspace/
+/version full/
+/platforms/
+
 # --- Artefactos regenerables de QA y generación ---
 app/screenshots/
 repoweb/screenshots/
