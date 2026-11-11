@@ -490,15 +490,17 @@ export async function listStandProducts(tenantId: string) {
   const presencia = await puedeAparecer(tenantId, { mercadoAlToque: true });
   if (!presencia.visible)
     fail(404, "not_found", "Ese puesto no está publicado en Mercado al Toque.");
+  const cotizacion = await getCotizacion();
   const rows = await sql<{
     id: string;
     nombre: string;
     precio: unknown;
+    moneda: unknown;
     stock: unknown;
     unidad: string;
     unidad_label: string;
   }>`
-    select id, nombre, precio, stock, unidad, unidad_label
+    select id, nombre, precio, moneda, stock, unidad, unidad_label
     from productos
     where tenant_id = ${tenantId} and activo = true and publicado_online = true
     order by orden nulls last, lower(nombre)
@@ -507,7 +509,9 @@ export async function listStandProducts(tenantId: string) {
     productos: rows.map((row) => ({
       id: row.id,
       nombre: row.nombre,
-      precio: num(row.precio),
+      // El catálogo se muestra en la moneda del cobro: si se publicara el precio
+      // crudo en USD, el verificador de checkout cobraría otro número muy distinto.
+      precio: precioEnArs(num(row.precio), row.moneda === "ARS" ? "ARS" : "USD", cotizacion),
       disponible: Math.max(0, num(row.stock)),
       unidad: row.unidad,
       unidadLabel: row.unidad_label,

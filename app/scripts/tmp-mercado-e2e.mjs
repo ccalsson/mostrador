@@ -100,17 +100,24 @@ async function main() {
   }
 
   const candidatos = await sqlRows(
-    `select id, nombre, stock, precio, unidad from productos
+    `select id, nombre, stock, precio, moneda, unidad from productos
      where tenant_id = $1 and activo = true and stock >= 5
      order by orden nulls last, lower(nombre) limit 3`,
     [tenant.id],
   );
   if (candidatos.length < 3) throw new Error("No hay 3 productos activos con stock suficiente.");
+  const fxRows = await sqlRows(`select usd_ars from torre.saas_fx_rates order by as_of desc limit 1`);
+  const cotizacion = Number(fxRows[0]?.usd_ars) > 0 ? Number(fxRows[0].usd_ars) : 1600;
+  // Misma regla de app/src/lib/server/moneda.ts: el catálogo y el pedido se cobran en ARS.
+  const enArs = (p) =>
+    String(p.moneda) === "ARS"
+      ? Math.round(Number(p.precio) * 100) / 100
+      : Math.ceil((Number(p.precio) * cotizacion * 1.05) / 100) * 100;
   for (const p of candidatos) {
     await sqlRows(`update productos set publicado_online = true where id = $1`, [p.id]);
   }
   console.log(
-    `[seed] publicados: ${candidatos.map((p) => `${p.nombre} (stock ${Number(p.stock)}, $${Number(p.precio)})`).join(" | ")}`,
+    `[seed] publicados: ${candidatos.map((p) => `${p.nombre} (stock ${Number(p.stock)}, ${p.moneda} $${Number(p.precio)} -> ARS $${enArs(p)})`).join(" | ")}; cotización ${cotizacion}`,
   );
 
   async function entrarOCrear(path, payload, perfil) {
@@ -201,9 +208,9 @@ async function main() {
   const elegidos = candidatos.map((p) => {
     const row = publicados.find((x) => x.id === p.id);
     assert(
-      Boolean(row) && Number(row.precio) === Number(p.precio),
+      Boolean(row) && Number(row.precio) === enArs(p),
       `B. publicado en catálogo: ${p.nombre}`,
-      JSON.stringify(row ?? publicados.map((x) => x.id)),
+      `${row ? row.precio : "ausente"} vs ${enArs(p)}`,
     );
     return { ...p, precioOnline: Number(row.precio), stockAntes: Number(p.stock) };
   });

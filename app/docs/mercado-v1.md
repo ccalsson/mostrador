@@ -88,7 +88,8 @@ All endpoints below require a session.
   `tenants.config.bajada`, null when unset) and its contract `tier`.
 - `GET /puestos/{tenantId}/productos` returns active, online-published products
   and current available stock; responds `404` when the stand has no active
-  Mercado contract line.
+  Mercado contract line. `precio` is already converted to ARS with the same
+  rule the checkout uses, so the catalog always shows what the buyer pays.
 - `GET /cargadores` returns the public courier list and ranking details with
   anonymized names (first name only).
 - `GET /ranking` is public and uses the same anonymized names.
