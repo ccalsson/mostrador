@@ -2,7 +2,20 @@ import { getSql } from "@/lib/db";
 import { newId } from "@/lib/ids";
 import { num } from "@/lib/money";
 import { assertRole, audit } from "@/lib/server/context";
+import { esperadoEnEfectivo, round2 } from "@/lib/server/caja-reglas";
 import type { FormaPago, Staff } from "@/lib/types";
+
+type FilaFormaPago = { forma_pago: string; total: unknown; n: unknown };
+
+type TotalForma = { formaPago: FormaPago; total: number; n: number };
+
+function porForma(filas: FilaFormaPago[]): TotalForma[] {
+  return filas.map((t) => ({
+    formaPago: t.forma_pago as FormaPago,
+    total: num(t.total),
+    n: num(t.n),
+  }));
+}
 
 export async function estadoCajaForStaff(staff: Staff) {
   assertRole(staff, ["admin", "cajero"]);
@@ -29,20 +42,23 @@ export async function estadoCajaForStaff(staff: Staff) {
     `;
   }
   const desde = open[0].abierto_at;
-  const totales = await sql<{ forma_pago: string; total: unknown; n: unknown }>`
+  const totales = porForma(
+    await sql<FilaFormaPago>`
     select forma_pago, coalesce(sum(monto),0) as total, count(*)::int as n
     from cobros
     where tenant_id = ${staff.tenantId} and anulado = false and created_at >= ${desde}::timestamptz
     group by forma_pago
-  `;
-  const [egresoRow] = await sql<{ total: unknown }>`
-    select coalesce(sum(monto), 0) as total
+  `,
+  );
+  const [egresoRow] = await sql<{ total: unknown; efectivo: unknown }>`
+    select coalesce(sum(monto), 0) as total,
+           coalesce(sum(monto) filter (where medio = 'efectivo'), 0) as efectivo
     from egresos_caja
     where tenant_id = ${staff.tenantId} and cierre_id = ${open[0].id}
   `;
-  const cobrado = totales.reduce((acc, t) => acc + num(t.total), 0);
   const egresos = num(egresoRow?.total ?? 0);
-  const esperado = cobrado - egresos;
+  const egresosEfectivo = num(egresoRow?.efectivo ?? 0);
+  const esperado = esperadoEnEfectivo(totales, egresosEfectivo);
   const ultimos = await sql<{
     id: string;
     monto: unknown;
@@ -73,11 +89,8 @@ export async function estadoCajaForStaff(staff: Staff) {
     abiertoAt: open[0].abierto_at,
     esperado,
     egresos,
-    totales: totales.map((t) => ({
-      formaPago: t.forma_pago as FormaPago,
-      total: num(t.total),
-      n: num(t.n),
-    })),
+    egresosEfectivo,
+    totales,
     ultimos: ultimos.map((u) => ({
       id: u.id,
       monto: num(u.monto),
@@ -104,19 +117,21 @@ export async function cerrarCajaForStaff(
     limit 1
   `;
   if (!open[0]) throw new Error("No hay una caja abierta.");
-  const totales = await sql<{ forma_pago: string; total: unknown; n: unknown }>`
+  const totales = porForma(
+    await sql<FilaFormaPago>`
     select forma_pago, coalesce(sum(monto),0) as total, count(*)::int as n
     from cobros
     where tenant_id = ${staff.tenantId} and anulado = false and created_at >= ${open[0].abierto_at}::timestamptz
     group by forma_pago
-  `;
-  const [egresoRow] = await sql<{ total: unknown }>`
-    select coalesce(sum(monto), 0) as total
+  `,
+  );
+  const [egresoRow] = await sql<{ efectivo: unknown }>`
+    select coalesce(sum(monto) filter (where medio = 'efectivo'), 0) as efectivo
     from egresos_caja
     where tenant_id = ${staff.tenantId} and cierre_id = ${open[0].id}
   `;
-  const esperado = totales.reduce((acc, t) => acc + num(t.total), 0) - num(egresoRow?.total ?? 0);
-  const diferencia = Math.round((input.real - esperado) * 100) / 100;
+  const esperado = esperadoEnEfectivo(totales, num(egresoRow?.efectivo ?? 0));
+  const diferencia = round2(input.real - esperado);
   await sql.query(
     `update cierres_caja
      set cerrado_at = now(), esperado = $1, real = $2, diferencia = $3, totales = $4::jsonb, notas = $5
@@ -125,7 +140,7 @@ export async function cerrarCajaForStaff(
       esperado,
       input.real,
       diferencia,
-      JSON.stringify(totales.map((t) => ({ formaPago: t.forma_pago, total: num(t.total), n: num(t.n) }))),
+      JSON.stringify(totales),
       input.notas ?? null,
       input.id,
       staff.tenantId,
